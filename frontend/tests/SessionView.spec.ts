@@ -4,8 +4,13 @@ import { createMemoryHistory, createRouter } from "vue-router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import * as sessionApi from "../src/api/sessions"
+import * as questionApi from "../src/api/questions"
 import SessionView from "../src/views/SessionView.vue"
 import type { Session } from "../src/types/session"
+
+vi.mock("../src/api/questions", () => ({
+  fetchQuestion: vi.fn(),
+}))
 
 vi.mock("../src/api/sessions", () => ({
   fetchSession: vi.fn(),
@@ -15,6 +20,7 @@ vi.mock("../src/api/sessions", () => ({
 }))
 
 const fetchSession = vi.mocked(sessionApi.fetchSession)
+const fetchQuestion = vi.mocked(questionApi.fetchQuestion)
 const retryEvaluation = vi.mocked(sessionApi.retryEvaluation)
 const submitInitialChoice = vi.mocked(sessionApi.submitInitialChoice)
 const submitTextAttempt = vi.mocked(sessionApi.submitTextAttempt)
@@ -52,6 +58,27 @@ async function mountSessionView() {
 describe("SessionView", () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    fetchQuestion.mockResolvedValue({
+      id: 3,
+      questionContent: "计算 1 + 1。",
+      standardAnswer: "2",
+      rubricPoints: ["正确计算加法"],
+      commonErrors: ["把结果写成 3"],
+      alternativeSolutions: ["使用实物计数"],
+      layeredHints: ["先数一数"],
+      fullSolution: "1 加 1 等于 2。",
+      archivedAt: null,
+      createdAt: "2026-07-20T00:00:00Z",
+      updatedAt: "2026-07-20T00:00:00Z",
+    })
+  })
+
+  it("keeps the associated question visible throughout the self-explanation session", async () => {
+    fetchSession.mockResolvedValue(createSession())
+    const wrapper = await mountSessionView()
+
+    expect(fetchQuestion).toHaveBeenCalledWith("3")
+    expect(wrapper.get('[data-testid="question-content"]').text()).toBe("计算 1 + 1。")
   })
 
   it("records the initial KNOW choice with the current session version", async () => {

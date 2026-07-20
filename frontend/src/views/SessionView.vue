@@ -8,10 +8,13 @@ import {
   submitInitialChoice,
   submitTextAttempt,
 } from "../api/sessions"
+import { fetchQuestion } from "../api/questions"
 import type { InitialChoice, Session } from "../types/session"
+import type { Question } from "../types/question"
 
 const route = useRoute()
 const session = ref<Session>()
+const question = ref<Question>()
 const confirmedText = ref("")
 const loading = ref(true)
 const submitting = ref(false)
@@ -22,6 +25,7 @@ const sessionId = String(route.params.sessionId)
 onMounted(async () => {
   try {
     session.value = await fetchSession(sessionId)
+    question.value = await fetchQuestion(String(session.value.questionId))
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -101,6 +105,10 @@ async function retryAiEvaluation() {
       />
       <el-skeleton v-else-if="loading" :rows="5" animated />
       <template v-else-if="session">
+        <section v-if="question" class="question-content">
+          <h2>题目</h2>
+          <p data-testid="question-content">{{ question.questionContent }}</p>
+        </section>
         <el-descriptions :column="2" border class="session-summary">
           <el-descriptions-item label="会话状态">{{ session.status }}</el-descriptions-item>
           <el-descriptions-item label="当前轮次">第 {{ session.round }} 轮</el-descriptions-item>
@@ -235,10 +243,12 @@ h2 {
 }
 
 .session-summary,
+.question-content,
 .session-section {
   margin-top: 20px;
 }
 
+.question-content p,
 .session-section p {
   color: #606266;
 }
