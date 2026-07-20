@@ -22,6 +22,24 @@ def question_payload() -> dict[str, object]:
     }
 
 
+def coordinate_question_payload() -> dict[str, object]:
+    return {
+        "questionContent": "在平面直角坐标系中，直线 y = -2x + 6 与坐标轴交于 A、B。",
+        "standardAnswer": "A(3, 0)、B(0, 6)、三角形 AOB 面积为 9，P 坐标为 (2, 0) 或 (-2, 0)。",
+        "rubricPoints": [
+            "令 y = 0 求得 x = 3，并写出 A(3, 0)。",
+            "令 x = 0 求得 y = 6，并写出 B(0, 6)。",
+            "利用直角三角形面积公式计算出 S三角形AOB = 9。",
+            "用 OP = |t| 建立 3|t| = 6 的面积方程。",
+            "得到 P(2, 0) 和 P(-2, 0) 两个坐标。",
+        ],
+        "commonErrors": ["遗漏 P 在 x 轴上时 OP = |t|"],
+        "alternativeSolutions": ["先由面积公式得到 |t| = 2"],
+        "layeredHints": ["先确定 POB 的底和高"],
+        "fullSolution": "由 OP = |t| 和 1/2 × OP × OB = 6 求 P 坐标。",
+    }
+
+
 def valid_evaluation_content() -> str:
     return json.dumps(
         {
@@ -49,8 +67,10 @@ def prepare_client(settings, monkeypatch) -> TestClient:
     return TestClient(create_app(settings))
 
 
-def create_started_session(client: TestClient) -> dict[str, object]:
-    question_response = client.post("/api/questions", json=question_payload())
+def create_started_session(
+    client: TestClient, question: dict[str, object] | None = None
+) -> dict[str, object]:
+    question_response = client.post("/api/questions", json=question or question_payload())
     assert question_response.status_code == 201
     session_response = client.post(
         "/api/sessions", json={"questionId": question_response.json()["id"]}
@@ -166,6 +186,96 @@ def test_schema_retry_exhaustion_enters_need_human_without_support_count(
     finally:
         engine.dispose()
     assert invalid_count == settings.ai_schema_max_retries + 1
+
+
+def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
+    settings, monkeypatch
+) -> None:
+    invalid_content = json.dumps(
+        {
+            "correctness": "CORRECT",
+            "completeness": "INCOMPLETE",
+            "coveredPoints": [
+                "令 y = 0 求得 x = 3，并写出 A(3, 0)。",
+                "令 x = 0 求得 y = 6，并写出 B(0, 6)。",
+                "利用直角三角形面积公式计算出 S三角形AOB = 9。",
+            ],
+            "missingPoints": [
+                "用 OP = |t| 建立 3|t| = 6 的面积方程。",
+                "得到 P(2, 0) 和 P(-2, 0) 两个坐标。",
+            ],
+            "errorEvidence": [],
+            "feedback": "第三问可使用 OP = |t| 列面积方程。",
+            "confidence": 1,
+            "nextAction": "GIVE_HINT",
+            "needHumanReason": None,
+        }
+    )
+    corrected_content = json.dumps(
+        {
+            "correctness": "CORRECT",
+            "completeness": "INCOMPLETE",
+            "coveredPoints": [
+                "令 y = 0 求得 x = 3，并写出 A(3, 0)。",
+                "令 x = 0 求得 y = 6，并写出 B(0, 6)。",
+                "利用直角三角形面积公式计算出 S三角形AOB = 9。",
+            ],
+            "missingPoints": [
+                "用 OP = |t| 建立 3|t| = 6 的面积方程。",
+                "得到 P(2, 0) 和 P(-2, 0) 两个坐标。",
+            ],
+            "errorEvidence": [],
+            "feedback": "第三问中，点 P 在 x 轴上时，P 到原点的距离应如何表示？",
+            "confidence": 1,
+            "nextAction": "ASK_FOCUSED_QUESTION",
+            "needHumanReason": None,
+        }
+    )
+    prompts: list[str] = []
+
+    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+        prompts.append(prompt)
+        content = invalid_content if len(prompts) == 1 else corrected_content
+        return AIModelResponse("{\"choices\": []}", content, 8)
+
+    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
+    with prepare_client(settings, monkeypatch) as client:
+        started_session = create_started_session(client, coordinate_question_payload())
+        response = client.post(
+            f"/api/sessions/{started_session['id']}/text-attempts",
+            json={
+                "confirmedText": (
+                    "第一问，令x=0，则y=6，得B（0,6），令y=0，则x=3，得A（3,0）。"
+                    "第二问，三角形AOB面积=AO*BO/2=9。第三问不太会。"
+                ),
+                "version": started_session["version"],
+            },
+        )
+
+    assert response.status_code == 200
+    saved_session = response.json()
+    assert saved_session["status"] == "IN_PROGRESS"
+    assert saved_session["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert saved_session["latestEvaluation"]["nextAction"] == "ASK_FOCUSED_QUESTION"
+    assert len(prompts) == 2
+    assert "CORRECT | INCOMPLETE | ASK_FOCUSED_QUESTION" in prompts[1]
+    assert "不能作为本次确认文本的直接评价动作" in prompts[1]
+
+    engine = create_engine(settings.database_url)
+    try:
+        with engine.connect() as connection:
+            evaluations = connection.execute(
+                text(
+                    "SELECT validation_status, next_action FROM ai_evaluations "
+                    "ORDER BY id"
+                )
+            ).mappings().all()
+    finally:
+        engine.dispose()
+    assert [dict(evaluation) for evaluation in evaluations] == [
+        {"validation_status": "INVALID", "next_action": "GIVE_HINT"},
+        {"validation_status": "VALID", "next_action": "ASK_FOCUSED_QUESTION"},
+    ]
 
 
 def test_complete_evaluation_sets_completion_with_deterministic_label(

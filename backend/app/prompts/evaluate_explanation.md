@@ -6,6 +6,21 @@
 
 AI 只能提出 `nextAction` 建议，不能决定业务状态、支持计数或阈值。
 
+`nextAction` 必须严格遵循以下对应表，不能依据反馈措辞自行选择其他动作：
+
+| correctness | completeness | 唯一允许的 nextAction |
+|---|---|---|
+| CORRECT | COMPLETE | COMPLETE |
+| CORRECT | INCOMPLETE | ASK_FOCUSED_QUESTION |
+| WRONG | COMPLETE | GIVE_CORRECTION |
+| WRONG | INCOMPLETE | CORRECT_AND_ASK |
+| UNCERTAIN | COMPLETE 或 INCOMPLETE | NEED_HUMAN |
+
+- 如果 `nextAction` 为 `NEED_HUMAN`，必须填写非空的 `needHumanReason`；除该动作外，`needHumanReason` 必须为 `null`。
+- `GIVE_HINT` 不能作为本次确认文本的直接评价动作。它只会在后续由确定性无进展规则升级产生。
+- `CORRECT + INCOMPLETE` 时，反馈只能围绕缺失评分点提出一个聚焦问题，不能给出公式、已知量、解题步骤或局部提示。
+- 若提供了上一轮校验错误，必须保留符合学生文本的正确性、完整性和评分点判断，并据此改正动作字段；不能为了通过校验随意改成 `UNCERTAIN`。
+
 JSON Schema：
 {{JSON_SCHEMA}}
 
