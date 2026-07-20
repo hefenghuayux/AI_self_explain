@@ -1,10 +1,10 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $projectRoot ".env"
 
 if (-not (Test-Path -LiteralPath $envFile -PathType Leaf)) {
-    throw "缺少配置文件：$envFile。请复制 .env.example 为 .env 并填写配置。"
+    throw "缺少配置文件：${envFile}。请复制 .env.example 为 .env 并填写配置。"
 }
 
 $backend = Start-Process `
