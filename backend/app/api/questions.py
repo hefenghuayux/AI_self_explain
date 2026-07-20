@@ -40,8 +40,10 @@ def create_question(
 
 
 @router.get("", response_model=list[QuestionResponse])
-def list_questions(session: DatabaseSession) -> list[QuestionResponse]:
-    return QuestionRepository(session).list_questions()
+def list_questions(
+    session: DatabaseSession, include_archived: bool = False
+) -> list[QuestionResponse]:
+    return QuestionRepository(session).list_questions(include_archived=include_archived)
 
 
 @router.get("/{question_id}", response_model=QuestionResponse)
@@ -58,4 +60,20 @@ def update_question(
 ) -> QuestionResponse:
     repository = QuestionRepository(session)
     question = get_question_or_404(repository, question_id)
+    if question.archived_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已归档题目不能编辑")
     return repository.update(question, question_input)
+
+
+@router.post("/{question_id}/archive", response_model=QuestionResponse)
+def archive_question(question_id: int, session: DatabaseSession) -> QuestionResponse:
+    repository = QuestionRepository(session)
+    question = get_question_or_404(repository, question_id)
+    return repository.archive(question)
+
+
+@router.post("/{question_id}/restore", response_model=QuestionResponse)
+def restore_question(question_id: int, session: DatabaseSession) -> QuestionResponse:
+    repository = QuestionRepository(session)
+    question = get_question_or_404(repository, question_id)
+    return repository.restore(question)

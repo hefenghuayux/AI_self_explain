@@ -10,6 +10,7 @@ export interface QuestionInput {
 
 export interface Question extends QuestionInput {
   id: number
+  archivedAt: string | null
   createdAt: string
   updatedAt: string
 }

@@ -39,5 +39,6 @@ class QuestionInput(QuestionSchema):
 
 class QuestionResponse(QuestionInput):
     id: int
+    archived_at: datetime | None
     created_at: datetime
     updated_at: datetime

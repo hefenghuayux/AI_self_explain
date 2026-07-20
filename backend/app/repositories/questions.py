@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,8 +18,10 @@ class QuestionRepository:
         self.session.refresh(question)
         return question
 
-    def list_questions(self) -> list[Question]:
+    def list_questions(self, include_archived: bool) -> list[Question]:
         statement = select(Question).order_by(Question.created_at.desc(), Question.id.desc())
+        if not include_archived:
+            statement = statement.where(Question.archived_at.is_(None))
         return list(self.session.scalars(statement))
 
     def get(self, question_id: int) -> Question | None:
@@ -28,4 +32,18 @@ class QuestionRepository:
             setattr(question, field_name, value)
         self.session.commit()
         self.session.refresh(question)
+        return question
+
+    def archive(self, question: Question) -> Question:
+        if question.archived_at is None:
+            question.archived_at = datetime.now(UTC)
+            self.session.commit()
+            self.session.refresh(question)
+        return question
+
+    def restore(self, question: Question) -> Question:
+        if question.archived_at is not None:
+            question.archived_at = None
+            self.session.commit()
+            self.session.refresh(question)
         return question

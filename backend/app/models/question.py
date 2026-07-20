@@ -17,6 +17,7 @@ class Question(Base):
     alternative_solutions: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     layered_hints: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     full_solution: Mapped[str] = mapped_column(Text, nullable=False)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

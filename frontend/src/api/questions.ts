@@ -15,8 +15,9 @@ async function requestQuestionApi<T>(path: string, options?: RequestInit): Promi
   return (await response.json()) as T
 }
 
-export function fetchQuestions(): Promise<Question[]> {
-  return requestQuestionApi<Question[]>("/api/questions")
+export function fetchQuestions(includeArchived = false): Promise<Question[]> {
+  const query = includeArchived ? "?include_archived=true" : ""
+  return requestQuestionApi<Question[]>(`/api/questions${query}`)
 }
 
 export function fetchQuestion(questionId: string): Promise<Question> {
@@ -35,4 +36,12 @@ export function updateQuestion(questionId: string, question: QuestionInput): Pro
     method: "PUT",
     body: JSON.stringify(question),
   })
+}
+
+export function archiveQuestion(questionId: string): Promise<Question> {
+  return requestQuestionApi<Question>(`/api/questions/${questionId}/archive`, { method: "POST" })
+}
+
+export function restoreQuestion(questionId: string): Promise<Question> {
+  return requestQuestionApi<Question>(`/api/questions/${questionId}/restore`, { method: "POST" })
 }

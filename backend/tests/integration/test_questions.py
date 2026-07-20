@@ -41,6 +41,8 @@ def test_migration_creates_questions_table(migrated_settings: Settings) -> None:
     engine = create_engine(migrated_settings.database_url)
     try:
         assert inspect(engine).has_table("questions")
+        columns = inspect(engine).get_columns("questions")
+        assert "archived_at" in {column["name"] for column in columns}
     finally:
         engine.dispose()
 
@@ -104,3 +106,27 @@ def test_question_update_preserves_unedited_material(question_client: TestClient
     assert updated["alternativeSolutions"] == original_payload["alternativeSolutions"]
     assert updated["layeredHints"] == original_payload["layeredHints"]
     assert updated["fullSolution"] == original_payload["fullSolution"]
+
+
+def test_question_can_be_archived_and_restored(question_client: TestClient) -> None:
+    original_payload = question_payload()
+    created = question_client.post("/api/questions", json=original_payload).json()
+
+    archive_response = question_client.post(f"/api/questions/{created['id']}/archive")
+
+    assert archive_response.status_code == 200
+    assert archive_response.json()["archivedAt"]
+    assert question_client.get("/api/questions").json() == []
+    archived_list = question_client.get("/api/questions?include_archived=true")
+    assert [item["id"] for item in archived_list.json()] == [created["id"]]
+    assert question_client.get(f"/api/questions/{created['id']}").status_code == 200
+
+    edit_response = question_client.put(f"/api/questions/{created['id']}", json=original_payload)
+    assert edit_response.status_code == 409
+    assert edit_response.json()["detail"] == "已归档题目不能编辑"
+
+    restore_response = question_client.post(f"/api/questions/{created['id']}/restore")
+
+    assert restore_response.status_code == 200
+    assert restore_response.json()["archivedAt"] is None
+    assert [item["id"] for item in question_client.get("/api/questions").json()] == [created["id"]]
