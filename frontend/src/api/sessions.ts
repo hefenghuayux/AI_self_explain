@@ -47,3 +47,10 @@ export function submitTextAttempt(
     body: JSON.stringify({ confirmedText, version }),
   })
 }
+
+export function retryEvaluation(sessionId: string, version: number): Promise<Session> {
+  return requestSessionApi<Session>(`/api/sessions/${sessionId}/evaluate`, {
+    method: "POST",
+    body: JSON.stringify({ version }),
+  })
+}

@@ -9,11 +9,13 @@ import type { Session } from "../src/types/session"
 
 vi.mock("../src/api/sessions", () => ({
   fetchSession: vi.fn(),
+  retryEvaluation: vi.fn(),
   submitInitialChoice: vi.fn(),
   submitTextAttempt: vi.fn(),
 }))
 
 const fetchSession = vi.mocked(sessionApi.fetchSession)
+const retryEvaluation = vi.mocked(sessionApi.retryEvaluation)
 const submitInitialChoice = vi.mocked(sessionApi.submitInitialChoice)
 const submitTextAttempt = vi.mocked(sessionApi.submitTextAttempt)
 
@@ -26,6 +28,8 @@ function createSession(overrides: Partial<Session> = {}): Session {
     round: 1,
     version: 1,
     initialChoice: null,
+    needHumanReason: null,
+    latestEvaluation: null,
     ...overrides,
   }
 }
@@ -79,7 +83,27 @@ describe("SessionView", () => {
   it("submits confirmed text with the session version", async () => {
     fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", initialChoice: "KNOW" }))
     submitTextAttempt.mockResolvedValue(
-      createSession({ flowStage: "AI_EVALUATING", version: 2, initialChoice: "KNOW" }),
+      createSession({
+        flowStage: "WAIT_STUDENT_ACTION",
+        version: 2,
+        initialChoice: "KNOW",
+        latestEvaluation: {
+          id: 3,
+          correctness: "CORRECT",
+          completeness: "INCOMPLETE",
+          coveredPoints: ["正确计算加法"],
+          missingPoints: ["得出结果 2"],
+          errorEvidence: [],
+          feedback: "你已经说明了加法过程，请补充结果。",
+          confidence: 1,
+          nextAction: "ASK_FOCUSED_QUESTION",
+          needHumanReason: null,
+          promptVersion: "test-v1",
+          modelProvider: "test-ai",
+          modelName: "test-ai-model",
+          createdAt: "2026-07-20T00:00:00Z",
+        },
+      }),
     )
     const wrapper = await mountSessionView()
 
@@ -88,6 +112,21 @@ describe("SessionView", () => {
     await flushPromises()
 
     expect(submitTextAttempt).toHaveBeenCalledWith("12", "我先说明计算过程。", 1)
-    expect(wrapper.text()).toContain("自讲内容已保存")
+    expect(wrapper.get('[data-testid="ai-feedback"]').text()).toContain("请补充结果")
+  })
+
+  it("retries an evaluation without requiring the student to re-enter text", async () => {
+    fetchSession.mockResolvedValue(
+      createSession({ flowStage: "CONFIRMING_TEXT", version: 4, initialChoice: "KNOW" }),
+    )
+    retryEvaluation.mockResolvedValue(
+      createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 6, initialChoice: "KNOW" }),
+    )
+    const wrapper = await mountSessionView()
+
+    await wrapper.get('[data-testid="retry-evaluation"]').trigger("click")
+    await flushPromises()
+
+    expect(retryEvaluation).toHaveBeenCalledWith("12", 4)
   })
 })

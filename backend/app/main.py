@@ -31,6 +31,7 @@ def create_app(settings: Settings) -> FastAPI:
             logger.info("应用已停止", extra={"operation": "application_shutdown"})
 
     application = FastAPI(title="AI 自讲 Demo API", version="0.1.0", lifespan=lifespan)
+    application.state.settings = settings
     application.include_router(health_router, prefix="/api")
     application.include_router(questions_router, prefix="/api")
     application.include_router(sessions_router, prefix="/api")

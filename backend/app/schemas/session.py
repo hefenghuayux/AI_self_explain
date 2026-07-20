@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from app.schemas.ai_evaluation import AIEvaluationResponse
 from app.schemas.question import QuestionSchema, RequiredText
 
 SessionStatus = Literal["IN_PROGRESS", "COMPLETED", "STOPPED_LIMIT", "NEED_HUMAN", "PAUSED"]
@@ -32,6 +33,10 @@ class TextAttemptInput(QuestionSchema):
     version: int = Field(ge=0)
 
 
+class EvaluationRetryInput(QuestionSchema):
+    version: int = Field(ge=0)
+
+
 class SessionResponse(QuestionSchema):
     id: int
     question_id: int
@@ -52,3 +57,4 @@ class SessionResponse(QuestionSchema):
     created_at: datetime
     updated_at: datetime
     finished_at: datetime | None
+    latest_evaluation: AIEvaluationResponse | None = None

@@ -1,0 +1,247 @@
+import json
+from pathlib import Path
+
+from alembic.config import Config
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, inspect, text
+
+from alembic import command
+from app.main import create_app
+from app.services.ai_evaluation import AIModelClient, AIModelResponse, AITransportError
+
+
+def question_payload() -> dict[str, object]:
+    return {
+        "questionContent": "计算 1 + 1。",
+        "standardAnswer": "2",
+        "rubricPoints": ["正确计算加法", "得出结果 2"],
+        "commonErrors": ["把结果写成 3"],
+        "alternativeSolutions": ["使用实物计数"],
+        "layeredHints": ["先数一数两个数", "再合并两组数量"],
+        "fullSolution": "1 加 1 等于 2。",
+    }
+
+
+def valid_evaluation_content() -> str:
+    return json.dumps(
+        {
+            "correctness": "CORRECT",
+            "completeness": "INCOMPLETE",
+            "coveredPoints": ["正确计算加法"],
+            "missingPoints": ["得出结果 2"],
+            "errorEvidence": [],
+            "feedback": "计算过程正确，请补充最后的结果。",
+            "confidence": 1,
+            "nextAction": "ASK_FOCUSED_QUESTION",
+            "needHumanReason": None,
+        }
+    )
+
+
+def migrate_database(settings, monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", settings.database_url)
+    alembic_config = Config(str(Path(__file__).parents[2] / "alembic.ini"))
+    command.upgrade(alembic_config, "head")
+
+
+def prepare_client(settings, monkeypatch) -> TestClient:
+    migrate_database(settings, monkeypatch)
+    return TestClient(create_app(settings))
+
+
+def create_started_session(client: TestClient) -> dict[str, object]:
+    question_response = client.post("/api/questions", json=question_payload())
+    assert question_response.status_code == 201
+    session_response = client.post(
+        "/api/sessions", json={"questionId": question_response.json()["id"]}
+    )
+    assert session_response.status_code == 201
+    session = session_response.json()
+    choice_response = client.post(
+        f"/api/sessions/{session['id']}/initial-choice",
+        json={"choice": "KNOW", "version": session["version"]},
+    )
+    assert choice_response.status_code == 200
+    return choice_response.json()
+
+
+def submit_text(client: TestClient, session: dict[str, object]) -> TestClient:
+    return client.post(
+        f"/api/sessions/{session['id']}/text-attempts",
+        json={"confirmedText": "我先计算 1 加 1。", "version": session["version"]},
+    )
+
+
+def test_migration_creates_ai_evaluation_tables(settings, monkeypatch) -> None:
+    migrate_database(settings, monkeypatch)
+    engine = create_engine(settings.database_url)
+    try:
+        inspector = inspect(engine)
+        assert inspector.has_table("ai_evaluations")
+        assert inspector.has_table("external_call_records")
+    finally:
+        engine.dispose()
+
+
+def test_valid_evaluation_is_saved_with_call_record_and_feedback(
+    settings, monkeypatch
+) -> None:
+    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+        assert "正确计算加法" in schema["properties"]["coveredPoints"]["items"]["enum"]
+        assert "我先计算 1 加 1。" in prompt
+        return AIModelResponse("{\"choices\": []}", valid_evaluation_content(), 12)
+
+    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
+    with prepare_client(settings, monkeypatch) as client:
+        response = submit_text(client, create_started_session(client))
+
+    assert response.status_code == 200
+    saved_session = response.json()
+    assert saved_session["status"] == "IN_PROGRESS"
+    assert saved_session["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert saved_session["latestEvaluation"]["feedback"] == "计算过程正确，请补充最后的结果。"
+
+    engine = create_engine(settings.database_url)
+    try:
+        with engine.connect() as connection:
+            evaluation = connection.execute(
+                text(
+                    "SELECT validation_status, covered_points, validation_errors "
+                    "FROM ai_evaluations"
+                )
+            ).mappings().one()
+            call = connection.execute(
+                text("SELECT provider, model, status, attempt_number FROM external_call_records")
+            ).mappings().one()
+    finally:
+        engine.dispose()
+    assert evaluation["validation_status"] == "VALID"
+    assert json.loads(evaluation["covered_points"]) == ["正确计算加法"]
+    assert json.loads(evaluation["validation_errors"]) == []
+    assert dict(call) == {
+        "provider": "test-ai",
+        "model": "test-ai-model",
+        "status": "SUCCESS",
+        "attempt_number": 1,
+    }
+
+
+def test_schema_retry_exhaustion_enters_need_human_without_support_count(
+    settings, monkeypatch
+) -> None:
+    invalid_content = json.dumps(
+        {
+            "correctness": "CORRECT",
+            "completeness": "INCOMPLETE",
+            "coveredPoints": ["正确计算加法"],
+            "missingPoints": ["得出结果 2"],
+            "errorEvidence": [],
+            "feedback": "请补充结果。",
+            "confidence": 1,
+            "nextAction": "GIVE_HINT",
+            "needHumanReason": None,
+        }
+    )
+
+    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+        return AIModelResponse("{\"choices\": []}", invalid_content, 8)
+
+    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
+    with prepare_client(settings, monkeypatch) as client:
+        response = submit_text(client, create_started_session(client))
+
+    assert response.status_code == 200
+    saved_session = response.json()
+    assert saved_session["status"] == "NEED_HUMAN"
+    assert saved_session["supportCountRound"] == 0
+    assert saved_session["supportCountTotal"] == 0
+    assert "AI 结构化评价" in saved_session["needHumanReason"]
+
+    engine = create_engine(settings.database_url)
+    try:
+        with engine.connect() as connection:
+            invalid_count = connection.execute(
+                text("SELECT COUNT(*) FROM ai_evaluations WHERE validation_status = 'INVALID'")
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    assert invalid_count == settings.ai_schema_max_retries + 1
+
+
+def test_complete_evaluation_sets_completion_with_deterministic_label(
+    settings, monkeypatch
+) -> None:
+    completed_content = json.dumps(
+        {
+            "correctness": "CORRECT",
+            "completeness": "COMPLETE",
+            "coveredPoints": ["正确计算加法", "得出结果 2"],
+            "missingPoints": [],
+            "errorEvidence": [],
+            "feedback": "你的讲解正确且完整。",
+            "confidence": 1,
+            "nextAction": "COMPLETE",
+            "needHumanReason": None,
+        }
+    )
+
+    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+        return AIModelResponse("{\"choices\": []}", completed_content, 8)
+
+    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
+    with prepare_client(settings, monkeypatch) as client:
+        response = submit_text(client, create_started_session(client))
+
+    assert response.status_code == 200
+    saved_session = response.json()
+    assert saved_session["status"] == "COMPLETED"
+    assert saved_session["completionType"] == "INDEPENDENT"
+    assert saved_session["supportCountRound"] == 0
+    assert saved_session["supportCountTotal"] == 0
+
+
+def test_transport_retry_exhaustion_keeps_confirmed_text_for_retry(
+    settings, monkeypatch
+) -> None:
+    calls = 0
+
+    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+        nonlocal calls
+        calls += 1
+        if calls <= settings.ai_transport_max_retries + 1:
+            raise AITransportError(
+                error_type="AI_SERVICE_ERROR",
+                message="测试模型服务不可用",
+                duration_ms=5,
+            )
+        return AIModelResponse("{\"choices\": []}", valid_evaluation_content(), 9)
+
+    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
+    monkeypatch.setattr("app.services.ai_evaluation.time.sleep", lambda _: None)
+    with prepare_client(settings, monkeypatch) as client:
+        first_response = submit_text(client, create_started_session(client))
+        first_session = first_response.json()
+        retry_response = client.post(
+            f"/api/sessions/{first_session['id']}/evaluate",
+            json={"version": first_session["version"]},
+        )
+
+    assert first_response.status_code == 200
+    assert first_session["status"] == "IN_PROGRESS"
+    assert first_session["flowStage"] == "CONFIRMING_TEXT"
+    assert retry_response.status_code == 200
+    assert retry_response.json()["flowStage"] == "WAIT_STUDENT_ACTION"
+
+    engine = create_engine(settings.database_url)
+    try:
+        with engine.connect() as connection:
+            attempt_count = connection.execute(
+                text("SELECT COUNT(*) FROM explanation_attempts")
+            ).scalar_one()
+            error_count = connection.execute(
+                text("SELECT COUNT(*) FROM external_call_records WHERE status = 'ERROR'")
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    assert attempt_count == 1
+    assert error_count == settings.ai_transport_max_retries + 1

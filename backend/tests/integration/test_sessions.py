@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, text
@@ -8,6 +9,24 @@ from sqlalchemy import create_engine, inspect, text
 from alembic import command
 from app.core.config import Settings
 from app.main import create_app
+from app.services.ai_evaluation import AIModelClient, AIModelResponse
+
+
+@pytest.fixture(autouse=True)
+def stub_ai_evaluation(monkeypatch) -> None:
+    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+        return AIModelResponse(
+            raw_response='{"choices": []}',
+            content=(
+                '{"correctness":"CORRECT","completeness":"INCOMPLETE",'
+                '"coveredPoints":["正确计算加法"],"missingPoints":["得出结果 2"],'
+                '"errorEvidence":[],"feedback":"请补充结果。","confidence":1,'
+                '"nextAction":"ASK_FOCUSED_QUESTION","needHumanReason":null}'
+            ),
+            duration_ms=1,
+        )
+
+    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
 
 
 def question_payload() -> dict[str, object]:
@@ -119,8 +138,9 @@ def test_know_choice_opens_text_input_and_text_is_saved(settings: Settings, monk
 
     assert submit_response.status_code == 200
     submitted = submit_response.json()
-    assert submitted["flowStage"] == "AI_EVALUATING"
-    assert submitted["version"] == 2
+    assert submitted["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert submitted["version"] == 3
+    assert submitted["latestEvaluation"]["feedback"] == "请补充结果。"
 
     engine = create_engine(settings.database_url)
     try:
