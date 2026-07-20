@@ -1,5 +1,8 @@
 ﻿$ErrorActionPreference = "Stop"
 
+.\.venv\Scripts\python.exe -m alembic -c backend\alembic.ini upgrade head
+.\.venv\Scripts\python.exe -m alembic -c backend\alembic.ini current
+
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $projectRoot ".env"
 
