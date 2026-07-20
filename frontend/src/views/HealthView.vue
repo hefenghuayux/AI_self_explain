@@ -13,6 +13,9 @@ import HealthStatus from "../components/HealthStatus.vue"
       </template>
       <p class="intro">阶段 01：项目骨架与配置</p>
       <HealthStatus />
+      <RouterLink class="question-link" to="/questions">
+        <el-button type="primary">进入题目管理</el-button>
+      </RouterLink>
     </el-card>
   </main>
 </template>
@@ -46,5 +49,10 @@ h1 {
 .intro {
   margin: 0 0 24px;
   color: #6b7280;
+}
+
+.question-link {
+  display: inline-block;
+  margin-top: 20px;
 }
 </style>
