@@ -4,6 +4,7 @@ import HealthView from "../views/HealthView.vue"
 import QuestionDetailView from "../views/QuestionDetailView.vue"
 import QuestionFormView from "../views/QuestionFormView.vue"
 import QuestionListView from "../views/QuestionListView.vue"
+import SessionView from "../views/SessionView.vue"
 
 export default createRouter({
   history: createWebHistory(),
@@ -17,5 +18,6 @@ export default createRouter({
       component: QuestionFormView,
     },
     { path: "/questions/:questionId", name: "question-detail", component: QuestionDetailView },
+    { path: "/sessions/:sessionId", name: "session", component: SessionView },
   ],
 })

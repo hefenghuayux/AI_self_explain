@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue"
-import { useRoute } from "vue-router"
+import { useRoute, useRouter } from "vue-router"
 
 import { archiveQuestion, fetchQuestion, restoreQuestion } from "../api/questions"
+import { createSession } from "../api/sessions"
 import type { Question } from "../types/question"
 
 const route = useRoute()
+const router = useRouter()
 const question = ref<Question>()
 const loading = ref(true)
 const errorMessage = ref("")
 const changingArchiveState = ref(false)
+const creatingSession = ref(false)
 
 onMounted(async () => {
   try {
@@ -37,6 +40,22 @@ async function changeArchiveState() {
     changingArchiveState.value = false
   }
 }
+
+async function startSession() {
+  if (!question.value) {
+    return
+  }
+  creatingSession.value = true
+  errorMessage.value = ""
+  try {
+    const session = await createSession(String(question.value.id))
+    await router.push(`/sessions/${session.id}`)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    creatingSession.value = false
+  }
+}
 </script>
 
 <template>
@@ -53,6 +72,14 @@ async function changeArchiveState() {
             <RouterLink v-if="question && !question.archivedAt" :to="`/questions/${question.id}/edit`">
               <el-button type="primary">编辑题目</el-button>
             </RouterLink>
+            <el-button
+              v-if="question && !question.archivedAt"
+              type="success"
+              :loading="creatingSession"
+              @click="startSession"
+            >
+              开始自讲
+            </el-button>
             <el-button
               v-if="question"
               :type="question.archivedAt ? 'success' : 'warning'"
