@@ -32,6 +32,7 @@ def test_question_input_accepts_complete_material_and_strips_whitespace() -> Non
         ("commonErrors", []),
         ("alternativeSolutions", [""]),
         ("layeredHints", [" "]),
+        ("guidedQuestions", []),
         ("guidedQuestions", [" "]),
         ("fullSolution", " "),
     ],

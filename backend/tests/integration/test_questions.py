@@ -4,11 +4,12 @@ from pathlib import Path
 import pytest
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, insert, inspect
 
 from alembic import command
 from app.core.config import Settings
 from app.main import create_app
+from app.models.question import Question
 
 
 def question_payload() -> dict[str, object]:
@@ -69,6 +70,36 @@ def test_question_can_be_saved_and_read_completely(question_client: TestClient) 
     assert [item["id"] for item in list_response.json()] == [created["id"]]
     assert detail_response.status_code == 200
     assert detail_response.json() == created
+
+
+def test_migrated_question_with_empty_guided_questions_can_be_read(
+    question_client: TestClient, migrated_settings: Settings
+) -> None:
+    engine = create_engine(migrated_settings.database_url)
+    try:
+        with engine.begin() as connection:
+            result = connection.execute(
+                insert(Question).values(
+                    question_content="历史题目",
+                    standard_answer="历史答案",
+                    rubric_points=["历史评分点"],
+                    common_errors=["历史常见错误"],
+                    alternative_solutions=["历史其他解法"],
+                    layered_hints=["历史提示"],
+                    full_solution="历史完整解析",
+                )
+            )
+            question_id = result.inserted_primary_key[0]
+    finally:
+        engine.dispose()
+
+    list_response = question_client.get("/api/questions")
+    detail_response = question_client.get(f"/api/questions/{question_id}")
+
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["guidedQuestions"] == []
+    assert detail_response.status_code == 200
+    assert detail_response.json()["guidedQuestions"] == []
 
 
 @pytest.mark.parametrize(

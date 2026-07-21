@@ -40,6 +40,8 @@ class QuestionInput(QuestionSchema):
 
 
 class QuestionResponse(QuestionInput):
+    # 阶段 07 迁移后的历史题目允许为空，后续编辑仍由 QuestionInput 强制补录。
+    guided_questions: list[RequiredText]
     id: int
     archived_at: datetime | None
     created_at: datetime
