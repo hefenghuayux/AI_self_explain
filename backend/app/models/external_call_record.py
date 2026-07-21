@@ -11,6 +11,7 @@ class ExternalCallRecord(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"), index=True, nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String(100), index=True)
     call_type: Mapped[str] = mapped_column(String(30), nullable=False)
     provider: Mapped[str] = mapped_column(String(100), nullable=False)
     model: Mapped[str] = mapped_column(String(200), nullable=False)

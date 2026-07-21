@@ -17,7 +17,9 @@ from app.rules.session_lifecycle import (
     FLOW_STAGE_WAIT_INITIAL_CHOICE,
     FLOW_STAGE_WAIT_STUDENT_ACTION,
     STATUS_IN_PROGRESS,
+    STATUS_PAUSED,
     TERMINAL_STATUSES,
+    can_pause,
 )
 from app.schemas.session import (
     AppealInput,
@@ -70,6 +72,15 @@ def validate_in_progress(session: Session) -> None:
         reject_operation(f"当前会话状态不允许此操作：{session.status}")
 
 
+def validate_pauseable(session: Session) -> None:
+    if session.status in TERMINAL_STATUSES:
+        reject_operation(f"终态会话不能暂停：{session.status}")
+    if session.status != STATUS_IN_PROGRESS:
+        reject_operation(f"当前会话状态不允许暂停：{session.status}")
+    if not can_pause(session.flow_stage):
+        reject_operation(f"当前流程阶段不能暂停：{session.flow_stage}")
+
+
 def to_session_response(repository: SessionRepository, session: Session) -> SessionResponse:
     latest_support = repository.get_latest_valid_support(session.id)
     pending_voice_attempt = repository.get_pending_voice_attempt(session.id)
@@ -117,6 +128,29 @@ def get_learning_timeline(
     return repository.get_student_timeline(session_id)
 
 
+@router.post("/{session_id}/pause", response_model=SessionResponse)
+def pause_session(
+    session_id: int, action_input: StudentActionInput, database_session: DatabaseSession
+) -> SessionResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id)
+    validate_version(session, action_input.version)
+    validate_pauseable(session)
+    return to_session_response(repository, repository.pause(session))
+
+
+@router.post("/{session_id}/resume", response_model=SessionResponse)
+def resume_session(
+    session_id: int, action_input: StudentActionInput, database_session: DatabaseSession
+) -> SessionResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id)
+    validate_version(session, action_input.version)
+    if session.status != STATUS_PAUSED:
+        reject_operation(f"当前会话状态不允许恢复：{session.status}")
+    return to_session_response(repository, repository.resume(session))
+
+
 @router.post("/{session_id}/initial-choice", response_model=SessionResponse)
 def choose_initial_choice(
     session_id: int,
@@ -148,9 +182,7 @@ def submit_text_attempt(
     if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT:
         reject_operation(f"当前流程阶段不能提交文本：{session.flow_stage}")
     session, attempt = repository.submit_text(session, attempt_input.confirmed_text)
-    evaluated_session = AIEvaluationService(
-        database_session, request.app.state.settings
-    ).evaluate(
+    evaluated_session = AIEvaluationService(database_session, request.app.state.settings).evaluate(
         question=database_session.get(Question, session.question_id),
         session=session,
         attempt=attempt,
@@ -184,9 +216,9 @@ def confirm_voice_attempt(
         raise RuntimeError(
             f"会话 {confirmed_session.id} 关联题目不存在：{confirmed_session.question_id}"
         )
-    evaluated_session = AIEvaluationService(
-        database_session, request.app.state.settings
-    ).evaluate(question=question, session=confirmed_session, attempt=confirmed_attempt)
+    evaluated_session = AIEvaluationService(database_session, request.app.state.settings).evaluate(
+        question=question, session=confirmed_session, attempt=confirmed_attempt
+    )
     return to_session_response(repository, evaluated_session)
 
 
@@ -386,9 +418,9 @@ def retry_ai_evaluation(
     question = database_session.get(Question, session.question_id)
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
-    evaluated_session = AIEvaluationService(
-        database_session, request.app.state.settings
-    ).evaluate(question=question, session=session, attempt=attempt)
+    evaluated_session = AIEvaluationService(database_session, request.app.state.settings).evaluate(
+        question=question, session=session, attempt=attempt
+    )
     return to_session_response(repository, evaluated_session)
 
 
@@ -413,9 +445,7 @@ async def start_realtime_asr(
             )
             return service, attempt_number, started_at
         except (ASRServiceError, AudioStorageError, TimeoutError) as error:
-            error_type = (
-                "ASR_TIMEOUT" if isinstance(error, TimeoutError) else "ASR_SERVICE_ERROR"
-            )
+            error_type = "ASR_TIMEOUT" if isinstance(error, TimeoutError) else "ASR_SERVICE_ERROR"
             error_message = str(error) or "建立实时 ASR 连接超时"
             repository.record_external_call(
                 session=session,

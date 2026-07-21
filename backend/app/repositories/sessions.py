@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DatabaseSession
 
 from app.core.config import Settings
+from app.core.logging import current_request_id
 from app.models.ai_evaluation import AIEvaluation
 from app.models.audio_file import AudioFile
 from app.models.explanation_attempt import ExplanationAttempt
@@ -22,6 +23,7 @@ from app.rules.session_lifecycle import (
     STATUS_COMPLETED,
     STATUS_IN_PROGRESS,
     STATUS_NEED_HUMAN,
+    STATUS_PAUSED,
     STATUS_STOPPED_LIMIT,
     flow_stage_after_initial_choice,
 )
@@ -53,6 +55,7 @@ def session_snapshot(session: Session) -> dict[str, object]:
         "coveredPointsAll": session.covered_points_all,
         "currentDraft": session.current_draft,
         "version": session.version,
+        "pausedFromStage": session.paused_from_stage,
     }
 
 
@@ -97,6 +100,63 @@ class SessionRepository:
 
     def get(self, session_id: int) -> Session | None:
         return self.database_session.get(Session, session_id)
+
+    def get_state_events(self, session_id: int) -> list[StateTransitionEvent]:
+        return list(
+            self.database_session.scalars(
+                select(StateTransitionEvent)
+                .where(StateTransitionEvent.session_id == session_id)
+                .order_by(StateTransitionEvent.created_at, StateTransitionEvent.id)
+            )
+        )
+
+    def get_external_calls(self, session_id: int) -> list[ExternalCallRecord]:
+        return list(
+            self.database_session.scalars(
+                select(ExternalCallRecord)
+                .where(ExternalCallRecord.session_id == session_id)
+                .order_by(ExternalCallRecord.created_at, ExternalCallRecord.id)
+            )
+        )
+
+    def get_external_call_errors(self, session_id: int) -> list[ExternalCallRecord]:
+        return list(
+            self.database_session.scalars(
+                select(ExternalCallRecord)
+                .where(
+                    ExternalCallRecord.session_id == session_id,
+                    ExternalCallRecord.error_type.is_not(None),
+                )
+                .order_by(ExternalCallRecord.created_at, ExternalCallRecord.id)
+            )
+        )
+
+    def pause(self, session: Session) -> Session:
+        before_snapshot = session_snapshot(session)
+        session.paused_from_stage = session.flow_stage
+        session.status = STATUS_PAUSED
+        session.version += 1
+        self._record_transition(
+            session=session, trigger_type="PAUSE_SESSION", before_snapshot=before_snapshot
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
+    def resume(self, session: Session) -> Session:
+        before_snapshot = session_snapshot(session)
+        if not session.paused_from_stage:
+            raise ValueError(f"会话 {session.id} 缺少暂停前流程阶段")
+        session.status = STATUS_IN_PROGRESS
+        session.flow_stage = session.paused_from_stage
+        session.paused_from_stage = None
+        session.version += 1
+        self._record_transition(
+            session=session, trigger_type="RESUME_SESSION", before_snapshot=before_snapshot
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
 
     def get_latest_attempt(self, session_id: int) -> ExplanationAttempt | None:
         statement = (
@@ -180,7 +240,7 @@ class SessionRepository:
                     {
                         "id": f"support-{support.id}",
                         "event_type": "SUPPORT",
-                    "content": support.follow_up_content or support.content,
+                        "content": support.follow_up_content or support.content,
                         "correctness": None,
                         "completeness": None,
                         "action": support.support_type,
@@ -385,10 +445,12 @@ class SessionRepository:
         error_type: str | None = None,
         error_message: str | None = None,
         raw_response: str | None = None,
+        request_id: str | None = None,
     ) -> None:
         self.database_session.add(
             ExternalCallRecord(
                 session_id=session.id,
+                request_id=request_id or current_request_id(),
                 call_type=call_type,
                 provider=provider,
                 model=model,
@@ -615,10 +677,7 @@ class SessionRepository:
         )
         self.database_session.commit()
         self.database_session.refresh(session)
-        return (
-            session.no_progress_help_request_count
-            > settings.guided_question_request_limit
-        )
+        return session.no_progress_help_request_count > settings.guided_question_request_limit
 
     def record_guided_questions(
         self,
@@ -983,6 +1042,7 @@ class SessionRepository:
                 after_snapshot=session_snapshot(session),
                 related_attempt_id=related_attempt_id,
                 related_evaluation_id=related_evaluation_id,
+                request_id=current_request_id(),
             )
         )
 
