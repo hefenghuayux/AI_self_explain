@@ -8,31 +8,29 @@ import * as questionApi from "../src/api/questions"
 import SessionView from "../src/views/SessionView.vue"
 import type { Session } from "../src/types/session"
 
-vi.mock("../src/api/questions", () => ({
-  fetchQuestion: vi.fn(),
-}))
-
+vi.mock("../src/api/questions", () => ({ fetchQuestion: vi.fn() }))
 vi.mock("../src/api/sessions", () => ({
+  askDoubt: vi.fn(),
   continueExplaining: vi.fn(),
   fetchLearningTimeline: vi.fn(),
   fetchSession: vi.fn(),
   requestSupport: vi.fn(),
   retryEvaluation: vi.fn(),
   submitAppeal: vi.fn(),
+  submitGuidedAnswers: vi.fn(),
   submitInitialChoice: vi.fn(),
   submitSolutionUnderstanding: vi.fn(),
   submitTextAttempt: vi.fn(),
 }))
 
+const askDoubt = vi.mocked(sessionApi.askDoubt)
 const continueExplaining = vi.mocked(sessionApi.continueExplaining)
 const fetchLearningTimeline = vi.mocked(sessionApi.fetchLearningTimeline)
 const fetchSession = vi.mocked(sessionApi.fetchSession)
 const fetchQuestion = vi.mocked(questionApi.fetchQuestion)
 const requestSupport = vi.mocked(sessionApi.requestSupport)
-const retryEvaluation = vi.mocked(sessionApi.retryEvaluation)
-const submitAppeal = vi.mocked(sessionApi.submitAppeal)
+const submitGuidedAnswers = vi.mocked(sessionApi.submitGuidedAnswers)
 const submitInitialChoice = vi.mocked(sessionApi.submitInitialChoice)
-const submitSolutionUnderstanding = vi.mocked(sessionApi.submitSolutionUnderstanding)
 const submitTextAttempt = vi.mocked(sessionApi.submitTextAttempt)
 
 function createSession(overrides: Partial<Session> = {}): Session {
@@ -45,10 +43,12 @@ function createSession(overrides: Partial<Session> = {}): Session {
     supportCountRound: 0,
     supportCountTotal: 0,
     noProgressCount: 0,
+    noProgressHelpRequestCount: 0,
     solutionExposed: false,
     completionType: null,
     coveredPointsCurrentRound: [],
     coveredPointsAll: [],
+    currentDraft: "",
     version: 1,
     initialChoice: null,
     needHumanReason: null,
@@ -100,187 +100,78 @@ describe("SessionView", () => {
     expect(wrapper.get('[data-testid="question-content"]').text()).toBe("计算 1 + 1。")
   })
 
-  it("records the initial KNOW choice with the current session version", async () => {
+  it("submits the initial draft when the student chooses to submit an explanation", async () => {
     fetchSession.mockResolvedValue(createSession())
-    submitInitialChoice.mockResolvedValue(
-      createSession({ flowStage: "CAPTURING_INPUT", version: 2, initialChoice: "KNOW" }),
-    )
+    submitInitialChoice.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 2, initialChoice: "KNOW" }))
+    submitTextAttempt.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 3, currentDraft: "1 加 1 等于 2。" }))
     const wrapper = await mountSessionView()
 
-    await wrapper.get('[data-testid="initial-choice-know"]').trigger("click")
+    await wrapper.get('[data-testid="main-draft"]').setValue("1 加 1 等于 2。")
+    await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
     await flushPromises()
 
     expect(submitInitialChoice).toHaveBeenCalledWith("12", "KNOW", 1)
-    expect(wrapper.text()).toContain("请用自己的话讲解")
+    expect(submitTextAttempt).toHaveBeenCalledWith("12", "1 加 1 等于 2。", 2)
   })
 
-  it("does not submit whitespace-only text", async () => {
-    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", initialChoice: "KNOW" }))
+  it("reminds once before allowing an empty draft to request support", async () => {
+    fetchSession.mockResolvedValue(createSession())
     const wrapper = await mountSessionView()
 
-    await wrapper.get("textarea").setValue("   ")
-    await wrapper.get('[data-testid="submit-text"]').trigger("click")
+    await wrapper.get('[data-testid="request-support"]').trigger("click")
     await flushPromises()
-
-    expect(submitTextAttempt).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain("请输入自讲内容后再确认提交")
+    expect(submitInitialChoice).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain("请先输入当前的题干理解")
   })
 
-  it("submits confirmed text with the session version", async () => {
-    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", initialChoice: "KNOW" }))
-    submitTextAttempt.mockResolvedValue(
-      createSession({
-        flowStage: "WAIT_STUDENT_ACTION",
-        version: 2,
-        initialChoice: "KNOW",
-        latestEvaluation: {
-          id: 3,
-          correctness: "CORRECT",
-          completeness: "INCOMPLETE",
-          coveredPoints: ["正确计算加法"],
-          missingPoints: ["得出结果 2"],
-          errorEvidence: [],
-          feedback: "你已经说明了加法过程，请补充结果。",
-          confidence: 1,
-          nextAction: "ASK_FOCUSED_QUESTION",
-          needHumanReason: null,
-          promptVersion: "test-v1",
-          modelProvider: "test-ai",
-          modelName: "test-ai-model",
-          createdAt: "2026-07-20T00:00:00Z",
-        },
-      }),
-    )
-    fetchLearningTimeline
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          id: "evaluation-3",
-          eventType: "EVALUATION",
-          content: "你已经说明了加法过程，请补充结果。",
-          correctness: "CORRECT",
-          completeness: "INCOMPLETE",
-          action: "ASK_FOCUSED_QUESTION",
-          createdAt: "2026-07-20T00:00:00Z",
-        },
-      ])
+  it("sends the retained main draft when requesting guided support", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 4, currentDraft: "我知道有两个 1。" }))
+    requestSupport.mockResolvedValue(createSession({ flowStage: "WAIT_GUIDED_ANSWERS", version: 5, currentDraft: "我知道有两个 1。" }))
     const wrapper = await mountSessionView()
 
-    await wrapper.get("textarea").setValue("我先说明计算过程。")
-    await wrapper.get('[data-testid="submit-text"]').trigger("click")
-    await flushPromises()
-
-    expect(submitTextAttempt).toHaveBeenCalledWith("12", "我先说明计算过程。", 1)
-    expect(wrapper.get('[data-testid="timeline-content"]').text()).toContain("请补充结果")
-    expect(wrapper.text()).toContain("正确性：正确")
-    expect(wrapper.text()).toContain("完整性：不完整")
-    expect(wrapper.text()).not.toContain("CORRECT")
-    expect(wrapper.text()).not.toContain("已覆盖评分点")
-  })
-
-  it("retries an evaluation without requiring the student to re-enter text", async () => {
-    fetchSession.mockResolvedValue(
-      createSession({ flowStage: "CONFIRMING_TEXT", version: 4, initialChoice: "KNOW" }),
-    )
-    retryEvaluation.mockResolvedValue(
-      createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 6, initialChoice: "KNOW" }),
-    )
-    const wrapper = await mountSessionView()
-
-    await wrapper.get('[data-testid="retry-evaluation"]').trigger("click")
-    await flushPromises()
-
-    expect(retryEvaluation).toHaveBeenCalledWith("12", 4)
-  })
-
-  it("allows the student to continue or request another support", async () => {
-    fetchSession.mockResolvedValue(
-      createSession({
-        flowStage: "WAIT_STUDENT_ACTION",
-        version: 4,
-        latestSupport: {
-          id: 8,
-          supportType: "GIVE_HINT",
-          round: 1,
-          status: "VALID",
-          content: "请先重新检查加法结果。",
-          createdAt: "2026-07-20T00:00:00Z",
-        },
-      }),
-    )
-    requestSupport.mockResolvedValue(
-      createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 5 }),
-    )
-    fetchLearningTimeline.mockResolvedValue([
-      {
-        id: "support-8",
-        eventType: "SUPPORT",
-        content: "请先重新检查加法结果。",
-        correctness: null,
-        completeness: null,
-        action: "GIVE_HINT",
-        createdAt: "2026-07-20T00:00:00Z",
-      },
-    ])
-    const wrapper = await mountSessionView()
-
-    expect(wrapper.get('[data-testid="timeline-content"]').text()).toContain("重新检查")
+    await wrapper.get('[data-testid="main-draft"]').setValue("我知道有两个 1，并想继续计算。")
     await wrapper.get('[data-testid="request-support"]').trigger("click")
     await flushPromises()
 
-    expect(requestSupport).toHaveBeenCalledWith("12", 4)
-    continueExplaining.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 6 }))
-    await wrapper.get('[data-testid="continue-explaining"]').trigger("click")
-    await flushPromises()
-
-    expect(continueExplaining).toHaveBeenCalledWith("12", 5)
+    expect(requestSupport).toHaveBeenCalledWith("12", "我知道有两个 1，并想继续计算。", 4)
   })
 
-  it("requires an appeal reason before submitting the appeal", async () => {
-    fetchSession.mockResolvedValue(
-      createSession({
-        flowStage: "WAIT_STUDENT_ACTION",
-        version: 4,
-        latestEvaluation: {
-          id: 3,
-          correctness: "CORRECT",
-          completeness: "INCOMPLETE",
-          coveredPoints: ["正确计算加法"],
-          missingPoints: ["得出结果 2"],
-          errorEvidence: [],
-          feedback: "请补充结果。",
-          confidence: 1,
-          nextAction: "ASK_FOCUSED_QUESTION",
-          needHumanReason: null,
-          promptVersion: "test-v1",
-          modelProvider: "test-ai",
-          modelName: "test-ai-model",
-          createdAt: "2026-07-20T00:00:00Z",
-        },
-      }),
-    )
+  it("submits all guided answers without creating another support request", async () => {
+    fetchSession.mockResolvedValue(createSession({
+      flowStage: "WAIT_GUIDED_ANSWERS",
+      version: 5,
+      latestSupport: {
+        id: 9,
+        supportType: "GIVE_HINT",
+        supportKind: "GUIDED_QUESTIONS",
+        round: 1,
+        status: "VALID",
+        content: "请回答问题。",
+        mainDraft: "我知道有两个 1。",
+        doubtText: null,
+        guidedQuestions: [
+          { id: "q1", question: "第一个 1 表示什么？" },
+          { id: "q2", question: "两个 1 合起来是多少？" },
+        ],
+        guidedAnswers: null,
+        followUpContent: null,
+        createdAt: "2026-07-20T00:00:00Z",
+      },
+    }))
+    submitGuidedAnswers.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 6 }))
     const wrapper = await mountSessionView()
 
-    await wrapper.get('[data-testid="submit-appeal"]').trigger("click")
+    const inputs = wrapper.findAll("textarea")
+    await inputs[1].setValue("一个数量")
+    await inputs[2].setValue("2")
+    await wrapper.get('[data-testid="submit-guided-answers"]').trigger("click")
     await flushPromises()
 
-    expect(submitAppeal).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain("请填写不同意 AI 判断的理由")
-  })
-
-  it("starts the second round only after the first full solution is understood", async () => {
-    fetchSession.mockResolvedValue(
-      createSession({ flowStage: "SHOWING_FULL_SOLUTION", version: 7, solutionExposed: true }),
-    )
-    submitSolutionUnderstanding.mockResolvedValue(
-      createSession({ flowStage: "CAPTURING_INPUT", round: 2, version: 8, solutionExposed: true }),
-    )
-    const wrapper = await mountSessionView()
-
-    await wrapper.get('[data-testid="understood-solution"]').trigger("click")
-    await flushPromises()
-
-    expect(submitSolutionUnderstanding).toHaveBeenCalledWith("12", true, 7)
-    expect(wrapper.text()).toContain("请用自己的话讲解")
+    expect(submitGuidedAnswers).toHaveBeenCalledWith("12", [
+      { questionId: "q1", answer: "一个数量" },
+      { questionId: "q2", answer: "2" },
+    ], 5)
+    expect(askDoubt).not.toHaveBeenCalled()
+    expect(continueExplaining).not.toHaveBeenCalled()
   })
 })

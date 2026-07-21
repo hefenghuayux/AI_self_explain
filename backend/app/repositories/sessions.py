@@ -15,6 +15,7 @@ from app.rules.session_lifecycle import (
     FLOW_STAGE_CAPTURING_INPUT,
     FLOW_STAGE_CONFIRMING_TEXT,
     FLOW_STAGE_SHOWING_FULL_SOLUTION,
+    FLOW_STAGE_WAIT_GUIDED_ANSWERS,
     FLOW_STAGE_WAIT_INITIAL_CHOICE,
     FLOW_STAGE_WAIT_STUDENT_ACTION,
     STATUS_COMPLETED,
@@ -31,6 +32,7 @@ from app.rules.teaching_cycle import (
     update_coverage,
 )
 from app.schemas.ai_evaluation import AIEvaluationOutput
+from app.schemas.support import GuidedAnswer, GuidedQuestion
 
 
 def session_snapshot(session: Session) -> dict[str, object]:
@@ -41,11 +43,13 @@ def session_snapshot(session: Session) -> dict[str, object]:
         "supportCountRound": session.support_count_round,
         "supportCountTotal": session.support_count_total,
         "noProgressCount": session.no_progress_count,
+        "noProgressHelpRequestCount": session.no_progress_help_request_count,
         "solutionExposed": session.solution_exposed,
         "completionType": session.completion_type,
         "needHumanReason": session.need_human_reason,
         "coveredPointsCurrentRound": session.covered_points_current_round,
         "coveredPointsAll": session.covered_points_all,
+        "currentDraft": session.current_draft,
         "version": session.version,
     }
 
@@ -63,9 +67,12 @@ class SessionRepository:
             support_count_round=0,
             support_count_total=0,
             no_progress_count=0,
+            no_progress_help_request_count=0,
             solution_exposed=False,
             covered_points_current_round=[],
             covered_points_all=[],
+            current_draft="",
+            last_support_draft="",
             version=0,
         )
         self.database_session.add(session)
@@ -111,7 +118,7 @@ class SessionRepository:
     def get_latest_valid_support(self, session_id: int) -> SupportEvent | None:
         statement = (
             select(SupportEvent)
-            .where(SupportEvent.session_id == session_id, SupportEvent.status == "VALID")
+            .where(SupportEvent.session_id == session_id)
             .order_by(SupportEvent.id.desc())
         )
         return self.database_session.scalars(statement).first()
@@ -120,7 +127,7 @@ class SessionRepository:
         support_events = list(
             self.database_session.scalars(
                 select(SupportEvent)
-                .where(SupportEvent.session_id == session_id, SupportEvent.status == "VALID")
+                .where(SupportEvent.session_id == session_id)
                 .order_by(SupportEvent.created_at, SupportEvent.id)
             )
         )
@@ -159,7 +166,7 @@ class SessionRepository:
                     {
                         "id": f"support-{support.id}",
                         "event_type": "SUPPORT",
-                        "content": support.content,
+                    "content": support.follow_up_content or support.content,
                         "correctness": None,
                         "completeness": None,
                         "action": support.support_type,
@@ -235,6 +242,8 @@ class SessionRepository:
         )
         self.database_session.add(attempt)
         self.database_session.flush()
+        session.current_draft = confirmed_text
+        session.last_support_draft = confirmed_text
         session.flow_stage = FLOW_STAGE_AI_EVALUATING
         session.version += 1
         self._record_transition(
@@ -348,6 +357,7 @@ class SessionRepository:
             model_name=model_name,
         )
         self.database_session.flush()
+        new_points = set(evaluation.covered_points) - set(session.covered_points_current_round)
         (
             session.covered_points_current_round,
             session.covered_points_all,
@@ -358,6 +368,8 @@ class SessionRepository:
             covered_points_all=session.covered_points_all,
             no_progress_count=session.no_progress_count,
         )
+        if new_points:
+            session.no_progress_help_request_count = 0
         decision = decide_evaluation(
             next_action=evaluation.next_action,
             no_progress_count=session.no_progress_count,
@@ -461,6 +473,220 @@ class SessionRepository:
         self.database_session.refresh(session)
         return session
 
+    def record_help_progress(
+        self,
+        *,
+        session: Session,
+        main_draft: str,
+        covered_points: list[str],
+        settings: Settings,
+    ) -> bool:
+        """记录本次求助前的草稿进展，并返回是否应给出当前步骤答案。"""
+        before_snapshot = session_snapshot(session)
+        normalized_draft = _normalize_draft(main_draft)
+        previous_draft = _normalize_draft(session.last_support_draft)
+        new_points: set[str] = set()
+        session.current_draft = main_draft
+        if normalized_draft and normalized_draft != previous_draft:
+            new_points = set(covered_points) - set(session.covered_points_current_round)
+            (
+                session.covered_points_current_round,
+                session.covered_points_all,
+                session.no_progress_count,
+            ) = update_coverage(
+                covered_points=covered_points,
+                covered_points_current_round=session.covered_points_current_round,
+                covered_points_all=session.covered_points_all,
+                no_progress_count=session.no_progress_count,
+            )
+        else:
+            session.no_progress_count += 1
+        session.last_support_draft = main_draft
+        if new_points:
+            session.no_progress_help_request_count = 0
+        else:
+            session.no_progress_help_request_count += 1
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="ASSESS_HELP_PROGRESS",
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return (
+            session.no_progress_help_request_count
+            > settings.guided_question_request_limit
+        )
+
+    def record_guided_questions(
+        self,
+        *,
+        session: Session,
+        main_draft: str,
+        doubt_text: str | None,
+        content: str,
+        questions: list[GuidedQuestion],
+        settings: Settings,
+    ) -> Session:
+        limited_session = self.resolve_support_limit(
+            session=session,
+            settings=settings,
+            trigger_type="SUPPORT_LIMIT_REACHED",
+        )
+        if limited_session is not None:
+            return limited_session
+        before_snapshot = session_snapshot(session)
+        self.database_session.add(
+            SupportEvent(
+                session_id=session.id,
+                evaluation_id=None,
+                support_type="GIVE_HINT",
+                round=session.round,
+                status="VALID",
+                content=content,
+                support_kind="GUIDED_QUESTIONS",
+                main_draft=main_draft,
+                doubt_text=doubt_text,
+                guided_questions=[item.model_dump() for item in questions],
+                guided_answers=None,
+                follow_up_content=None,
+            )
+        )
+        session.support_count_round += 1
+        session.support_count_total += 1
+        session.flow_stage = FLOW_STAGE_WAIT_GUIDED_ANSWERS
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="SEND_GUIDED_QUESTIONS",
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
+    def record_direct_help(
+        self,
+        *,
+        session: Session,
+        main_draft: str,
+        doubt_text: str | None,
+        content: str,
+        support_kind: str,
+        settings: Settings,
+    ) -> Session:
+        limited_session = self.resolve_support_limit(
+            session=session,
+            settings=settings,
+            trigger_type="SUPPORT_LIMIT_REACHED",
+        )
+        if limited_session is not None:
+            return limited_session
+        before_snapshot = session_snapshot(session)
+        self.database_session.add(
+            SupportEvent(
+                session_id=session.id,
+                evaluation_id=None,
+                support_type="GIVE_HINT",
+                round=session.round,
+                status="VALID",
+                content=content,
+                support_kind=support_kind,
+                main_draft=main_draft,
+                doubt_text=doubt_text,
+                guided_questions=None,
+                guided_answers=None,
+                follow_up_content=None,
+            )
+        )
+        session.current_draft = main_draft
+        session.support_count_round += 1
+        session.support_count_total += 1
+        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="SEND_DIRECT_HELP",
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
+    def record_full_solution_refusal(
+        self,
+        *,
+        session: Session,
+        main_draft: str,
+        doubt_text: str | None,
+        content: str,
+    ) -> Session:
+        before_snapshot = session_snapshot(session)
+        self.database_session.add(
+            SupportEvent(
+                session_id=session.id,
+                evaluation_id=None,
+                support_type="GIVE_HINT",
+                round=session.round,
+                status="REFUSED",
+                content=content,
+                support_kind="SIMPLE_DOUBT",
+                main_draft=main_draft,
+                doubt_text=doubt_text,
+                guided_questions=None,
+                guided_answers=None,
+                follow_up_content=None,
+            )
+        )
+        session.current_draft = main_draft
+        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="REFUSE_FULL_SOLUTION_REQUEST",
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
+    def record_guided_answers(
+        self,
+        *,
+        session: Session,
+        support_event: SupportEvent,
+        answers: list[GuidedAnswer],
+        follow_up_content: str,
+    ) -> Session:
+        before_snapshot = session_snapshot(session)
+        support_event.guided_answers = [item.model_dump() for item in answers]
+        support_event.follow_up_content = follow_up_content
+        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="SUBMIT_GUIDED_ANSWERS",
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
+    def get_pending_guided_support(self, session_id: int) -> SupportEvent | None:
+        statement = (
+            select(SupportEvent)
+            .where(
+                SupportEvent.session_id == session_id,
+                SupportEvent.support_kind == "GUIDED_QUESTIONS",
+            )
+            .order_by(SupportEvent.id.desc())
+        )
+        for support_event in self.database_session.scalars(statement):
+            if support_event.guided_answers is None:
+                return support_event
+        return None
+
     def return_to_wait_student_action_after_support_failure(
         self, *, session: Session, trigger_type: str
     ) -> Session:
@@ -530,6 +756,7 @@ class SessionRepository:
             session.round = 2
             session.support_count_round = 0
             session.no_progress_count = 0
+            session.no_progress_help_request_count = 0
             session.covered_points_current_round = []
             session.flow_stage = FLOW_STAGE_CAPTURING_INPUT
             trigger_type = "UNDERSTOOD_FIRST_SOLUTION"
@@ -693,6 +920,12 @@ class SessionRepository:
                 round=session.round,
                 status="VALID",
                 content=content,
+                support_kind="EVALUATION",
+                main_draft=session.current_draft,
+                doubt_text=None,
+                guided_questions=None,
+                guided_answers=None,
+                follow_up_content=None,
             )
         )
         session.support_count_round += 1
@@ -708,3 +941,7 @@ def student_need_human_message(trigger_type: str) -> str:
     if trigger_type == "APPLY_AI_EVALUATION":
         return "暂无法可靠判断，已转人工帮助。"
     return "当前无法自动继续，已转人工帮助。"
+
+
+def _normalize_draft(value: str) -> str:
+    return "\n".join(line.strip() for line in value.replace("\r\n", "\n").split("\n")).strip()

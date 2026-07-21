@@ -1,4 +1,4 @@
-import type { InitialChoice, LearningTimelineItem, Session } from "../types/session"
+import type { GuidedAnswer, InitialChoice, LearningTimelineItem, Session } from "../types/session"
 
 async function requestSessionApi<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -66,10 +66,33 @@ export function continueExplaining(sessionId: string, version: number): Promise<
   })
 }
 
-export function requestSupport(sessionId: string, version: number): Promise<Session> {
+export function requestSupport(sessionId: string, mainDraft: string, version: number): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}/request-support`, {
     method: "POST",
-    body: JSON.stringify({ version }),
+    body: JSON.stringify({ mainDraft, version }),
+  })
+}
+
+export function askDoubt(
+  sessionId: string,
+  mainDraft: string,
+  doubtText: string,
+  version: number,
+): Promise<Session> {
+  return requestSessionApi<Session>(`/api/sessions/${sessionId}/ask-doubt`, {
+    method: "POST",
+    body: JSON.stringify({ mainDraft, doubtText, version }),
+  })
+}
+
+export function submitGuidedAnswers(
+  sessionId: string,
+  answers: GuidedAnswer[],
+  version: number,
+): Promise<Session> {
+  return requestSessionApi<Session>(`/api/sessions/${sessionId}/guided-answers`, {
+    method: "POST",
+    body: JSON.stringify({ answers, version }),
   })
 }
 

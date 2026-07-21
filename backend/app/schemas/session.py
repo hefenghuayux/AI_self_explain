@@ -5,7 +5,7 @@ from pydantic import Field
 
 from app.schemas.ai_evaluation import AIEvaluationResponse, Completeness, Correctness, NextAction
 from app.schemas.question import QuestionSchema, RequiredText
-from app.schemas.support import SupportEventResponse
+from app.schemas.support import GuidedAnswer, SupportEventResponse
 
 SessionStatus = Literal["IN_PROGRESS", "COMPLETED", "STOPPED_LIMIT", "NEED_HUMAN", "PAUSED"]
 FlowStage = Literal[
@@ -15,9 +15,10 @@ FlowStage = Literal[
     "CONFIRMING_TEXT",
     "AI_EVALUATING",
     "WAIT_STUDENT_ACTION",
+    "WAIT_GUIDED_ANSWERS",
     "SHOWING_FULL_SOLUTION",
 ]
-InitialChoice = Literal["KNOW", "NOT_KNOW"]
+InitialChoice = Literal["KNOW", "NOT_KNOW", "HAS_QUESTION"]
 
 
 class CreateSessionInput(QuestionSchema):
@@ -42,6 +43,18 @@ class StudentActionInput(QuestionSchema):
     version: int = Field(ge=0)
 
 
+class HelpRequestInput(StudentActionInput):
+    main_draft: str = ""
+
+
+class DoubtRequestInput(HelpRequestInput):
+    doubt_text: RequiredText
+
+
+class GuidedAnswersInput(StudentActionInput):
+    answers: list[GuidedAnswer] = Field(min_length=1)
+
+
 class AppealInput(StudentActionInput):
     reason: RequiredText
 
@@ -51,7 +64,12 @@ class SolutionUnderstandingInput(StudentActionInput):
 
 
 TimelineEventType = Literal["EVALUATION", "SUPPORT", "FULL_SOLUTION", "NEED_HUMAN"]
-TimelineSupportType = Literal["GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"]
+TimelineSupportType = Literal[
+    "ASK_FOCUSED_QUESTION",
+    "GIVE_HINT",
+    "GIVE_CORRECTION",
+    "CORRECT_AND_ASK",
+]
 
 
 class LearningTimelineItemResponse(QuestionSchema):
@@ -74,11 +92,13 @@ class SessionResponse(QuestionSchema):
     support_count_round: int
     support_count_total: int
     no_progress_count: int
+    no_progress_help_request_count: int
     solution_exposed: bool
     completion_type: str | None
     need_human_reason: str | None
     covered_points_current_round: list[str]
     covered_points_all: list[str]
+    current_draft: str
     paused_from_stage: FlowStage | None
     version: int
     created_at: datetime

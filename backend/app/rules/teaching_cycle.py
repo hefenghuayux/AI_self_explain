@@ -2,7 +2,9 @@ from dataclasses import dataclass
 
 from app.core.config import Settings
 
-SUPPORT_TYPES = frozenset({"GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"})
+SUPPORT_TYPES = frozenset(
+    {"ASK_FOCUSED_QUESTION", "GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"}
+)
 
 
 @dataclass(frozen=True)
@@ -62,8 +64,6 @@ def decide_evaluation(
             next_flow_stage="WAIT_STUDENT_ACTION",
             need_human_reason=need_human_reason,
         )
-    if next_action == "ASK_FOCUSED_QUESTION" and no_progress_count >= settings.no_progress_limit:
-        return EvaluationDecision(action="GIVE_HINT")
     return EvaluationDecision(action=next_action)
 
 

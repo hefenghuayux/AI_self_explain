@@ -19,7 +19,7 @@ def test_update_coverage_tracks_new_points_only_for_current_round() -> None:
     assert no_progress == 2
 
 
-def test_no_progress_upgrades_focused_question_to_counted_hint(settings) -> None:
+def test_focused_question_remains_a_counted_teaching_action(settings) -> None:
     decision = decide_evaluation(
         next_action="ASK_FOCUSED_QUESTION",
         no_progress_count=settings.no_progress_limit,
@@ -30,7 +30,7 @@ def test_no_progress_upgrades_focused_question_to_counted_hint(settings) -> None
         need_human_reason=None,
     )
 
-    assert decision.action == "GIVE_HINT"
+    assert decision.action == "ASK_FOCUSED_QUESTION"
 
 
 def test_support_limits_are_derived_from_settings(settings) -> None:

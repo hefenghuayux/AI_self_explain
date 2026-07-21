@@ -25,8 +25,7 @@ def _question_payload() -> dict[str, object]:
 
 def _migrate_database(settings: Settings, monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_URL", settings.database_url)
-    alembic_config = Config(str(Path(__file__).parents[2] / "alembic.ini"))
-    command.upgrade(alembic_config, "head")
+    command.upgrade(Config(str(Path(__file__).parents[2] / "alembic.ini")), "head")
 
 
 def _client(settings: Settings, monkeypatch) -> TestClient:
@@ -44,8 +43,33 @@ def _create_session(client: TestClient) -> dict[str, object]:
 
 def _stub_ai(monkeypatch, evaluation: dict[str, object]) -> None:
     def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
-        if "教学支持生成器" in prompt:
-            content = {"content": "请先重新检查加法结果。"}
+        if "子问题作答评估器" in prompt:
+            content = {
+                "results": [
+                    {"questionId": "q1", "result": "CORRECT"},
+                    {"questionId": "q2", "result": "INCORRECT"},
+                ],
+                "content": "你已确认第一个条件；第二个问题的答案是 2，请把这些信息补进过程。",
+            }
+        elif "forceCurrentStepAnswer\": true" in prompt:
+            content = {
+                "action": "CURRENT_STEP_ANSWER",
+                "coveredPoints": [],
+                "missingPoints": ["正确计算加法", "得出结果 2"],
+                "content": "先把两个 1 合并，再写出这一步得到的结果。",
+                "questions": [],
+            }
+        elif "教学支持生成器" in prompt:
+            content = {
+                "action": "GUIDED_QUESTIONS",
+                "coveredPoints": [],
+                "missingPoints": ["正确计算加法", "得出结果 2"],
+                "content": "请先回答下面两个问题。",
+                "questions": [
+                    {"id": "q1", "question": "第一个 1 表示什么？"},
+                    {"id": "q2", "question": "两个 1 合起来是多少？"},
+                ],
+            }
         else:
             content = evaluation
         return AIModelResponse(raw_response="{}", content=json.dumps(content), duration_ms=1)
@@ -53,63 +77,92 @@ def _stub_ai(monkeypatch, evaluation: dict[str, object]) -> None:
     monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
 
 
-def test_not_know_generates_counted_hint_and_creates_audit_evidence(settings, monkeypatch) -> None:
+def _start_help(client: TestClient, session: dict[str, object]) -> dict[str, object]:
+    selected = client.post(
+        f"/api/sessions/{session['id']}/initial-choice",
+        json={"choice": "NOT_KNOW", "version": session["version"]},
+    )
+    assert selected.status_code == 200
+    return selected.json()
+
+
+def test_help_request_sends_guided_questions_and_counts_once(settings, monkeypatch) -> None:
     _stub_ai(monkeypatch, {})
     with _client(settings, monkeypatch) as client:
-        session = _create_session(client)
+        session = _start_help(client, _create_session(client))
         response = client.post(
-            f"/api/sessions/{session['id']}/initial-choice",
-            json={"choice": "NOT_KNOW", "version": session["version"]},
+            f"/api/sessions/{session['id']}/request-support",
+            json={"mainDraft": "我知道题目有两个 1。", "version": session["version"]},
+        )
+
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved["flowStage"] == "WAIT_GUIDED_ANSWERS"
+    assert saved["supportCountRound"] == 1
+    assert saved["latestSupport"]["supportKind"] == "GUIDED_QUESTIONS"
+    assert len(saved["latestSupport"]["guidedQuestions"]) == 2
+
+
+def test_guided_answers_are_a_follow_up_not_a_second_support(settings, monkeypatch) -> None:
+    _stub_ai(monkeypatch, {})
+    with _client(settings, monkeypatch) as client:
+        session = _start_help(client, _create_session(client))
+        prompted = client.post(
+            f"/api/sessions/{session['id']}/request-support",
+            json={"mainDraft": "我知道题目有两个 1。", "version": session["version"]},
+        ).json()
+        response = client.post(
+            f"/api/sessions/{session['id']}/guided-answers",
+            json={
+                "version": prompted["version"],
+                "answers": [
+                    {"questionId": "q1", "answer": "一个数量"},
+                    {"questionId": "q2", "answer": "3"},
+                ],
+            },
         )
 
     assert response.status_code == 200
     saved = response.json()
     assert saved["flowStage"] == "WAIT_STUDENT_ACTION"
     assert saved["supportCountRound"] == 1
-    assert saved["supportCountTotal"] == 1
-    assert saved["latestSupport"]["supportType"] == "GIVE_HINT"
-
-    engine = create_engine(settings.database_url)
-    try:
-        with engine.connect() as connection:
-            event = connection.execute(
-                text("SELECT support_type, status FROM support_events")
-            ).mappings().one()
-            transition = connection.execute(
-                text(
-                    "SELECT after_snapshot FROM state_transition_events "
-                    "WHERE trigger_type = 'SEND_GENERATED_HINT'"
-                )
-            ).scalar_one()
-    finally:
-        engine.dispose()
-    assert dict(event) == {"support_type": "GIVE_HINT", "status": "VALID"}
-    assert json.loads(transition)["supportCountTotal"] == 1
+    assert saved["latestSupport"]["followUpContent"].startswith("你已确认")
 
 
-def test_first_and_second_round_limits_do_not_create_threshold_support_event(
+def test_third_consecutive_no_progress_request_sends_current_step_answer(
     settings, monkeypatch
 ) -> None:
-    _stub_ai(
-        monkeypatch,
-        {
-            "correctness": "WRONG",
-            "completeness": "INCOMPLETE",
-            "coveredPoints": [],
-            "missingPoints": ["正确计算加法", "得出结果 2"],
-            "errorEvidence": [],
-            "feedback": "请重新检查加法步骤。",
-            "confidence": 1,
-            "nextAction": "CORRECT_AND_ASK",
-            "needHumanReason": None,
-        },
-    )
+    _stub_ai(monkeypatch, {})
     with _client(settings, monkeypatch) as client:
-        session = _create_session(client)
-        client.post(
-            f"/api/sessions/{session['id']}/initial-choice",
-            json={"choice": "NOT_KNOW", "version": session["version"]},
-        ).json()
+        session = _start_help(client, _create_session(client))
+        engine = create_engine(settings.database_url)
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE sessions SET no_progress_help_request_count = 2, "
+                        "last_support_draft = :draft WHERE id = :session_id"
+                    ),
+                    {"draft": "我没有思路。", "session_id": session["id"]},
+                )
+        finally:
+            engine.dispose()
+        response = client.post(
+            f"/api/sessions/{session['id']}/request-support",
+            json={"mainDraft": "我没有思路。", "version": session["version"]},
+        )
+
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert saved["latestSupport"]["supportKind"] == "CURRENT_STEP"
+    assert saved["supportCountRound"] == 1
+
+
+def test_support_limit_does_not_create_the_threshold_support_event(settings, monkeypatch) -> None:
+    _stub_ai(monkeypatch, {})
+    with _client(settings, monkeypatch) as client:
+        session = _start_help(client, _create_session(client))
         engine = create_engine(settings.database_url)
         try:
             with engine.begin() as connection:
@@ -126,61 +179,17 @@ def test_first_and_second_round_limits_do_not_create_threshold_support_event(
                 )
         finally:
             engine.dispose()
-        current = client.get(f"/api/sessions/{session['id']}").json()
-        first_limit = client.post(
+        response = client.post(
             f"/api/sessions/{session['id']}/request-support",
-            json={"version": current["version"]},
+            json={"mainDraft": "我没有思路。", "version": session["version"]},
         )
 
-        assert first_limit.status_code == 200
-        assert first_limit.json()["flowStage"] == "SHOWING_FULL_SOLUTION"
-        assert first_limit.json()["supportCountRound"] == settings.first_round_support_limit
-        second_round = client.post(
-            f"/api/sessions/{session['id']}/full-solution-understanding",
-            json={"understood": True, "version": first_limit.json()["version"]},
-        ).json()
-        engine = create_engine(settings.database_url)
-        try:
-            with engine.begin() as connection:
-                connection.execute(
-                    text(
-                        "UPDATE sessions SET support_count_round = :round_count "
-                        "WHERE id = :session_id"
-                    ),
-                    {
-                        "round_count": settings.second_round_support_limit - 1,
-                        "session_id": session["id"],
-                    },
-                )
-        finally:
-            engine.dispose()
-        second_limit = client.post(
-            f"/api/sessions/{session['id']}/text-attempts",
-            json={
-                "confirmedText": "我还不会。",
-                "version": second_round["version"],
-            },
-        )
-
-    assert second_round["round"] == 2
-    assert second_round["supportCountRound"] == 0
-    assert second_round["coveredPointsCurrentRound"] == []
-    assert second_limit.status_code == 200
-    assert second_limit.json()["status"] == "STOPPED_LIMIT"
-    assert second_limit.json()["supportCountTotal"] == settings.first_round_support_limit - 1
-
-    engine = create_engine(settings.database_url)
-    try:
-        with engine.connect() as connection:
-            event_count = connection.execute(
-                text("SELECT COUNT(*) FROM support_events")
-            ).scalar_one()
-    finally:
-        engine.dispose()
-    assert event_count == 1
+    assert response.status_code == 200
+    assert response.json()["flowStage"] == "SHOWING_FULL_SOLUTION"
+    assert response.json()["supportCountTotal"] == settings.first_round_support_limit - 1
 
 
-def test_appeal_ends_automatic_flow_without_changing_support_count(settings, monkeypatch) -> None:
+def test_focused_question_after_explanation_is_counted(settings, monkeypatch) -> None:
     evaluation = {
         "correctness": "CORRECT",
         "completeness": "INCOMPLETE",
@@ -199,48 +208,44 @@ def test_appeal_ends_automatic_flow_without_changing_support_count(settings, mon
             f"/api/sessions/{session['id']}/initial-choice",
             json={"choice": "KNOW", "version": session["version"]},
         ).json()
-        evaluated = client.post(
+        response = client.post(
             f"/api/sessions/{session['id']}/text-attempts",
             json={"confirmedText": "我先计算加法。", "version": selected["version"]},
-        ).json()
-        response = client.post(
-            f"/api/sessions/{session['id']}/appeal",
-            json={"reason": "我认为已经说明清楚。", "version": evaluated["version"]},
         )
 
     assert response.status_code == 200
-    appealed = response.json()
-    assert appealed["status"] == "NEED_HUMAN"
-    assert appealed["needHumanReason"] == "学生申诉：我认为已经说明清楚。"
-    assert appealed["supportCountRound"] == 0
-    assert appealed["supportCountTotal"] == 0
+    assert response.json()["supportCountRound"] == 1
+    assert response.json()["latestSupport"]["supportType"] == "ASK_FOCUSED_QUESTION"
 
 
-def test_invalid_support_structure_is_recorded_and_ends_in_need_human(
-    settings, monkeypatch
-) -> None:
+def test_full_solution_request_is_refused_without_counting_support(settings, monkeypatch) -> None:
     def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
-        return AIModelResponse(raw_response="{}", content="{}", duration_ms=1)
+        content = {
+            "action": "REFUSE_FULL_SOLUTION",
+            "coveredPoints": [],
+            "missingPoints": ["正确计算加法", "得出结果 2"],
+            "content": "我不能直接给出完整答案，请写出你当前的分析后再继续。",
+            "questions": [],
+        }
+        return AIModelResponse(raw_response="{}", content=json.dumps(content), duration_ms=1)
 
     monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
     with _client(settings, monkeypatch) as client:
         session = _create_session(client)
-        response = client.post(
+        selected = client.post(
             f"/api/sessions/{session['id']}/initial-choice",
-            json={"choice": "NOT_KNOW", "version": session["version"]},
+            json={"choice": "HAS_QUESTION", "version": session["version"]},
+        ).json()
+        response = client.post(
+            f"/api/sessions/{session['id']}/ask-doubt",
+            json={
+                "mainDraft": "",
+                "doubtText": "请直接给我完整答案。",
+                "version": selected["version"],
+            },
         )
 
     assert response.status_code == 200
-    assert response.json()["status"] == "NEED_HUMAN"
-    engine = create_engine(settings.database_url)
-    try:
-        with engine.connect() as connection:
-            errors = connection.execute(
-                text(
-                    "SELECT error_type FROM external_call_records "
-                    "WHERE call_type = 'AI_SUPPORT' ORDER BY id"
-                )
-            ).scalars().all()
-    finally:
-        engine.dispose()
-    assert errors == ["AI_SCHEMA_ERROR"] * (settings.ai_schema_max_retries + 1)
+    saved = response.json()
+    assert saved["supportCountRound"] == 0
+    assert saved["latestSupport"]["status"] == "REFUSED"

@@ -128,7 +128,7 @@ def test_timeline_records_solution_display_without_revealing_solution_content(
             engine.dispose()
         limit_response = client.post(
             f"/api/sessions/{started_session['id']}/request-support",
-            json={"version": started_session["version"]},
+            json={"mainDraft": "我还没有新的思路。", "version": started_session["version"]},
         )
         timeline_response = client.get(f"/api/sessions/{started_session['id']}/timeline")
 

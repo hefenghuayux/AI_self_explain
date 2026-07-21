@@ -1,4 +1,4 @@
-export type InitialChoice = "KNOW" | "NOT_KNOW"
+export type InitialChoice = "KNOW" | "NOT_KNOW" | "HAS_QUESTION"
 
 export type SessionStatus = "IN_PROGRESS" | "COMPLETED" | "STOPPED_LIMIT" | "NEED_HUMAN" | "PAUSED"
 
@@ -9,6 +9,7 @@ export type FlowStage =
   | "TRANSCRIBING"
   | "AI_EVALUATING"
   | "WAIT_STUDENT_ACTION"
+  | "WAIT_GUIDED_ANSWERS"
   | "SHOWING_FULL_SOLUTION"
 
 export interface ErrorEvidence {
@@ -43,11 +44,27 @@ export interface AIEvaluation {
 
 export interface SupportEvent {
   id: number
-  supportType: "GIVE_HINT" | "GIVE_CORRECTION" | "CORRECT_AND_ASK"
+  supportType: "ASK_FOCUSED_QUESTION" | "GIVE_HINT" | "GIVE_CORRECTION" | "CORRECT_AND_ASK"
   round: number
-  status: "VALID"
+  status: "VALID" | "REFUSED"
   content: string
+  supportKind: "EVALUATION" | "GUIDED_QUESTIONS" | "SIMPLE_DOUBT" | "CURRENT_STEP"
+  mainDraft: string | null
+  doubtText: string | null
+  guidedQuestions: GuidedQuestion[] | null
+  guidedAnswers: GuidedAnswer[] | null
+  followUpContent: string | null
   createdAt: string
+}
+
+export interface GuidedQuestion {
+  id: string
+  question: string
+}
+
+export interface GuidedAnswer {
+  questionId: string
+  answer: string
 }
 
 export interface LearningTimelineItem {
@@ -69,10 +86,12 @@ export interface Session {
   supportCountRound: number
   supportCountTotal: number
   noProgressCount: number
+  noProgressHelpRequestCount: number
   solutionExposed: boolean
   completionType: "INDEPENDENT" | "WITH_SUPPORT" | "AFTER_SOLUTION" | null
   coveredPointsCurrentRound: string[]
   coveredPointsAll: string[]
+  currentDraft: string
   version: number
   initialChoice: InitialChoice | null
   needHumanReason: string | null

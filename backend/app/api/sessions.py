@@ -10,6 +10,7 @@ from app.rules.session_lifecycle import (
     FLOW_STAGE_CAPTURING_INPUT,
     FLOW_STAGE_CONFIRMING_TEXT,
     FLOW_STAGE_SHOWING_FULL_SOLUTION,
+    FLOW_STAGE_WAIT_GUIDED_ANSWERS,
     FLOW_STAGE_WAIT_INITIAL_CHOICE,
     FLOW_STAGE_WAIT_STUDENT_ACTION,
     STATUS_IN_PROGRESS,
@@ -18,7 +19,10 @@ from app.rules.session_lifecycle import (
 from app.schemas.session import (
     AppealInput,
     CreateSessionInput,
+    DoubtRequestInput,
     EvaluationRetryInput,
+    GuidedAnswersInput,
+    HelpRequestInput,
     InitialChoiceInput,
     LearningTimelineItemResponse,
     SessionResponse,
@@ -26,6 +30,7 @@ from app.schemas.session import (
     StudentActionInput,
     TextAttemptInput,
 )
+from app.schemas.support import SupportEventResponse
 from app.services.ai_evaluation import AIEvaluationService
 from app.services.ai_support import AISupportService
 
@@ -60,10 +65,15 @@ def validate_in_progress(session: Session) -> None:
 
 
 def to_session_response(repository: SessionRepository, session: Session) -> SessionResponse:
+    latest_support = repository.get_latest_valid_support(session.id)
     return SessionResponse.model_validate(session).model_copy(
         update={
             "latest_evaluation": repository.get_latest_valid_evaluation(session.id),
-            "latest_support": repository.get_latest_valid_support(session.id),
+            "latest_support": (
+                SupportEventResponse.model_validate(latest_support)
+                if latest_support is not None
+                else None
+            ),
         }
     )
 
@@ -113,26 +123,6 @@ def choose_initial_choice(
     if session.flow_stage != FLOW_STAGE_WAIT_INITIAL_CHOICE:
         reject_operation(f"当前流程阶段不能选择初始选项：{session.flow_stage}")
     chosen_session = repository.choose_initial_choice(session, choice_input.choice)
-    if choice_input.choice == "NOT_KNOW":
-        question = database_session.get(Question, chosen_session.question_id)
-        if question is None:
-            raise RuntimeError(
-                f"会话 {chosen_session.id} 关联题目不存在：{chosen_session.question_id}"
-            )
-        limited_session = repository.resolve_support_limit(
-            session=chosen_session,
-            settings=request.app.state.settings,
-            trigger_type="FIRST_ROUND_SUPPORT_LIMIT_REACHED",
-        )
-        if limited_session is not None:
-            return to_session_response(repository, limited_session)
-        generating_session = repository.begin_support_generation(
-            chosen_session, "REQUEST_INITIAL_HINT"
-        )
-        support_service = AISupportService(database_session, request.app.state.settings)
-        chosen_session = support_service.generate_hint(
-            question=question, session=generating_session
-        )
     return to_session_response(repository, chosen_session)
 
 
@@ -178,7 +168,7 @@ def continue_explaining(
 @router.post("/{session_id}/request-support", response_model=SessionResponse)
 def request_support(
     session_id: int,
-    action_input: StudentActionInput,
+    action_input: HelpRequestInput,
     database_session: DatabaseSession,
     request: Request,
 ) -> SessionResponse:
@@ -198,10 +188,103 @@ def request_support(
     )
     if limited_session is not None:
         return to_session_response(repository, limited_session)
-    generating_session = repository.begin_support_generation(session, "REQUEST_FURTHER_HINT")
     support_service = AISupportService(database_session, request.app.state.settings)
-    generated_session = support_service.generate_hint(question=question, session=generating_session)
+    output = support_service.generate_request(
+        question=question,
+        session=session,
+        main_draft=action_input.main_draft,
+        doubt_text=None,
+        force_current_step=False,
+    )
+    if output is None:
+        return to_session_response(repository, session)
+    generated_session = apply_support_request_output(
+        repository=repository,
+        support_service=support_service,
+        question=question,
+        session=session,
+        main_draft=action_input.main_draft,
+        doubt_text=None,
+        output=output,
+        settings=request.app.state.settings,
+    )
     return to_session_response(repository, generated_session)
+
+
+@router.post("/{session_id}/ask-doubt", response_model=SessionResponse)
+def ask_doubt(
+    session_id: int,
+    action_input: DoubtRequestInput,
+    database_session: DatabaseSession,
+    request: Request,
+) -> SessionResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id)
+    validate_in_progress(session)
+    validate_version(session, action_input.version)
+    if session.flow_stage != FLOW_STAGE_WAIT_STUDENT_ACTION:
+        reject_operation(f"当前流程阶段不能提出疑问：{session.flow_stage}")
+    question = database_session.get(Question, session.question_id)
+    if question is None:
+        raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
+    support_service = AISupportService(database_session, request.app.state.settings)
+    output = support_service.generate_request(
+        question=question,
+        session=session,
+        main_draft=action_input.main_draft,
+        doubt_text=action_input.doubt_text,
+        force_current_step=False,
+    )
+    if output is None:
+        return to_session_response(repository, session)
+    generated_session = apply_support_request_output(
+        repository=repository,
+        support_service=support_service,
+        question=question,
+        session=session,
+        main_draft=action_input.main_draft,
+        doubt_text=action_input.doubt_text,
+        output=output,
+        settings=request.app.state.settings,
+    )
+    return to_session_response(repository, generated_session)
+
+
+@router.post("/{session_id}/guided-answers", response_model=SessionResponse)
+def submit_guided_answers(
+    session_id: int,
+    action_input: GuidedAnswersInput,
+    database_session: DatabaseSession,
+    request: Request,
+) -> SessionResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id)
+    validate_in_progress(session)
+    validate_version(session, action_input.version)
+    if session.flow_stage != FLOW_STAGE_WAIT_GUIDED_ANSWERS:
+        reject_operation(f"当前流程阶段不能提交子问题答案：{session.flow_stage}")
+    support_event = repository.get_pending_guided_support(session.id)
+    if support_event is None:
+        raise RuntimeError(f"会话 {session.id} 缺少待回答的子问题支持事件")
+    question = database_session.get(Question, session.question_id)
+    if question is None:
+        raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
+    support_service = AISupportService(database_session, request.app.state.settings)
+    assessment = support_service.assess_guided_answers(
+        question=question,
+        session=session,
+        support_event=support_event,
+        answers=action_input.answers,
+    )
+    if assessment is None:
+        return to_session_response(repository, session)
+    updated_session = repository.record_guided_answers(
+        session=session,
+        support_event=support_event,
+        answers=action_input.answers,
+        follow_up_content=assessment.content,
+    )
+    return to_session_response(repository, updated_session)
 
 
 @router.post("/{session_id}/appeal", response_model=SessionResponse)
@@ -267,3 +350,77 @@ def retry_ai_evaluation(
         database_session, request.app.state.settings
     ).evaluate(question=question, session=session, attempt=attempt)
     return to_session_response(repository, evaluated_session)
+
+
+def apply_support_request_output(
+    *,
+    repository: SessionRepository,
+    support_service: AISupportService,
+    question: Question,
+    session: Session,
+    main_draft: str,
+    doubt_text: str | None,
+    output,
+    settings,
+) -> Session:
+    if output.action == "REFUSE_FULL_SOLUTION":
+        return repository.record_full_solution_refusal(
+            session=session,
+            main_draft=main_draft,
+            doubt_text=doubt_text,
+            content=output.content,
+        )
+    if output.action == "SIMPLE_DOUBT_ANSWER":
+        return repository.record_direct_help(
+            session=session,
+            main_draft=main_draft,
+            doubt_text=doubt_text,
+            content=output.content,
+            support_kind="SIMPLE_DOUBT",
+            settings=settings,
+        )
+    if output.action == "CURRENT_STEP_ANSWER":
+        return repository.record_direct_help(
+            session=session,
+            main_draft=main_draft,
+            doubt_text=doubt_text,
+            content=output.content,
+            support_kind="CURRENT_STEP",
+            settings=settings,
+        )
+    if output.action != "GUIDED_QUESTIONS":
+        raise RuntimeError(f"不支持的教学支持动作：{output.action}")
+    force_current_step = repository.record_help_progress(
+        session=session,
+        main_draft=main_draft,
+        covered_points=output.covered_points,
+        settings=settings,
+    )
+    if force_current_step:
+        step_output = support_service.generate_request(
+            question=question,
+            session=session,
+            main_draft=main_draft,
+            doubt_text=doubt_text,
+            force_current_step=True,
+        )
+        if step_output is None:
+            return session
+        if step_output.action != "CURRENT_STEP_ANSWER":
+            raise RuntimeError("AI 未按确定性规则生成当前步骤答案")
+        return repository.record_direct_help(
+            session=session,
+            main_draft=main_draft,
+            doubt_text=doubt_text,
+            content=step_output.content,
+            support_kind="CURRENT_STEP",
+            settings=settings,
+        )
+    return repository.record_guided_questions(
+        session=session,
+        main_draft=main_draft,
+        doubt_text=doubt_text,
+        content=output.content,
+        questions=output.questions,
+        settings=settings,
+    )
