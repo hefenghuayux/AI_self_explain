@@ -24,7 +24,7 @@ export function createQuestionDraft(): QuestionInput {
     commonErrors: [""],
     alternativeSolutions: [""],
     layeredHints: [""],
-    guidedQuestions: [""],
+    guidedQuestions: [],
     fullSolution: "",
   }
 }

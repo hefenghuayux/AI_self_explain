@@ -121,7 +121,10 @@ async function startSession() {
           <ul><li v-for="item in question.layeredHints" :key="item">{{ item }}</li></ul>
         </el-descriptions-item>
         <el-descriptions-item label="提示子问题">
-          <ul><li v-for="item in question.guidedQuestions" :key="item">{{ item }}</li></ul>
+          <ul v-if="question.guidedQuestions.length">
+            <li v-for="item in question.guidedQuestions" :key="item">{{ item }}</li>
+          </ul>
+          <span v-else class="empty-value">未配置</span>
         </el-descriptions-item>
         <el-descriptions-item label="完整解析">{{ question.fullSolution }}</el-descriptions-item>
       </el-descriptions>
@@ -162,5 +165,9 @@ h1 {
 ul {
   margin: 0;
   padding-left: 20px;
+}
+
+.empty-value {
+  color: #6b7280;
 }
 </style>

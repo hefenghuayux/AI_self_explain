@@ -76,11 +76,13 @@ function validateQuestion(question: QuestionInput): string {
     ["常见错误", question.commonErrors],
     ["其他解法", question.alternativeSolutions],
     ["分层提示", question.layeredHints],
-    ["提示子问题", question.guidedQuestions],
   ]
   const invalidArrayField = arrayFields.find(([, values]) => values.length === 0 || values.some((item) => !item))
   if (invalidArrayField) {
     return `${invalidArrayField[0]}不能包含空白项`
+  }
+  if (question.guidedQuestions.some((item) => !item)) {
+    return "提示子问题不能包含空白项"
   }
   if (new Set(question.rubricPoints).size !== question.rubricPoints.length) {
     return "评分点不能重复"
@@ -159,7 +161,7 @@ function submitForm() {
       </div>
     </el-form-item>
 
-    <el-form-item label="提示子问题" required>
+    <el-form-item label="提示子问题（可选）">
       <div class="array-editor">
         <div v-for="(_, index) in form.guidedQuestions" :key="`guided-question-${index}`" class="array-row">
           <el-input v-model="form.guidedQuestions[index]" placeholder="供大模型参考的提示子问题" />

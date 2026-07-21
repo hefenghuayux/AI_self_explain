@@ -72,6 +72,26 @@ def test_question_can_be_saved_and_read_completely(question_client: TestClient) 
     assert detail_response.json() == created
 
 
+def test_question_can_be_created_and_updated_without_guided_questions(
+    question_client: TestClient,
+) -> None:
+    payload = {**question_payload(), "guidedQuestions": []}
+
+    create_response = question_client.post("/api/questions", json=payload)
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["guidedQuestions"] == []
+
+    update_response = question_client.put(
+        f"/api/questions/{created['id']}",
+        json={**payload, "questionContent": "更新后的题目"},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["guidedQuestions"] == []
+
+
 def test_migrated_question_with_empty_guided_questions_can_be_read(
     question_client: TestClient, migrated_settings: Settings
 ) -> None:
@@ -109,6 +129,7 @@ def test_migrated_question_with_empty_guided_questions_can_be_read(
         ("rubricPoints", ["有效评分点", " "]),
         ("rubricPoints", ["有效评分点", "有效评分点"]),
         ("layeredHints", [" "]),
+        ("guidedQuestions", [" "]),
         ("guidedQuestions", ["提示问题", "提示问题"]),
     ],
 )

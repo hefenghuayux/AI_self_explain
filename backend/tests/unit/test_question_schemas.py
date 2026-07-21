@@ -24,6 +24,15 @@ def test_question_input_accepts_complete_material_and_strips_whitespace() -> Non
     assert question.standard_answer == "2"
 
 
+def test_question_input_accepts_empty_guided_questions() -> None:
+    payload = question_payload()
+    payload["guidedQuestions"] = []
+
+    question = QuestionInput.model_validate(payload)
+
+    assert question.guided_questions == []
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -32,7 +41,6 @@ def test_question_input_accepts_complete_material_and_strips_whitespace() -> Non
         ("commonErrors", []),
         ("alternativeSolutions", [""]),
         ("layeredHints", [" "]),
-        ("guidedQuestions", []),
         ("guidedQuestions", [" "]),
         ("fullSolution", " "),
     ],

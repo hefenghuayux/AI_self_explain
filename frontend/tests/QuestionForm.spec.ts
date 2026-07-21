@@ -32,6 +32,35 @@ describe("QuestionForm", () => {
     expect(wrapper.emitted("submit")).toEqual([[input]])
   })
 
+  it("submits question material without guided questions", async () => {
+    const input = questionInput()
+    input.guidedQuestions = []
+    const wrapper = mount(QuestionForm, {
+      props: { initialQuestion: input, submitting: false, serverError: "" },
+      global: { plugins: [ElementPlus] },
+    })
+
+    await wrapper.get("form").trigger("submit")
+    await flushPromises()
+
+    expect(wrapper.emitted("submit")).toEqual([[input]])
+  })
+
+  it("rejects blank guided question before requesting the API", async () => {
+    const input = questionInput()
+    input.guidedQuestions = [" "]
+    const wrapper = mount(QuestionForm, {
+      props: { initialQuestion: input, submitting: false, serverError: "" },
+      global: { plugins: [ElementPlus] },
+    })
+
+    await wrapper.get("form").trigger("submit")
+    await flushPromises()
+
+    expect(wrapper.text()).toContain("提示子问题不能包含空白项")
+    expect(wrapper.emitted("submit")).toBeUndefined()
+  })
+
   it("rejects duplicate rubric points before requesting the API", async () => {
     const input = questionInput()
     input.rubricPoints = ["正确计算加法", "正确计算加法"]

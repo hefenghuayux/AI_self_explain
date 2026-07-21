@@ -104,6 +104,32 @@ def test_help_request_sends_guided_questions_and_counts_once(settings, monkeypat
     assert len(saved["latestSupport"]["guidedQuestions"]) == 2
 
 
+def test_help_request_generates_questions_without_configured_guided_questions(
+    settings, monkeypatch
+) -> None:
+    _stub_ai(monkeypatch, {})
+    with _client(settings, monkeypatch) as client:
+        payload = {**_question_payload(), "guidedQuestions": []}
+        question = client.post("/api/questions", json=payload)
+        assert question.status_code == 201
+        created_session = client.post(
+            "/api/sessions", json={"questionId": question.json()["id"]}
+        )
+        assert created_session.status_code == 201
+        session = _start_help(client, created_session.json())
+
+        response = client.post(
+            f"/api/sessions/{session['id']}/request-support",
+            json={"mainDraft": "我知道题目有两个 1。", "version": session["version"]},
+        )
+
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved["flowStage"] == "WAIT_GUIDED_ANSWERS"
+    assert saved["supportCountRound"] == 1
+    assert len(saved["latestSupport"]["guidedQuestions"]) == 2
+
+
 def test_guided_answers_are_a_follow_up_not_a_second_support(settings, monkeypatch) -> None:
     _stub_ai(monkeypatch, {})
     with _client(settings, monkeypatch) as client:

@@ -27,7 +27,7 @@ class QuestionInput(QuestionSchema):
     common_errors: RequiredTextList
     alternative_solutions: RequiredTextList
     layered_hints: RequiredTextList
-    guided_questions: RequiredTextList
+    guided_questions: list[RequiredText]
     full_solution: RequiredText
 
     @field_validator("rubric_points", "guided_questions")
@@ -40,8 +40,6 @@ class QuestionInput(QuestionSchema):
 
 
 class QuestionResponse(QuestionInput):
-    # 阶段 07 迁移后的历史题目允许为空，后续编辑仍由 QuestionInput 强制补录。
-    guided_questions: list[RequiredText]
     id: int
     archived_at: datetime | None
     created_at: datetime
