@@ -11,6 +11,7 @@ from app.api.sessions import router as sessions_router
 from app.core.config import Settings
 from app.core.database import create_database_engine, prepare_runtime_directories
 from app.core.logging import configure_logging
+from app.services.realtime_asr import configure_dashscope
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ def create_app(settings: Settings) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         prepare_runtime_directories(settings)
+        configure_dashscope(settings)
         database_engine = create_database_engine(settings)
         application.state.database_engine = database_engine
         application.state.database_session_factory = sessionmaker(bind=database_engine)

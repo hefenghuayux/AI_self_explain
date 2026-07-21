@@ -35,6 +35,16 @@ class TextAttemptInput(QuestionSchema):
     version: int = Field(ge=0)
 
 
+class VoiceTranscriptConfirmationInput(TextAttemptInput):
+    attempt_id: int = Field(gt=0)
+
+
+class PendingVoiceAttemptResponse(QuestionSchema):
+    id: int
+    audio_file_id: int
+    asr_transcript: str
+
+
 class EvaluationRetryInput(QuestionSchema):
     version: int = Field(ge=0)
 
@@ -106,3 +116,4 @@ class SessionResponse(QuestionSchema):
     finished_at: datetime | None
     latest_evaluation: AIEvaluationResponse | None = None
     latest_support: SupportEventResponse | None = None
+    pending_voice_attempt: PendingVoiceAttemptResponse | None = None

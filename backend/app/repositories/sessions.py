@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session as DatabaseSession
 
 from app.core.config import Settings
 from app.models.ai_evaluation import AIEvaluation
+from app.models.audio_file import AudioFile
 from app.models.explanation_attempt import ExplanationAttempt
 from app.models.external_call_record import ExternalCallRecord
 from app.models.session import Session
@@ -33,6 +34,7 @@ from app.rules.teaching_cycle import (
 )
 from app.schemas.ai_evaluation import AIEvaluationOutput
 from app.schemas.support import GuidedAnswer, GuidedQuestion
+from app.services.audio_storage import AudioCapture, AudioStorage
 
 
 def session_snapshot(session: Session) -> dict[str, object]:
@@ -100,6 +102,18 @@ class SessionRepository:
         statement = (
             select(ExplanationAttempt)
             .where(ExplanationAttempt.session_id == session_id)
+            .order_by(ExplanationAttempt.id.desc())
+        )
+        return self.database_session.scalars(statement).first()
+
+    def get_pending_voice_attempt(self, session_id: int) -> ExplanationAttempt | None:
+        statement = (
+            select(ExplanationAttempt)
+            .where(
+                ExplanationAttempt.session_id == session_id,
+                ExplanationAttempt.input_mode == "VOICE",
+                ExplanationAttempt.confirmed_text.is_(None),
+            )
             .order_by(ExplanationAttempt.id.desc())
         )
         return self.database_session.scalars(statement).first()
@@ -256,6 +270,93 @@ class SessionRepository:
         self.database_session.refresh(session)
         self.database_session.refresh(attempt)
         return session, attempt
+
+    def complete_voice_transcription(
+        self,
+        *,
+        session: Session,
+        capture: AudioCapture,
+        audio_storage: AudioStorage,
+        asr_transcript: str,
+    ) -> tuple[Session, ExplanationAttempt]:
+        before_snapshot = session_snapshot(session)
+        audio_file = AudioFile(
+            session_id=session.id,
+            relative_path="",
+            content_type=audio_storage.content_type,
+            size_bytes=capture.size_bytes,
+            sha256=capture.sha256.hexdigest(),
+        )
+        self.database_session.add(audio_file)
+        self.database_session.flush()
+        relative_path: str | None = None
+        try:
+            relative_path = audio_storage.finalize_capture(
+                capture, session_id=session.id, audio_file_id=audio_file.id
+            )
+            audio_file.relative_path = relative_path
+            attempt = ExplanationAttempt(
+                session_id=session.id,
+                round=session.round,
+                input_mode="VOICE",
+                audio_file_id=audio_file.id,
+                asr_transcript=asr_transcript,
+                confirmed_text=None,
+                confirmed_at=None,
+            )
+            self.database_session.add(attempt)
+            self.database_session.flush()
+            session.flow_stage = FLOW_STAGE_CONFIRMING_TEXT
+            session.version += 1
+            self._record_transition(
+                session=session,
+                trigger_type="COMPLETE_VOICE_TRANSCRIPTION",
+                before_snapshot=before_snapshot,
+                related_attempt_id=attempt.id,
+            )
+            self.database_session.commit()
+        except Exception:
+            self.database_session.rollback()
+            if relative_path is not None:
+                audio_storage.delete_relative_path(relative_path)
+            else:
+                capture.delete()
+            raise
+        self.database_session.refresh(session)
+        self.database_session.refresh(attempt)
+        return session, attempt
+
+    def confirm_voice_attempt(
+        self, *, session: Session, attempt: ExplanationAttempt, confirmed_text: str
+    ) -> tuple[Session, ExplanationAttempt]:
+        before_snapshot = session_snapshot(session)
+        attempt.confirmed_text = confirmed_text
+        attempt.confirmed_at = datetime.now(UTC)
+        session.current_draft = confirmed_text
+        session.last_support_draft = confirmed_text
+        session.flow_stage = FLOW_STAGE_AI_EVALUATING
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="CONFIRM_VOICE_TRANSCRIPT",
+            before_snapshot=before_snapshot,
+            related_attempt_id=attempt.id,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        self.database_session.refresh(attempt)
+        return session, attempt
+
+    def record_asr_stream_failure(self, *, session: Session, trigger_type: str) -> Session:
+        before_snapshot = session_snapshot(session)
+        self._record_transition(
+            session=session,
+            trigger_type=trigger_type,
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
 
     def begin_ai_evaluation(self, session: Session, attempt: ExplanationAttempt) -> Session:
         before_snapshot = session_snapshot(session)

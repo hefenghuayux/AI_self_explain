@@ -4,6 +4,7 @@ import { useRoute } from "vue-router"
 
 import {
   askDoubt,
+  confirmVoiceAttempt,
   continueExplaining,
   fetchLearningTimeline,
   fetchSession,
@@ -15,6 +16,7 @@ import {
   submitSolutionUnderstanding,
   submitTextAttempt,
 } from "../api/sessions"
+import VoiceRecorder from "../components/VoiceRecorder.vue"
 import { fetchQuestion } from "../api/questions"
 import type { AIEvaluation, GuidedAnswer, InitialChoice, LearningTimelineItem, Session, SessionStatus } from "../types/session"
 import type { Question } from "../types/question"
@@ -32,6 +34,7 @@ const unchangedDraftReminderShown = ref(false)
 const loading = ref(true)
 const submitting = ref(false)
 const errorMessage = ref("")
+const voiceRecording = ref(false)
 
 const sessionId = String(route.params.sessionId)
 
@@ -131,6 +134,10 @@ async function chooseInitialChoice(choice: InitialChoice) {
 
 async function submitExplanation() {
   if (!session.value) return
+  if (voiceRecording.value) {
+    errorMessage.value = "请先停止录音，确认转写后再提交自讲"
+    return
+  }
   if (!draftText.value.trim()) {
     errorMessage.value = "请输入自讲内容后再提交"
     return
@@ -144,6 +151,59 @@ async function submitExplanation() {
       session.value = await continueExplaining(sessionId, session.value.version)
     }
     session.value = await submitTextAttempt(sessionId, draftText.value, session.value.version)
+    draftText.value = session.value.currentDraft
+    await refreshTimeline()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function prepareVoiceInput() {
+  if (!session.value) return
+  submitting.value = true
+  errorMessage.value = ""
+  try {
+    if (session.value.flowStage === "WAIT_INITIAL_CHOICE") {
+      session.value = await submitInitialChoice(sessionId, "KNOW", session.value.version)
+    } else if (session.value.flowStage === "WAIT_STUDENT_ACTION") {
+      session.value = await continueExplaining(sessionId, session.value.version)
+    }
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    submitting.value = false
+  }
+}
+
+function appendFinalTranscript(text: string) {
+  draftText.value = draftText.value.trimEnd()
+  draftText.value = draftText.value ? `${draftText.value}\n${text}` : text
+}
+
+async function handleVoiceCompleted() {
+  try {
+    session.value = await fetchSession(sessionId)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  }
+}
+
+async function confirmVoiceTranscript() {
+  if (!session.value?.pendingVoiceAttempt || !draftText.value.trim()) {
+    errorMessage.value = "请确认或修改转写文本后再提交"
+    return
+  }
+  submitting.value = true
+  errorMessage.value = ""
+  try {
+    session.value = await confirmVoiceAttempt(
+      sessionId,
+      session.value.pendingVoiceAttempt.id,
+      draftText.value,
+      session.value.version,
+    )
     draftText.value = session.value.currentDraft
     await refreshTimeline()
   } catch (error) {
@@ -289,12 +349,13 @@ async function respondToSolution(understood: boolean) {
         <section v-else-if="session.status === 'COMPLETED'" class="session-section"><h2>本轮自讲已完成</h2></section>
         <section v-else-if="session.status === 'STOPPED_LIMIT'" class="session-section"><h2>已达到本轮支持上限</h2><p v-if="question">{{ question.fullSolution }}</p></section>
         <template v-else>
-          <section class="session-section"><h2>当前解题过程</h2><p>这里会保留你的内容；每次提交都会保存独立的自讲快照。</p><el-input v-model="draftText" data-testid="main-draft" type="textarea" :rows="8" placeholder="输入题干理解、分析过程或完整自讲" :disabled="submitting || session.flowStage === 'AI_EVALUATING'" /></section>
+          <section class="session-section"><h2>当前解题过程</h2><p>这里会保留你的内容；每次提交都会保存独立的自讲快照。</p><el-input v-model="draftText" data-testid="main-draft" type="textarea" :rows="8" placeholder="输入题干理解、分析过程或完整自讲" :disabled="submitting || session.flowStage === 'AI_EVALUATING'" /><VoiceRecorder v-if="session.flowStage === 'CAPTURING_INPUT'" :session-id="sessionId" :version="session.version" :disabled="submitting" @final-transcript="appendFinalTranscript" @completed="handleVoiceCompleted" @recording-change="voiceRecording = $event" @error="errorMessage = $event" /></section>
           <section v-if="session.flowStage === 'WAIT_GUIDED_ANSWERS'" class="session-section"><h2>请回答这些问题</h2><template v-for="item in session.latestSupport?.guidedQuestions" :key="item.id"><p>{{ item.question }}</p><el-input v-model="guidedAnswerText[item.id]" type="textarea" :rows="2" :disabled="submitting" /></template><div class="actions"><el-button data-testid="submit-guided-answers" type="primary" :loading="submitting" @click="submitGuidedQuestionAnswers">提交子问题答案</el-button></div></section>
+          <section v-else-if="session.flowStage === 'CONFIRMING_TEXT' && session.pendingVoiceAttempt" class="session-section"><h2>确认语音转写</h2><p>原始转写：{{ session.pendingVoiceAttempt.asrTranscript }}</p><p>你可以继续修改上方“当前解题过程”中的文本，确认后才会进入 AI 评价。</p><div class="actions"><el-button data-testid="confirm-voice-transcript" type="primary" :loading="submitting" @click="confirmVoiceTranscript">确认并提交自讲</el-button></div></section>
           <section v-else-if="session.flowStage === 'CONFIRMING_TEXT'" class="session-section"><h2>AI 服务暂时不可用</h2><p>确认文本已保留。你可以重新发起评价。</p><div class="actions"><el-button data-testid="retry-evaluation" type="primary" :loading="submitting" @click="retryAiEvaluation">重新评价</el-button></div></section>
           <section v-else-if="session.flowStage === 'AI_EVALUATING'" class="session-section"><h2>AI 正在评价</h2><p>请等待评价结果返回。</p></section>
           <section v-else-if="session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2>完整解析</h2><p v-if="question">{{ question.fullSolution }}</p><p>请确认你是否已经理解解析；确认后需要从头完成第二轮自讲。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，开始第二轮自讲</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
-          <section v-else class="session-section"><h2 v-if="session.flowStage === 'WAIT_INITIAL_CHOICE'">请开始你的解题过程</h2><div class="actions"><el-button data-testid="submit-explanation" type="primary" :loading="submitting" @click="submitExplanation">提交自讲</el-button><el-button data-testid="request-support" :loading="submitting" @click="requestGuidedSupport">我不会，给我一点提示</el-button></div><el-input v-model="doubtText" class="doubt-input" placeholder="我有疑问：请输入疑问点" :disabled="submitting" /><div class="actions"><el-button data-testid="submit-doubt" :loading="submitting" @click="submitDoubt">我有疑问</el-button></div></section>
+          <section v-else class="session-section"><h2 v-if="session.flowStage === 'WAIT_INITIAL_CHOICE'">请开始你的解题过程</h2><div class="actions"><el-button data-testid="submit-explanation" type="primary" :loading="submitting" @click="submitExplanation">提交自讲</el-button><el-button data-testid="prepare-voice" :loading="submitting" @click="prepareVoiceInput">使用语音自讲</el-button><el-button data-testid="request-support" :loading="submitting" @click="requestGuidedSupport">我不会，给我一点提示</el-button></div><el-input v-model="doubtText" class="doubt-input" placeholder="我有疑问：请输入疑问点" :disabled="submitting" /><div class="actions"><el-button data-testid="submit-doubt" :loading="submitting" @click="submitDoubt">我有疑问</el-button></div></section>
           <template v-if="session.latestEvaluation && session.flowStage === 'WAIT_STUDENT_ACTION'"><el-input v-model="appealReason" class="appeal-input" placeholder="如不同意 AI 判断，请填写理由" :disabled="submitting" /><div class="actions"><el-button data-testid="submit-appeal" type="warning" :loading="submitting" @click="appealEvaluation">我不同意 AI 判断</el-button></div></template>
         </template>
       </template>

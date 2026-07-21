@@ -5,12 +5,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import * as sessionApi from "../src/api/sessions"
 import * as questionApi from "../src/api/questions"
+import VoiceRecorder from "../src/components/VoiceRecorder.vue"
 import SessionView from "../src/views/SessionView.vue"
 import type { Session } from "../src/types/session"
 
 vi.mock("../src/api/questions", () => ({ fetchQuestion: vi.fn() }))
 vi.mock("../src/api/sessions", () => ({
   askDoubt: vi.fn(),
+  confirmVoiceAttempt: vi.fn(),
   continueExplaining: vi.fn(),
   fetchLearningTimeline: vi.fn(),
   fetchSession: vi.fn(),
@@ -25,6 +27,7 @@ vi.mock("../src/api/sessions", () => ({
 
 const askDoubt = vi.mocked(sessionApi.askDoubt)
 const continueExplaining = vi.mocked(sessionApi.continueExplaining)
+const confirmVoiceAttempt = vi.mocked(sessionApi.confirmVoiceAttempt)
 const fetchLearningTimeline = vi.mocked(sessionApi.fetchLearningTimeline)
 const fetchSession = vi.mocked(sessionApi.fetchSession)
 const fetchQuestion = vi.mocked(questionApi.fetchQuestion)
@@ -54,6 +57,7 @@ function createSession(overrides: Partial<Session> = {}): Session {
     needHumanReason: null,
     latestEvaluation: null,
     latestSupport: null,
+    pendingVoiceAttempt: null,
     ...overrides,
   }
 }
@@ -135,6 +139,40 @@ describe("SessionView", () => {
     await flushPromises()
 
     expect(requestSupport).toHaveBeenCalledWith("12", "我知道有两个 1，并想继续计算。", 4)
+  })
+
+  it("appends only final voice transcripts to the editable draft", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT" }))
+    const wrapper = await mountSessionView()
+
+    await wrapper.get('[data-testid="main-draft"]').setValue("我先写下已有条件。")
+    wrapper.findComponent(VoiceRecorder).vm.$emit("finalTranscript", "再计算 1 加 1。")
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="main-draft"]').element as HTMLTextAreaElement).value).toBe(
+      "我先写下已有条件。\n再计算 1 加 1。",
+    )
+  })
+
+  it("confirms an edited voice transcript before entering the existing evaluation flow", async () => {
+    fetchSession.mockResolvedValue(createSession({
+      flowStage: "CONFIRMING_TEXT",
+      currentDraft: "原始转写",
+      version: 7,
+      pendingVoiceAttempt: { id: 15, audioFileId: 9, asrTranscript: "原始转写" },
+    }))
+    confirmVoiceAttempt.mockResolvedValue(createSession({
+      flowStage: "WAIT_STUDENT_ACTION",
+      currentDraft: "学生确认后的文本",
+      version: 8,
+    }))
+    const wrapper = await mountSessionView()
+
+    await wrapper.get('[data-testid="main-draft"]').setValue("学生确认后的文本")
+    await wrapper.get('[data-testid="confirm-voice-transcript"]').trigger("click")
+    await flushPromises()
+
+    expect(confirmVoiceAttempt).toHaveBeenCalledWith("12", 15, "学生确认后的文本", 7)
   })
 
   it("submits all guided answers without creating another support request", async () => {

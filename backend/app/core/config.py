@@ -1,8 +1,9 @@
 from pathlib import Path
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     AnyHttpUrl,
+    AnyUrl,
     Field,
     PositiveFloat,
     PositiveInt,
@@ -39,6 +40,11 @@ class Settings(BaseSettings):
     asr_request_timeout_seconds: PositiveFloat
     asr_transport_max_retries: Annotated[int, Field(ge=0)]
     asr_retry_backoff_seconds: BackoffSequence
+    asr_audio_format: Literal["pcm"]
+    asr_sample_rate_hz: PositiveInt
+    asr_channels: PositiveInt
+    asr_frame_duration_ms: PositiveInt
+    asr_semantic_punctuation_enabled: bool
 
     audio_max_size_mib: PositiveInt
     audio_max_duration_seconds: PositiveInt
@@ -52,7 +58,7 @@ class Settings(BaseSettings):
     ai_model: NonEmptyString
 
     asr_provider: NonEmptyString
-    asr_base_url: AnyHttpUrl
+    asr_base_url: AnyUrl
     asr_api_key: SecretStr
     asr_model: NonEmptyString
 
@@ -87,6 +93,13 @@ class Settings(BaseSettings):
             raise ValueError("DATABASE_URL 必须使用 SQLite URL")
         return value
 
+    @field_validator("asr_base_url")
+    @classmethod
+    def validate_asr_base_url(cls, value: AnyUrl) -> AnyUrl:
+        if value.scheme not in {"ws", "wss"}:
+            raise ValueError("ASR_BASE_URL 必须使用 WebSocket URL")
+        return value
+
     @field_validator("audio_storage_dir", "log_dir", mode="before")
     @classmethod
     def validate_directory_value(cls, value: object) -> object:
@@ -107,4 +120,10 @@ class Settings(BaseSettings):
             raise ValueError("AI_RETRY_BACKOFF_SECONDS 数量必须等于 AI_TRANSPORT_MAX_RETRIES")
         if len(self.asr_retry_backoff_seconds) != self.asr_transport_max_retries:
             raise ValueError("ASR_RETRY_BACKOFF_SECONDS 数量必须等于 ASR_TRANSPORT_MAX_RETRIES")
+        if 1000 % self.asr_frame_duration_ms != 0:
+            raise ValueError("ASR_FRAME_DURATION_MS 必须能整除 1000")
+        if self.asr_sample_rate_hz != 16000:
+            raise ValueError("ASR_SAMPLE_RATE_HZ 当前必须为 16000")
+        if self.asr_channels != 1:
+            raise ValueError("ASR_CHANNELS 当前必须为 1")
         return self

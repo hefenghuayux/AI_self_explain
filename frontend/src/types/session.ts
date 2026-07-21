@@ -97,4 +97,11 @@ export interface Session {
   needHumanReason: string | null
   latestEvaluation: AIEvaluation | null
   latestSupport: SupportEvent | null
+  pendingVoiceAttempt: PendingVoiceAttempt | null
+}
+
+export interface PendingVoiceAttempt {
+  id: number
+  audioFileId: number
+  asrTranscript: string
 }

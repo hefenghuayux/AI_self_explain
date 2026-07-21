@@ -1,4 +1,5 @@
 from app.models.ai_evaluation import AIEvaluation
+from app.models.audio_file import AudioFile
 from app.models.base import Base
 from app.models.explanation_attempt import ExplanationAttempt
 from app.models.external_call_record import ExternalCallRecord
@@ -9,6 +10,7 @@ from app.models.support_event import SupportEvent
 
 __all__ = [
     "AIEvaluation",
+    "AudioFile",
     "Base",
     "ExplanationAttempt",
     "ExternalCallRecord",

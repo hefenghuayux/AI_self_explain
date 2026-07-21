@@ -13,10 +13,10 @@ class ExplanationAttempt(Base):
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"), index=True, nullable=False)
     round: Mapped[int] = mapped_column(Integer, nullable=False)
     input_mode: Mapped[str] = mapped_column(String(20), nullable=False)
-    audio_file_id: Mapped[int | None] = mapped_column(Integer)
+    audio_file_id: Mapped[int | None] = mapped_column(ForeignKey("audio_files.id"))
     asr_transcript: Mapped[str | None] = mapped_column(Text)
-    confirmed_text: Mapped[str] = mapped_column(Text, nullable=False)
-    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    confirmed_text: Mapped[str | None] = mapped_column(Text)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
