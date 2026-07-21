@@ -19,6 +19,7 @@ def _question_payload() -> dict[str, object]:
         "commonErrors": ["把结果写成 3"],
         "alternativeSolutions": ["使用实物计数"],
         "layeredHints": ["先数一数两个数"],
+        "guidedQuestions": ["两个 1 合起来是多少？"],
         "fullSolution": "1 加 1 等于 2。",
     }
 

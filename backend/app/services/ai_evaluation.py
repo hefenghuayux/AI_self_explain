@@ -248,6 +248,7 @@ def _render_prompt(
         "commonErrors": question.common_errors,
         "alternativeSolutions": question.alternative_solutions,
         "layeredHints": question.layered_hints,
+        "guidedQuestions": question.guided_questions,
         "fullSolution": question.full_solution,
         "round": session.round,
         "supportCountRound": session.support_count_round,

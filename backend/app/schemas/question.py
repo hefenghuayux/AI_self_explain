@@ -27,13 +27,15 @@ class QuestionInput(QuestionSchema):
     common_errors: RequiredTextList
     alternative_solutions: RequiredTextList
     layered_hints: RequiredTextList
+    guided_questions: RequiredTextList
     full_solution: RequiredText
 
-    @field_validator("rubric_points")
+    @field_validator("rubric_points", "guided_questions")
     @classmethod
-    def validate_unique_rubric_points(cls, value: list[str]) -> list[str]:
+    def validate_unique_text_list(cls, value: list[str], info) -> list[str]:
         if len(set(value)) != len(value):
-            raise ValueError("评分点不能重复")
+            label = "评分点" if info.field_name == "rubric_points" else "提示子问题"
+            raise ValueError(f"{label}不能重复")
         return value
 
 

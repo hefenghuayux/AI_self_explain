@@ -5,6 +5,7 @@ export interface QuestionInput {
   commonErrors: string[]
   alternativeSolutions: string[]
   layeredHints: string[]
+  guidedQuestions: string[]
   fullSolution: string
 }
 
@@ -23,6 +24,7 @@ export function createQuestionDraft(): QuestionInput {
     commonErrors: [""],
     alternativeSolutions: [""],
     layeredHints: [""],
+    guidedQuestions: [""],
     fullSolution: "",
   }
 }
@@ -35,6 +37,7 @@ export function toQuestionInput(question: Question): QuestionInput {
     commonErrors: [...question.commonErrors],
     alternativeSolutions: [...question.alternativeSolutions],
     layeredHints: [...question.layeredHints],
+    guidedQuestions: [...question.guidedQuestions],
     fullSolution: question.fullSolution,
   }
 }

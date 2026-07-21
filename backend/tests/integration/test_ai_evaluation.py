@@ -18,6 +18,7 @@ def question_payload() -> dict[str, object]:
         "commonErrors": ["把结果写成 3"],
         "alternativeSolutions": ["使用实物计数"],
         "layeredHints": ["先数一数两个数", "再合并两组数量"],
+        "guidedQuestions": ["两个 1 合起来是多少？"],
         "fullSolution": "1 加 1 等于 2。",
     }
 
@@ -36,6 +37,7 @@ def coordinate_question_payload() -> dict[str, object]:
         "commonErrors": ["遗漏 P 在 x 轴上时 OP = |t|"],
         "alternativeSolutions": ["先由面积公式得到 |t| = 2"],
         "layeredHints": ["先确定 POB 的底和高"],
+        "guidedQuestions": ["面积公式中底和高分别是什么？"],
         "fullSolution": "由 OP = |t| 和 1/2 × OP × OB = 6 求 P 坐标。",
     }
 
@@ -109,6 +111,7 @@ def test_valid_evaluation_is_saved_with_call_record_and_feedback(
     def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
         assert "正确计算加法" in schema["properties"]["coveredPoints"]["items"]["enum"]
         assert "我先计算 1 加 1。" in prompt
+        assert "两个 1 合起来是多少？" in prompt
         return AIModelResponse("{\"choices\": []}", valid_evaluation_content(), 12)
 
     monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)

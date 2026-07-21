@@ -32,15 +32,16 @@ function cloneQuestion(question: QuestionInput): QuestionInput {
     commonErrors: [...question.commonErrors],
     alternativeSolutions: [...question.alternativeSolutions],
     layeredHints: [...question.layeredHints],
+    guidedQuestions: [...question.guidedQuestions],
   }
 }
 
-function addArrayItem(field: keyof Pick<QuestionInput, "rubricPoints" | "commonErrors" | "alternativeSolutions" | "layeredHints">) {
+function addArrayItem(field: keyof Pick<QuestionInput, "rubricPoints" | "commonErrors" | "alternativeSolutions" | "layeredHints" | "guidedQuestions">) {
   form[field].push("")
 }
 
 function removeArrayItem(
-  field: keyof Pick<QuestionInput, "rubricPoints" | "commonErrors" | "alternativeSolutions" | "layeredHints">,
+  field: keyof Pick<QuestionInput, "rubricPoints" | "commonErrors" | "alternativeSolutions" | "layeredHints" | "guidedQuestions">,
   index: number,
 ) {
   form[field].splice(index, 1)
@@ -54,6 +55,7 @@ function normalizeQuestion(question: QuestionInput): QuestionInput {
     commonErrors: question.commonErrors.map((item) => item.trim()),
     alternativeSolutions: question.alternativeSolutions.map((item) => item.trim()),
     layeredHints: question.layeredHints.map((item) => item.trim()),
+    guidedQuestions: question.guidedQuestions.map((item) => item.trim()),
     fullSolution: question.fullSolution.trim(),
   }
 }
@@ -74,6 +76,7 @@ function validateQuestion(question: QuestionInput): string {
     ["常见错误", question.commonErrors],
     ["其他解法", question.alternativeSolutions],
     ["分层提示", question.layeredHints],
+    ["提示子问题", question.guidedQuestions],
   ]
   const invalidArrayField = arrayFields.find(([, values]) => values.length === 0 || values.some((item) => !item))
   if (invalidArrayField) {
@@ -81,6 +84,9 @@ function validateQuestion(question: QuestionInput): string {
   }
   if (new Set(question.rubricPoints).size !== question.rubricPoints.length) {
     return "评分点不能重复"
+  }
+  if (new Set(question.guidedQuestions).size !== question.guidedQuestions.length) {
+    return "提示子问题不能重复"
   }
   return ""
 }
@@ -150,6 +156,16 @@ function submitForm() {
           <el-button text type="danger" @click="removeArrayItem('layeredHints', index)">删除</el-button>
         </div>
         <el-button @click="addArrayItem('layeredHints')">新增分层提示</el-button>
+      </div>
+    </el-form-item>
+
+    <el-form-item label="提示子问题" required>
+      <div class="array-editor">
+        <div v-for="(_, index) in form.guidedQuestions" :key="`guided-question-${index}`" class="array-row">
+          <el-input v-model="form.guidedQuestions[index]" placeholder="供大模型参考的提示子问题" />
+          <el-button text type="danger" @click="removeArrayItem('guidedQuestions', index)">删除</el-button>
+        </div>
+        <el-button @click="addArrayItem('guidedQuestions')">新增提示子问题</el-button>
       </div>
     </el-form-item>
 

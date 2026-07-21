@@ -120,6 +120,9 @@ async function startSession() {
         <el-descriptions-item label="分层提示">
           <ul><li v-for="item in question.layeredHints" :key="item">{{ item }}</li></ul>
         </el-descriptions-item>
+        <el-descriptions-item label="提示子问题">
+          <ul><li v-for="item in question.guidedQuestions" :key="item">{{ item }}</li></ul>
+        </el-descriptions-item>
         <el-descriptions-item label="完整解析">{{ question.fullSolution }}</el-descriptions-item>
       </el-descriptions>
     </el-card>

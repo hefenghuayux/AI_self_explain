@@ -19,6 +19,7 @@ def question_payload() -> dict[str, object]:
         "commonErrors": ["把结果写成 3"],
         "alternativeSolutions": ["使用实物计数"],
         "layeredHints": ["先数一数两个数", "再合并两组数量"],
+        "guidedQuestions": ["两个 1 分别表示什么？", "合并后应如何表示结果？"],
         "fullSolution": "1 加 1 等于 2。",
     }
 
@@ -57,6 +58,7 @@ def test_question_can_be_saved_and_read_completely(question_client: TestClient) 
     assert created["id"] > 0
     assert created["rubricPoints"] == payload["rubricPoints"]
     assert created["layeredHints"] == payload["layeredHints"]
+    assert created["guidedQuestions"] == payload["guidedQuestions"]
     assert created["createdAt"]
     assert created["updatedAt"]
 
@@ -76,6 +78,7 @@ def test_question_can_be_saved_and_read_completely(question_client: TestClient) 
         ("rubricPoints", ["有效评分点", " "]),
         ("rubricPoints", ["有效评分点", "有效评分点"]),
         ("layeredHints", [" "]),
+        ("guidedQuestions", ["提示问题", "提示问题"]),
     ],
 )
 def test_question_api_rejects_invalid_material(
@@ -105,6 +108,7 @@ def test_question_update_preserves_unedited_material(question_client: TestClient
     assert updated["commonErrors"] == original_payload["commonErrors"]
     assert updated["alternativeSolutions"] == original_payload["alternativeSolutions"]
     assert updated["layeredHints"] == original_payload["layeredHints"]
+    assert updated["guidedQuestions"] == original_payload["guidedQuestions"]
     assert updated["fullSolution"] == original_payload["fullSolution"]
 
 
