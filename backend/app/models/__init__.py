@@ -5,6 +5,7 @@ from app.models.external_call_record import ExternalCallRecord
 from app.models.question import Question
 from app.models.session import Session
 from app.models.state_transition_event import StateTransitionEvent
+from app.models.support_event import SupportEvent
 
 __all__ = [
     "AIEvaluation",
@@ -14,4 +15,5 @@ __all__ = [
     "Question",
     "Session",
     "StateTransitionEvent",
+    "SupportEvent",
 ]

@@ -5,6 +5,7 @@ from pydantic import Field
 
 from app.schemas.ai_evaluation import AIEvaluationResponse
 from app.schemas.question import QuestionSchema, RequiredText
+from app.schemas.support import SupportEventResponse
 
 SessionStatus = Literal["IN_PROGRESS", "COMPLETED", "STOPPED_LIMIT", "NEED_HUMAN", "PAUSED"]
 FlowStage = Literal[
@@ -37,6 +38,18 @@ class EvaluationRetryInput(QuestionSchema):
     version: int = Field(ge=0)
 
 
+class StudentActionInput(QuestionSchema):
+    version: int = Field(ge=0)
+
+
+class AppealInput(StudentActionInput):
+    reason: RequiredText
+
+
+class SolutionUnderstandingInput(StudentActionInput):
+    understood: bool
+
+
 class SessionResponse(QuestionSchema):
     id: int
     question_id: int
@@ -58,3 +71,4 @@ class SessionResponse(QuestionSchema):
     updated_at: datetime
     finished_at: datetime | None
     latest_evaluation: AIEvaluationResponse | None = None
+    latest_support: SupportEventResponse | None = None

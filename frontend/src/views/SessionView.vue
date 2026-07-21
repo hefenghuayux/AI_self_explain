@@ -3,9 +3,13 @@ import { onMounted, ref } from "vue"
 import { useRoute } from "vue-router"
 
 import {
+  continueExplaining,
   fetchSession,
+  requestSupport,
   retryEvaluation,
+  submitAppeal,
   submitInitialChoice,
+  submitSolutionUnderstanding,
   submitTextAttempt,
 } from "../api/sessions"
 import { fetchQuestion } from "../api/questions"
@@ -16,6 +20,7 @@ const route = useRoute()
 const session = ref<Session>()
 const question = ref<Question>()
 const confirmedText = ref("")
+const appealReason = ref("")
 const loading = ref(true)
 const submitting = ref(false)
 const errorMessage = ref("")
@@ -81,6 +86,70 @@ async function retryAiEvaluation() {
     submitting.value = false
   }
 }
+
+async function continueWithExplanation() {
+  if (!session.value) {
+    return
+  }
+  submitting.value = true
+  errorMessage.value = ""
+  try {
+    session.value = await continueExplaining(sessionId, session.value.version)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function askForMoreSupport() {
+  if (!session.value) {
+    return
+  }
+  submitting.value = true
+  errorMessage.value = ""
+  try {
+    session.value = await requestSupport(sessionId, session.value.version)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function appealEvaluation() {
+  if (!session.value) {
+    return
+  }
+  if (!appealReason.value.trim()) {
+    errorMessage.value = "请填写不同意 AI 判断的理由"
+    return
+  }
+  submitting.value = true
+  errorMessage.value = ""
+  try {
+    session.value = await submitAppeal(sessionId, appealReason.value, session.value.version)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function respondToSolution(understood: boolean) {
+  if (!session.value) {
+    return
+  }
+  submitting.value = true
+  errorMessage.value = ""
+  try {
+    session.value = await submitSolutionUnderstanding(sessionId, understood, session.value.version)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    submitting.value = false
+  }
+}
 </script>
 
 <template>
@@ -112,6 +181,8 @@ async function retryAiEvaluation() {
         <el-descriptions :column="2" border class="session-summary">
           <el-descriptions-item label="会话状态">{{ session.status }}</el-descriptions-item>
           <el-descriptions-item label="当前轮次">第 {{ session.round }} 轮</el-descriptions-item>
+          <el-descriptions-item label="本轮有效支持">{{ session.supportCountRound }}</el-descriptions-item>
+          <el-descriptions-item label="累计有效支持">{{ session.supportCountTotal }}</el-descriptions-item>
         </el-descriptions>
 
         <section v-if="session.status === 'NEED_HUMAN'" class="session-section">
@@ -127,6 +198,11 @@ async function retryAiEvaluation() {
         <section v-else-if="session.status === 'COMPLETED'" class="session-section">
           <h2>本轮自讲已完成</h2>
           <p v-if="session.latestEvaluation">{{ session.latestEvaluation.feedback }}</p>
+        </section>
+
+        <section v-else-if="session.status === 'STOPPED_LIMIT'" class="session-section">
+          <h2>已达到本轮支持上限</h2>
+          <p v-if="question">{{ question.fullSolution }}</p>
         </section>
 
         <section v-else-if="session.flowStage === 'WAIT_INITIAL_CHOICE'" class="session-section">
@@ -178,13 +254,26 @@ async function retryAiEvaluation() {
           <p>请等待评价结果返回。</p>
         </section>
 
-        <section
-          v-else-if="session.flowStage === 'WAIT_STUDENT_ACTION' && session.latestEvaluation"
-          class="session-section"
-        >
-          <h2>AI 结构化评价</h2>
-          <p data-testid="ai-feedback">{{ session.latestEvaluation.feedback }}</p>
-          <el-descriptions :column="1" border>
+        <section v-else-if="session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section">
+          <h2>完整解析</h2>
+          <p v-if="question">{{ question.fullSolution }}</p>
+          <p>请确认你是否已经理解解析；确认后需要从头完成第二轮自讲。</p>
+          <div class="actions">
+            <el-button
+              data-testid="understood-solution"
+              type="primary"
+              :loading="submitting"
+              @click="respondToSolution(true)"
+            >我会了，开始第二轮自讲</el-button>
+            <el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button>
+          </div>
+        </section>
+
+        <section v-else-if="session.flowStage === 'WAIT_STUDENT_ACTION'" class="session-section">
+          <template v-if="session.latestEvaluation">
+            <h2>AI 结构化评价</h2>
+            <p data-testid="ai-feedback">{{ session.latestEvaluation.feedback }}</p>
+            <el-descriptions :column="1" border>
             <el-descriptions-item label="正确性">{{ session.latestEvaluation.correctness }}</el-descriptions-item>
             <el-descriptions-item label="完整性">{{ session.latestEvaluation.completeness }}</el-descriptions-item>
             <el-descriptions-item label="已覆盖评分点">
@@ -193,13 +282,42 @@ async function retryAiEvaluation() {
             <el-descriptions-item label="缺失评分点">
               {{ session.latestEvaluation.missingPoints.join("；") }}
             </el-descriptions-item>
-          </el-descriptions>
-          <ul v-if="session.latestEvaluation.errorEvidence.length" class="evidence-list">
+            </el-descriptions>
+            <ul v-if="session.latestEvaluation.errorEvidence.length" class="evidence-list">
             <li v-for="evidence in session.latestEvaluation.errorEvidence" :key="evidence.quote">
               “{{ evidence.quote }}”：{{ evidence.reason }}。{{ evidence.thinkingDirection }}
             </li>
-          </ul>
-          <p>后续教学操作将在阶段 05 接入。</p>
+            </ul>
+          </template>
+          <el-alert
+            v-if="session.latestSupport"
+            data-testid="support-content"
+            :title="session.latestSupport.content"
+            type="info"
+            :closable="false"
+            show-icon
+          />
+          <div class="actions">
+            <el-button data-testid="continue-explaining" type="primary" :loading="submitting" @click="continueWithExplanation">
+              我会了，继续讲
+            </el-button>
+            <el-button data-testid="request-support" :loading="submitting" @click="askForMoreSupport">
+              我还不会，再提示一点
+            </el-button>
+          </div>
+          <template v-if="session.latestEvaluation">
+            <el-input
+              v-model="appealReason"
+              class="appeal-input"
+              placeholder="如不同意 AI 判断，请填写理由"
+              :disabled="submitting"
+            />
+            <div class="actions">
+              <el-button data-testid="submit-appeal" type="warning" :loading="submitting" @click="appealEvaluation">
+                我不同意 AI 判断
+              </el-button>
+            </div>
+          </template>
         </section>
 
         <section v-else class="session-section">
@@ -261,5 +379,9 @@ h2 {
   margin: 16px 0 0;
   padding-left: 20px;
   color: #606266;
+}
+
+.appeal-input {
+  margin-top: 16px;
 }
 </style>

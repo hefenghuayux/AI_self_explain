@@ -185,6 +185,7 @@ class AIEvaluationService:
                 prompt_version=self.settings.prompt_version,
                 model_provider=self.settings.ai_provider,
                 model_name=self.settings.ai_model,
+                settings=self.settings,
             )
         raise RuntimeError("AI 结构化评价循环未产生结果")
 

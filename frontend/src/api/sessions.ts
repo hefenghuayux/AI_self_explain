@@ -54,3 +54,35 @@ export function retryEvaluation(sessionId: string, version: number): Promise<Ses
     body: JSON.stringify({ version }),
   })
 }
+
+export function continueExplaining(sessionId: string, version: number): Promise<Session> {
+  return requestSessionApi<Session>(`/api/sessions/${sessionId}/continue`, {
+    method: "POST",
+    body: JSON.stringify({ version }),
+  })
+}
+
+export function requestSupport(sessionId: string, version: number): Promise<Session> {
+  return requestSessionApi<Session>(`/api/sessions/${sessionId}/request-support`, {
+    method: "POST",
+    body: JSON.stringify({ version }),
+  })
+}
+
+export function submitAppeal(sessionId: string, reason: string, version: number): Promise<Session> {
+  return requestSessionApi<Session>(`/api/sessions/${sessionId}/appeal`, {
+    method: "POST",
+    body: JSON.stringify({ reason, version }),
+  })
+}
+
+export function submitSolutionUnderstanding(
+  sessionId: string,
+  understood: boolean,
+  version: number,
+): Promise<Session> {
+  return requestSessionApi<Session>(`/api/sessions/${sessionId}/full-solution-understanding`, {
+    method: "POST",
+    body: JSON.stringify({ understood, version }),
+  })
+}

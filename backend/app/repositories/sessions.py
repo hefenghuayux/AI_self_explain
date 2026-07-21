@@ -3,20 +3,32 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DatabaseSession
 
+from app.core.config import Settings
 from app.models.ai_evaluation import AIEvaluation
 from app.models.explanation_attempt import ExplanationAttempt
 from app.models.external_call_record import ExternalCallRecord
 from app.models.session import Session
 from app.models.state_transition_event import StateTransitionEvent
+from app.models.support_event import SupportEvent
 from app.rules.session_lifecycle import (
     FLOW_STAGE_AI_EVALUATING,
+    FLOW_STAGE_CAPTURING_INPUT,
     FLOW_STAGE_CONFIRMING_TEXT,
+    FLOW_STAGE_SHOWING_FULL_SOLUTION,
     FLOW_STAGE_WAIT_INITIAL_CHOICE,
     FLOW_STAGE_WAIT_STUDENT_ACTION,
     STATUS_COMPLETED,
     STATUS_IN_PROGRESS,
     STATUS_NEED_HUMAN,
+    STATUS_STOPPED_LIMIT,
     flow_stage_after_initial_choice,
+)
+from app.rules.teaching_cycle import (
+    SUPPORT_TYPES,
+    decide_evaluation,
+    support_limit_for,
+    support_limit_reached,
+    update_coverage,
 )
 from app.schemas.ai_evaluation import AIEvaluationOutput
 
@@ -96,6 +108,14 @@ class SessionRepository:
         )
         return self.database_session.scalars(statement).first()
 
+    def get_latest_valid_support(self, session_id: int) -> SupportEvent | None:
+        statement = (
+            select(SupportEvent)
+            .where(SupportEvent.session_id == session_id, SupportEvent.status == "VALID")
+            .order_by(SupportEvent.id.desc())
+        )
+        return self.database_session.scalars(statement).first()
+
     def choose_initial_choice(self, session: Session, choice: str) -> Session:
         before_snapshot = session_snapshot(session)
         session.initial_choice = choice
@@ -159,6 +179,7 @@ class SessionRepository:
         duration_ms: int,
         provider: str,
         model: str,
+        call_type: str = "AI_EVALUATION",
         error_type: str | None = None,
         error_message: str | None = None,
         raw_response: str | None = None,
@@ -166,7 +187,7 @@ class SessionRepository:
         self.database_session.add(
             ExternalCallRecord(
                 session_id=session.id,
-                call_type="AI_EVALUATION",
+                call_type=call_type,
                 provider=provider,
                 model=model,
                 attempt_number=attempt_number,
@@ -219,6 +240,7 @@ class SessionRepository:
         prompt_version: str,
         model_provider: str,
         model_name: str,
+        settings: Settings,
     ) -> Session:
         before_snapshot = session_snapshot(session)
         saved_evaluation = self._create_evaluation(
@@ -234,15 +256,45 @@ class SessionRepository:
             model_name=model_name,
         )
         self.database_session.flush()
-        if evaluation.next_action == "COMPLETE":
-            session.status = STATUS_COMPLETED
-            session.completion_type = completion_type_for(session)
+        (
+            session.covered_points_current_round,
+            session.covered_points_all,
+            session.no_progress_count,
+        ) = update_coverage(
+            covered_points=evaluation.covered_points,
+            covered_points_current_round=session.covered_points_current_round,
+            covered_points_all=session.covered_points_all,
+            no_progress_count=session.no_progress_count,
+        )
+        decision = decide_evaluation(
+            next_action=evaluation.next_action,
+            no_progress_count=session.no_progress_count,
+            settings=settings,
+            solution_exposed=session.solution_exposed,
+            round_number=session.round,
+            support_count_total=session.support_count_total,
+            need_human_reason=evaluation.need_human_reason,
+        )
+        if decision.next_status is not None:
+            session.status = decision.next_status
+        if decision.next_flow_stage is not None:
+            session.flow_stage = decision.next_flow_stage
+        if decision.completion_type is not None:
+            session.completion_type = decision.completion_type
+        if decision.need_human_reason is not None:
+            session.need_human_reason = decision.need_human_reason
+        if decision.action in SUPPORT_TYPES:
+            self._apply_support(
+                session=session,
+                support_type=decision.action,
+                content=evaluation.feedback,
+                evaluation_id=saved_evaluation.id,
+                settings=settings,
+            )
+        if session.status in {STATUS_COMPLETED, STATUS_NEED_HUMAN, STATUS_STOPPED_LIMIT}:
             session.finished_at = datetime.now(UTC)
-        elif evaluation.next_action == "NEED_HUMAN":
-            session.status = STATUS_NEED_HUMAN
-            session.need_human_reason = evaluation.need_human_reason
-            session.finished_at = datetime.now(UTC)
-        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+        if session.flow_stage == FLOW_STAGE_AI_EVALUATING:
+            session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
         session.version += 1
         self._record_transition(
             session=session,
@@ -250,6 +302,156 @@ class SessionRepository:
             before_snapshot=before_snapshot,
             related_attempt_id=attempt.id,
             related_evaluation_id=saved_evaluation.id,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
+    def begin_support_generation(self, session: Session, trigger_type: str) -> Session:
+        before_snapshot = session_snapshot(session)
+        session.flow_stage = FLOW_STAGE_AI_EVALUATING
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type=trigger_type,
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
+    def resolve_support_limit(
+        self, *, session: Session, settings: Settings, trigger_type: str
+    ) -> Session | None:
+        if not support_limit_reached(
+            round_number=session.round,
+            support_count_round=session.support_count_round,
+            settings=settings,
+        ):
+            return None
+        before_snapshot = session_snapshot(session)
+        # 触发上限时不会发送局部支持，因此不会创建 SupportEvent。
+        self._apply_support(
+            session=session,
+            support_type="GIVE_HINT",
+            content="",
+            evaluation_id=None,
+            settings=settings,
+        )
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type=trigger_type,
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
+    def record_generated_hint(
+        self, *, session: Session, content: str, settings: Settings
+    ) -> Session:
+        before_snapshot = session_snapshot(session)
+        self._apply_support(
+            session=session,
+            support_type="GIVE_HINT",
+            content=content,
+            evaluation_id=None,
+            settings=settings,
+        )
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="SEND_GENERATED_HINT",
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
+    def return_to_wait_student_action_after_support_failure(
+        self, *, session: Session, trigger_type: str
+    ) -> Session:
+        before_snapshot = session_snapshot(session)
+        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type=trigger_type,
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
+    def mark_support_schema_retry_exhausted(
+        self, *, session: Session, need_human_reason: str
+    ) -> Session:
+        before_snapshot = session_snapshot(session)
+        session.status = STATUS_NEED_HUMAN
+        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+        session.need_human_reason = need_human_reason
+        session.finished_at = datetime.now(UTC)
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="AI_SUPPORT_SCHEMA_RETRY_EXHAUSTED",
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
+    def continue_explaining(self, session: Session) -> Session:
+        before_snapshot = session_snapshot(session)
+        session.flow_stage = FLOW_STAGE_CAPTURING_INPUT
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="CONTINUE_EXPLAINING",
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
+    def appeal(self, *, session: Session, reason: str, evaluation_id: int) -> Session:
+        before_snapshot = session_snapshot(session)
+        session.status = STATUS_NEED_HUMAN
+        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+        session.need_human_reason = f"学生申诉：{reason}"
+        session.finished_at = datetime.now(UTC)
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="STUDENT_APPEAL",
+            before_snapshot=before_snapshot,
+            related_evaluation_id=evaluation_id,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
+    def respond_to_first_solution(self, *, session: Session, understood: bool) -> Session:
+        before_snapshot = session_snapshot(session)
+        if understood:
+            session.round = 2
+            session.support_count_round = 0
+            session.no_progress_count = 0
+            session.covered_points_current_round = []
+            session.flow_stage = FLOW_STAGE_CAPTURING_INPUT
+            trigger_type = "UNDERSTOOD_FIRST_SOLUTION"
+        else:
+            session.status = STATUS_NEED_HUMAN
+            session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+            session.need_human_reason = "学生在第一轮完整解析后仍表示不会"
+            session.finished_at = datetime.now(UTC)
+            trigger_type = "DID_NOT_UNDERSTAND_FIRST_SOLUTION"
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type=trigger_type,
+            before_snapshot=before_snapshot,
         )
         self.database_session.commit()
         self.database_session.refresh(session)
@@ -364,10 +566,43 @@ class SessionRepository:
             )
         )
 
-
-def completion_type_for(session: Session) -> str:
-    if session.solution_exposed and session.round == 2:
-        return "AFTER_SOLUTION"
-    if session.support_count_total > 0:
-        return "WITH_SUPPORT"
-    return "INDEPENDENT"
+    def _apply_support(
+        self,
+        *,
+        session: Session,
+        support_type: str,
+        content: str,
+        evaluation_id: int | None,
+        settings: Settings,
+    ) -> None:
+        if support_type not in SUPPORT_TYPES:
+            raise ValueError(f"不支持的计数支持类型：{support_type}")
+        if support_limit_reached(
+            round_number=session.round,
+            support_count_round=session.support_count_round,
+            settings=settings,
+        ):
+            session.support_count_round = support_limit_for(
+                round_number=session.round, settings=settings
+            )
+            session.solution_exposed = True
+            if session.round == 1:
+                session.flow_stage = FLOW_STAGE_SHOWING_FULL_SOLUTION
+            else:
+                session.status = STATUS_STOPPED_LIMIT
+                session.flow_stage = FLOW_STAGE_SHOWING_FULL_SOLUTION
+                session.finished_at = datetime.now(UTC)
+            return
+        self.database_session.add(
+            SupportEvent(
+                session_id=session.id,
+                evaluation_id=evaluation_id,
+                support_type=support_type,
+                round=session.round,
+                status="VALID",
+                content=content,
+            )
+        )
+        session.support_count_round += 1
+        session.support_count_total += 1
+        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION

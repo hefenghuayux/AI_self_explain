@@ -41,14 +41,31 @@ export interface AIEvaluation {
   createdAt: string
 }
 
+export interface SupportEvent {
+  id: number
+  supportType: "GIVE_HINT" | "GIVE_CORRECTION" | "CORRECT_AND_ASK"
+  round: number
+  status: "VALID"
+  content: string
+  createdAt: string
+}
+
 export interface Session {
   id: number
   questionId: number
   status: SessionStatus
   flowStage: FlowStage
   round: number
+  supportCountRound: number
+  supportCountTotal: number
+  noProgressCount: number
+  solutionExposed: boolean
+  completionType: "INDEPENDENT" | "WITH_SUPPORT" | "AFTER_SOLUTION" | null
+  coveredPointsCurrentRound: string[]
+  coveredPointsAll: string[]
   version: number
   initialChoice: InitialChoice | null
   needHumanReason: string | null
   latestEvaluation: AIEvaluation | null
+  latestSupport: SupportEvent | null
 }

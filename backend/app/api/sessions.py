@@ -9,18 +9,24 @@ from app.repositories.sessions import SessionRepository
 from app.rules.session_lifecycle import (
     FLOW_STAGE_CAPTURING_INPUT,
     FLOW_STAGE_CONFIRMING_TEXT,
+    FLOW_STAGE_SHOWING_FULL_SOLUTION,
     FLOW_STAGE_WAIT_INITIAL_CHOICE,
+    FLOW_STAGE_WAIT_STUDENT_ACTION,
     STATUS_IN_PROGRESS,
     TERMINAL_STATUSES,
 )
 from app.schemas.session import (
+    AppealInput,
     CreateSessionInput,
     EvaluationRetryInput,
     InitialChoiceInput,
     SessionResponse,
+    SolutionUnderstandingInput,
+    StudentActionInput,
     TextAttemptInput,
 )
 from app.services.ai_evaluation import AIEvaluationService
+from app.services.ai_support import AISupportService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -54,7 +60,10 @@ def validate_in_progress(session: Session) -> None:
 
 def to_session_response(repository: SessionRepository, session: Session) -> SessionResponse:
     return SessionResponse.model_validate(session).model_copy(
-        update={"latest_evaluation": repository.get_latest_valid_evaluation(session.id)}
+        update={
+            "latest_evaluation": repository.get_latest_valid_evaluation(session.id),
+            "latest_support": repository.get_latest_valid_support(session.id),
+        }
     )
 
 
@@ -85,6 +94,7 @@ def choose_initial_choice(
     session_id: int,
     choice_input: InitialChoiceInput,
     database_session: DatabaseSession,
+    request: Request,
 ) -> SessionResponse:
     repository = SessionRepository(database_session)
     session = get_session_or_404(repository, session_id)
@@ -93,6 +103,26 @@ def choose_initial_choice(
     if session.flow_stage != FLOW_STAGE_WAIT_INITIAL_CHOICE:
         reject_operation(f"当前流程阶段不能选择初始选项：{session.flow_stage}")
     chosen_session = repository.choose_initial_choice(session, choice_input.choice)
+    if choice_input.choice == "NOT_KNOW":
+        question = database_session.get(Question, chosen_session.question_id)
+        if question is None:
+            raise RuntimeError(
+                f"会话 {chosen_session.id} 关联题目不存在：{chosen_session.question_id}"
+            )
+        limited_session = repository.resolve_support_limit(
+            session=chosen_session,
+            settings=request.app.state.settings,
+            trigger_type="FIRST_ROUND_SUPPORT_LIMIT_REACHED",
+        )
+        if limited_session is not None:
+            return to_session_response(repository, limited_session)
+        generating_session = repository.begin_support_generation(
+            chosen_session, "REQUEST_INITIAL_HINT"
+        )
+        support_service = AISupportService(database_session, request.app.state.settings)
+        chosen_session = support_service.generate_hint(
+            question=question, session=generating_session
+        )
     return to_session_response(repository, chosen_session)
 
 
@@ -118,6 +148,89 @@ def submit_text_attempt(
         attempt=attempt,
     )
     return to_session_response(repository, evaluated_session)
+
+
+@router.post("/{session_id}/continue", response_model=SessionResponse)
+def continue_explaining(
+    session_id: int,
+    action_input: StudentActionInput,
+    database_session: DatabaseSession,
+) -> SessionResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id)
+    validate_in_progress(session)
+    validate_version(session, action_input.version)
+    if session.flow_stage != FLOW_STAGE_WAIT_STUDENT_ACTION:
+        reject_operation(f"当前流程阶段不能继续自讲：{session.flow_stage}")
+    return to_session_response(repository, repository.continue_explaining(session))
+
+
+@router.post("/{session_id}/request-support", response_model=SessionResponse)
+def request_support(
+    session_id: int,
+    action_input: StudentActionInput,
+    database_session: DatabaseSession,
+    request: Request,
+) -> SessionResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id)
+    validate_in_progress(session)
+    validate_version(session, action_input.version)
+    if session.flow_stage != FLOW_STAGE_WAIT_STUDENT_ACTION:
+        reject_operation(f"当前流程阶段不能请求提示：{session.flow_stage}")
+    question = database_session.get(Question, session.question_id)
+    if question is None:
+        raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
+    limited_session = repository.resolve_support_limit(
+        session=session,
+        settings=request.app.state.settings,
+        trigger_type="SUPPORT_LIMIT_REACHED",
+    )
+    if limited_session is not None:
+        return to_session_response(repository, limited_session)
+    generating_session = repository.begin_support_generation(session, "REQUEST_FURTHER_HINT")
+    support_service = AISupportService(database_session, request.app.state.settings)
+    generated_session = support_service.generate_hint(question=question, session=generating_session)
+    return to_session_response(repository, generated_session)
+
+
+@router.post("/{session_id}/appeal", response_model=SessionResponse)
+def appeal(
+    session_id: int,
+    appeal_input: AppealInput,
+    database_session: DatabaseSession,
+) -> SessionResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id)
+    validate_in_progress(session)
+    validate_version(session, appeal_input.version)
+    if session.flow_stage != FLOW_STAGE_WAIT_STUDENT_ACTION:
+        reject_operation(f"当前流程阶段不能提交申诉：{session.flow_stage}")
+    evaluation = repository.get_latest_valid_evaluation(session.id)
+    if evaluation is None:
+        reject_operation("尚未获得 AI 评价，不能提交申诉")
+    appealed_session = repository.appeal(
+        session=session, reason=appeal_input.reason, evaluation_id=evaluation.id
+    )
+    return to_session_response(repository, appealed_session)
+
+
+@router.post("/{session_id}/full-solution-understanding", response_model=SessionResponse)
+def respond_to_first_solution(
+    session_id: int,
+    understanding_input: SolutionUnderstandingInput,
+    database_session: DatabaseSession,
+) -> SessionResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id)
+    validate_in_progress(session)
+    validate_version(session, understanding_input.version)
+    if session.flow_stage != FLOW_STAGE_SHOWING_FULL_SOLUTION or session.round != 1:
+        reject_operation(f"当前流程阶段不能确认第一轮解析理解情况：{session.flow_stage}")
+    responded_session = repository.respond_to_first_solution(
+        session=session, understood=understanding_input.understood
+    )
+    return to_session_response(repository, responded_session)
 
 
 @router.post("/{session_id}/evaluate", response_model=SessionResponse)
