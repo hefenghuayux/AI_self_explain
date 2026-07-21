@@ -1,4 +1,4 @@
-import type { InitialChoice, Session } from "../types/session"
+import type { InitialChoice, LearningTimelineItem, Session } from "../types/session"
 
 async function requestSessionApi<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -24,6 +24,10 @@ export function createSession(questionId: string): Promise<Session> {
 
 export function fetchSession(sessionId: string): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}`)
+}
+
+export function fetchLearningTimeline(sessionId: string): Promise<LearningTimelineItem[]> {
+  return requestSessionApi<LearningTimelineItem[]>(`/api/sessions/${sessionId}/timeline`)
 }
 
 export function submitInitialChoice(

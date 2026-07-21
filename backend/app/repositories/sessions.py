@@ -116,6 +116,98 @@ class SessionRepository:
         )
         return self.database_session.scalars(statement).first()
 
+    def get_student_timeline(self, session_id: int) -> list[dict[str, object]]:
+        support_events = list(
+            self.database_session.scalars(
+                select(SupportEvent)
+                .where(SupportEvent.session_id == session_id, SupportEvent.status == "VALID")
+                .order_by(SupportEvent.created_at, SupportEvent.id)
+            )
+        )
+        supports_by_evaluation_id = {
+            support.evaluation_id: support
+            for support in support_events
+            if support.evaluation_id is not None
+        }
+        timeline: list[dict[str, object]] = []
+        evaluations = self.database_session.scalars(
+            select(AIEvaluation)
+            .where(
+                AIEvaluation.session_id == session_id,
+                AIEvaluation.validation_status == "VALID",
+            )
+            .order_by(AIEvaluation.created_at, AIEvaluation.id)
+        )
+        for evaluation in evaluations:
+            support = supports_by_evaluation_id.get(evaluation.id)
+            timeline.append(
+                {
+                    "id": f"evaluation-{evaluation.id}",
+                    "event_type": "EVALUATION",
+                    "content": evaluation.feedback,
+                    "correctness": evaluation.correctness,
+                    "completeness": evaluation.completeness,
+                    "action": (
+                        support.support_type if support is not None else evaluation.next_action
+                    ),
+                    "created_at": evaluation.created_at,
+                }
+            )
+        for support in support_events:
+            if support.evaluation_id is None:
+                timeline.append(
+                    {
+                        "id": f"support-{support.id}",
+                        "event_type": "SUPPORT",
+                        "content": support.content,
+                        "correctness": None,
+                        "completeness": None,
+                        "action": support.support_type,
+                        "created_at": support.created_at,
+                    }
+                )
+        solution_transitions = self.database_session.scalars(
+            select(StateTransitionEvent)
+            .where(
+                StateTransitionEvent.session_id == session_id,
+                StateTransitionEvent.to_flow_stage == FLOW_STAGE_SHOWING_FULL_SOLUTION,
+            )
+            .order_by(StateTransitionEvent.created_at, StateTransitionEvent.id)
+        )
+        for transition in solution_transitions:
+            timeline.append(
+                {
+                    "id": f"solution-{transition.id}",
+                    "event_type": "FULL_SOLUTION",
+                    "content": "已展示完整解析。",
+                    "correctness": None,
+                    "completeness": None,
+                    "action": None,
+                    "created_at": transition.created_at,
+                }
+            )
+        human_transitions = self.database_session.scalars(
+            select(StateTransitionEvent)
+            .where(
+                StateTransitionEvent.session_id == session_id,
+                StateTransitionEvent.to_status == STATUS_NEED_HUMAN,
+            )
+            .order_by(StateTransitionEvent.created_at, StateTransitionEvent.id)
+        )
+        for transition in human_transitions:
+            timeline.append(
+                {
+                    "id": f"human-{transition.id}",
+                    "event_type": "NEED_HUMAN",
+                    "content": student_need_human_message(transition.trigger_type),
+                    "correctness": None,
+                    "completeness": None,
+                    "action": None,
+                    "created_at": transition.created_at,
+                }
+            )
+        return sorted(timeline, key=lambda item: (item["created_at"], str(item["id"])))
+
     def choose_initial_choice(self, session: Session, choice: str) -> Session:
         before_snapshot = session_snapshot(session)
         session.initial_choice = choice
@@ -606,3 +698,13 @@ class SessionRepository:
         session.support_count_round += 1
         session.support_count_total += 1
         session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+
+
+def student_need_human_message(trigger_type: str) -> str:
+    if trigger_type == "STUDENT_APPEAL":
+        return "已提交不同意 AI 判断的申诉，已转人工帮助。"
+    if trigger_type == "DID_NOT_UNDERSTAND_FIRST_SOLUTION":
+        return "你在阅读完整解析后仍表示不会，已转人工帮助。"
+    if trigger_type == "APPLY_AI_EVALUATION":
+        return "暂无法可靠判断，已转人工帮助。"
+    return "当前无法自动继续，已转人工帮助。"

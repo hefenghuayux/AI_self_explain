@@ -4,6 +4,7 @@ import { useRoute } from "vue-router"
 
 import {
   continueExplaining,
+  fetchLearningTimeline,
   fetchSession,
   requestSupport,
   retryEvaluation,
@@ -13,12 +14,19 @@ import {
   submitTextAttempt,
 } from "../api/sessions"
 import { fetchQuestion } from "../api/questions"
-import type { InitialChoice, Session } from "../types/session"
+import type {
+  AIEvaluation,
+  InitialChoice,
+  LearningTimelineItem,
+  Session,
+  SessionStatus,
+} from "../types/session"
 import type { Question } from "../types/question"
 
 const route = useRoute()
 const session = ref<Session>()
 const question = ref<Question>()
+const timeline = ref<LearningTimelineItem[]>([])
 const confirmedText = ref("")
 const appealReason = ref("")
 const loading = ref(true)
@@ -27,16 +35,60 @@ const errorMessage = ref("")
 
 const sessionId = String(route.params.sessionId)
 
+const sessionStatusLabels: Record<SessionStatus, string> = {
+  IN_PROGRESS: "进行中",
+  COMPLETED: "已完成",
+  STOPPED_LIMIT: "已达到支持上限",
+  NEED_HUMAN: "需要人工帮助",
+  PAUSED: "已暂停",
+}
+
+const correctnessLabels: Record<AIEvaluation["correctness"], string> = {
+  CORRECT: "正确",
+  WRONG: "有错误",
+  UNCERTAIN: "暂无法可靠判断",
+}
+
+const completenessLabels: Record<AIEvaluation["completeness"], string> = {
+  COMPLETE: "完整",
+  INCOMPLETE: "不完整",
+}
+
+const actionLabels: Record<NonNullable<LearningTimelineItem["action"]>, string> = {
+  COMPLETE: "本轮完成",
+  ASK_FOCUSED_QUESTION: "聚焦追问",
+  GIVE_CORRECTION: "纠错",
+  CORRECT_AND_ASK: "纠错与追问",
+  GIVE_HINT: "提示",
+  NEED_HUMAN: "转人工帮助",
+}
+
+const timelineEventLabels: Record<LearningTimelineItem["eventType"], string> = {
+  EVALUATION: "学习反馈",
+  SUPPORT: "学习支持",
+  FULL_SOLUTION: "完整解析",
+  NEED_HUMAN: "已转人工帮助",
+}
+
 onMounted(async () => {
   try {
     session.value = await fetchSession(sessionId)
     question.value = await fetchQuestion(String(session.value.questionId))
+    timeline.value = await fetchLearningTimeline(sessionId)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
     loading.value = false
   }
 })
+
+async function refreshTimeline() {
+  timeline.value = await fetchLearningTimeline(sessionId)
+}
+
+function timelineTitle(item: LearningTimelineItem) {
+  return item.action ? actionLabels[item.action] : timelineEventLabels[item.eventType]
+}
 
 async function chooseInitialChoice(choice: InitialChoice) {
   if (!session.value) {
@@ -46,6 +98,7 @@ async function chooseInitialChoice(choice: InitialChoice) {
   errorMessage.value = ""
   try {
     session.value = await submitInitialChoice(sessionId, choice, session.value.version)
+    await refreshTimeline()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -65,6 +118,7 @@ async function submitText() {
   errorMessage.value = ""
   try {
     session.value = await submitTextAttempt(sessionId, confirmedText.value, session.value.version)
+    await refreshTimeline()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -80,6 +134,7 @@ async function retryAiEvaluation() {
   errorMessage.value = ""
   try {
     session.value = await retryEvaluation(sessionId, session.value.version)
+    await refreshTimeline()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -95,6 +150,7 @@ async function continueWithExplanation() {
   errorMessage.value = ""
   try {
     session.value = await continueExplaining(sessionId, session.value.version)
+    await refreshTimeline()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -110,6 +166,7 @@ async function askForMoreSupport() {
   errorMessage.value = ""
   try {
     session.value = await requestSupport(sessionId, session.value.version)
+    await refreshTimeline()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -129,6 +186,7 @@ async function appealEvaluation() {
   errorMessage.value = ""
   try {
     session.value = await submitAppeal(sessionId, appealReason.value, session.value.version)
+    await refreshTimeline()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -144,6 +202,7 @@ async function respondToSolution(understood: boolean) {
   errorMessage.value = ""
   try {
     session.value = await submitSolutionUnderstanding(sessionId, understood, session.value.version)
+    await refreshTimeline()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -179,16 +238,47 @@ async function respondToSolution(understood: boolean) {
           <p data-testid="question-content">{{ question.questionContent }}</p>
         </section>
         <el-descriptions :column="2" border class="session-summary">
-          <el-descriptions-item label="会话状态">{{ session.status }}</el-descriptions-item>
+          <el-descriptions-item label="会话状态">{{ sessionStatusLabels[session.status] }}</el-descriptions-item>
           <el-descriptions-item label="当前轮次">第 {{ session.round }} 轮</el-descriptions-item>
           <el-descriptions-item label="本轮有效支持">{{ session.supportCountRound }}</el-descriptions-item>
           <el-descriptions-item label="累计有效支持">{{ session.supportCountTotal }}</el-descriptions-item>
         </el-descriptions>
 
+        <section v-if="session.latestEvaluation" class="session-section">
+          <h2>本次自讲评价</h2>
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="正确性">
+              {{ correctnessLabels[session.latestEvaluation.correctness] }}
+            </el-descriptions-item>
+            <el-descriptions-item label="完整性">
+              {{ completenessLabels[session.latestEvaluation.completeness] }}
+            </el-descriptions-item>
+          </el-descriptions>
+        </section>
+
+        <section v-if="timeline.length" class="session-section">
+          <h2>学习反馈记录</h2>
+          <el-timeline>
+            <el-timeline-item
+              v-for="item in timeline"
+              :key="item.id"
+              :timestamp="new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false })"
+            >
+              <div class="timeline-title">
+                {{ timelineTitle(item) }}
+              </div>
+              <p v-if="item.correctness && item.completeness" class="timeline-evaluation">
+                正确性：{{ correctnessLabels[item.correctness] }}；完整性：{{ completenessLabels[item.completeness] }}
+              </p>
+              <p data-testid="timeline-content">{{ item.content }}</p>
+            </el-timeline-item>
+          </el-timeline>
+        </section>
+
         <section v-if="session.status === 'NEED_HUMAN'" class="session-section">
           <h2>需要人工处理</h2>
           <el-alert
-            :title="session.needHumanReason ?? 'AI 评价无法可靠完成，请等待人工处理。'"
+            title="暂无法可靠判断，已转人工帮助。"
             type="warning"
             :closable="false"
             show-icon
@@ -197,7 +287,6 @@ async function respondToSolution(understood: boolean) {
 
         <section v-else-if="session.status === 'COMPLETED'" class="session-section">
           <h2>本轮自讲已完成</h2>
-          <p v-if="session.latestEvaluation">{{ session.latestEvaluation.feedback }}</p>
         </section>
 
         <section v-else-if="session.status === 'STOPPED_LIMIT'" class="session-section">
@@ -270,33 +359,6 @@ async function respondToSolution(understood: boolean) {
         </section>
 
         <section v-else-if="session.flowStage === 'WAIT_STUDENT_ACTION'" class="session-section">
-          <template v-if="session.latestEvaluation">
-            <h2>AI 结构化评价</h2>
-            <p data-testid="ai-feedback">{{ session.latestEvaluation.feedback }}</p>
-            <el-descriptions :column="1" border>
-            <el-descriptions-item label="正确性">{{ session.latestEvaluation.correctness }}</el-descriptions-item>
-            <el-descriptions-item label="完整性">{{ session.latestEvaluation.completeness }}</el-descriptions-item>
-            <el-descriptions-item label="已覆盖评分点">
-              {{ session.latestEvaluation.coveredPoints.join("；") }}
-            </el-descriptions-item>
-            <el-descriptions-item label="缺失评分点">
-              {{ session.latestEvaluation.missingPoints.join("；") }}
-            </el-descriptions-item>
-            </el-descriptions>
-            <ul v-if="session.latestEvaluation.errorEvidence.length" class="evidence-list">
-            <li v-for="evidence in session.latestEvaluation.errorEvidence" :key="evidence.quote">
-              “{{ evidence.quote }}”：{{ evidence.reason }}。{{ evidence.thinkingDirection }}
-            </li>
-            </ul>
-          </template>
-          <el-alert
-            v-if="session.latestSupport"
-            data-testid="support-content"
-            :title="session.latestSupport.content"
-            type="info"
-            :closable="false"
-            show-icon
-          />
           <div class="actions">
             <el-button data-testid="continue-explaining" type="primary" :loading="submitting" @click="continueWithExplanation">
               我会了，继续讲
@@ -375,9 +437,12 @@ h2 {
   margin-top: 16px;
 }
 
-.evidence-list {
-  margin: 16px 0 0;
-  padding-left: 20px;
+.timeline-title {
+  font-weight: 700;
+}
+
+.timeline-evaluation {
+  margin: 8px 0;
   color: #606266;
 }
 

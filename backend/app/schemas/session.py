@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from app.schemas.ai_evaluation import AIEvaluationResponse
+from app.schemas.ai_evaluation import AIEvaluationResponse, Completeness, Correctness, NextAction
 from app.schemas.question import QuestionSchema, RequiredText
 from app.schemas.support import SupportEventResponse
 
@@ -48,6 +48,20 @@ class AppealInput(StudentActionInput):
 
 class SolutionUnderstandingInput(StudentActionInput):
     understood: bool
+
+
+TimelineEventType = Literal["EVALUATION", "SUPPORT", "FULL_SOLUTION", "NEED_HUMAN"]
+TimelineSupportType = Literal["GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"]
+
+
+class LearningTimelineItemResponse(QuestionSchema):
+    id: str
+    event_type: TimelineEventType
+    content: str
+    correctness: Correctness | None
+    completeness: Completeness | None
+    action: NextAction | TimelineSupportType | None
+    created_at: datetime
 
 
 class SessionResponse(QuestionSchema):

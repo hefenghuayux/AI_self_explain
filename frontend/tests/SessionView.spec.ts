@@ -14,6 +14,7 @@ vi.mock("../src/api/questions", () => ({
 
 vi.mock("../src/api/sessions", () => ({
   continueExplaining: vi.fn(),
+  fetchLearningTimeline: vi.fn(),
   fetchSession: vi.fn(),
   requestSupport: vi.fn(),
   retryEvaluation: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("../src/api/sessions", () => ({
 }))
 
 const continueExplaining = vi.mocked(sessionApi.continueExplaining)
+const fetchLearningTimeline = vi.mocked(sessionApi.fetchLearningTimeline)
 const fetchSession = vi.mocked(sessionApi.fetchSession)
 const fetchQuestion = vi.mocked(questionApi.fetchQuestion)
 const requestSupport = vi.mocked(sessionApi.requestSupport)
@@ -74,6 +76,7 @@ async function mountSessionView() {
 describe("SessionView", () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    fetchLearningTimeline.mockResolvedValue([])
     fetchQuestion.mockResolvedValue({
       id: 3,
       questionContent: "计算 1 + 1。",
@@ -148,6 +151,19 @@ describe("SessionView", () => {
         },
       }),
     )
+    fetchLearningTimeline
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "evaluation-3",
+          eventType: "EVALUATION",
+          content: "你已经说明了加法过程，请补充结果。",
+          correctness: "CORRECT",
+          completeness: "INCOMPLETE",
+          action: "ASK_FOCUSED_QUESTION",
+          createdAt: "2026-07-20T00:00:00Z",
+        },
+      ])
     const wrapper = await mountSessionView()
 
     await wrapper.get("textarea").setValue("我先说明计算过程。")
@@ -155,7 +171,11 @@ describe("SessionView", () => {
     await flushPromises()
 
     expect(submitTextAttempt).toHaveBeenCalledWith("12", "我先说明计算过程。", 1)
-    expect(wrapper.get('[data-testid="ai-feedback"]').text()).toContain("请补充结果")
+    expect(wrapper.get('[data-testid="timeline-content"]').text()).toContain("请补充结果")
+    expect(wrapper.text()).toContain("正确性：正确")
+    expect(wrapper.text()).toContain("完整性：不完整")
+    expect(wrapper.text()).not.toContain("CORRECT")
+    expect(wrapper.text()).not.toContain("已覆盖评分点")
   })
 
   it("retries an evaluation without requiring the student to re-enter text", async () => {
@@ -191,9 +211,20 @@ describe("SessionView", () => {
     requestSupport.mockResolvedValue(
       createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 5 }),
     )
+    fetchLearningTimeline.mockResolvedValue([
+      {
+        id: "support-8",
+        eventType: "SUPPORT",
+        content: "请先重新检查加法结果。",
+        correctness: null,
+        completeness: null,
+        action: "GIVE_HINT",
+        createdAt: "2026-07-20T00:00:00Z",
+      },
+    ])
     const wrapper = await mountSessionView()
 
-    expect(wrapper.get('[data-testid="support-content"]').text()).toContain("重新检查")
+    expect(wrapper.get('[data-testid="timeline-content"]').text()).toContain("重新检查")
     await wrapper.get('[data-testid="request-support"]').trigger("click")
     await flushPromises()
 

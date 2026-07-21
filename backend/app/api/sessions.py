@@ -20,6 +20,7 @@ from app.schemas.session import (
     CreateSessionInput,
     EvaluationRetryInput,
     InitialChoiceInput,
+    LearningTimelineItemResponse,
     SessionResponse,
     SolutionUnderstandingInput,
     StudentActionInput,
@@ -87,6 +88,15 @@ def create_session(
 def get_session(session_id: int, database_session: DatabaseSession) -> SessionResponse:
     repository = SessionRepository(database_session)
     return to_session_response(repository, get_session_or_404(repository, session_id))
+
+
+@router.get("/{session_id}/timeline", response_model=list[LearningTimelineItemResponse])
+def get_learning_timeline(
+    session_id: int, database_session: DatabaseSession
+) -> list[LearningTimelineItemResponse]:
+    repository = SessionRepository(database_session)
+    get_session_or_404(repository, session_id)
+    return repository.get_student_timeline(session_id)
 
 
 @router.post("/{session_id}/initial-choice", response_model=SessionResponse)

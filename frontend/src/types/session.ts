@@ -50,6 +50,16 @@ export interface SupportEvent {
   createdAt: string
 }
 
+export interface LearningTimelineItem {
+  id: string
+  eventType: "EVALUATION" | "SUPPORT" | "FULL_SOLUTION" | "NEED_HUMAN"
+  content: string
+  correctness: AIEvaluation["correctness"] | null
+  completeness: AIEvaluation["completeness"] | null
+  action: AIEvaluation["nextAction"] | SupportEvent["supportType"] | null
+  createdAt: string
+}
+
 export interface Session {
   id: number
   questionId: number
