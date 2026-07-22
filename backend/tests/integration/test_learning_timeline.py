@@ -89,22 +89,40 @@ def test_timeline_persists_visible_feedback_and_hides_structured_details(
         appealed_timeline = client.get(f"/api/sessions/{started_session['id']}/timeline")
 
     assert first_timeline.status_code == 200
-    assert first_timeline.json() == second_timeline.json()
-    assert first_timeline.json() == [
+    first_items = first_timeline.json()
+    appealed_items = appealed_timeline.json()
+    assert first_items == second_timeline.json()
+    assert first_items == [
+        {
+            "id": "submission-1",
+            "eventType": "SUBMISSION",
+            "speaker": "STUDENT",
+            "submissionType": "SELF_EXPLANATION",
+            "content": "1 加 1 等于 3。",
+            "correctness": None,
+            "completeness": None,
+            "action": None,
+            "createdAt": first_items[0]["createdAt"],
+        },
         {
             "id": "evaluation-1",
             "eventType": "EVALUATION",
+            "speaker": "AI",
+            "submissionType": None,
             "content": "请重新检查你得出的结果。",
             "correctness": "WRONG",
             "completeness": "INCOMPLETE",
             "action": "CORRECT_AND_ASK",
-            "createdAt": first_timeline.json()[0]["createdAt"],
+            "createdAt": first_items[1]["createdAt"],
         }
     ]
-    assert "coveredPoints" not in first_timeline.json()[0]
+    assert "coveredPoints" not in first_items[1]
     assert appealed_timeline.status_code == 200
-    assert appealed_timeline.json()[-1]["eventType"] == "NEED_HUMAN"
-    assert appealed_timeline.json()[-1]["content"] == "已提交不同意 AI 判断的申诉，已转人工帮助。"
+    assert appealed_items[-2]["eventType"] == "SUBMISSION"
+    assert appealed_items[-2]["submissionType"] == "APPEAL"
+    assert appealed_items[-2]["content"] == "我想再说明一次。"
+    assert appealed_items[-1]["eventType"] == "NEED_HUMAN"
+    assert appealed_items[-1]["content"] == "已提交不同意 AI 判断的申诉，已转人工帮助。"
 
 
 def test_timeline_records_solution_display_without_revealing_solution_content(
@@ -136,14 +154,28 @@ def test_timeline_records_solution_display_without_revealing_solution_content(
     assert limit_response.status_code == 200
     assert limit_response.json()["flowStage"] == "SHOWING_FULL_SOLUTION"
     assert timeline_response.status_code == 200
-    assert timeline_response.json() == [
+    timeline_items = timeline_response.json()
+    assert timeline_items == [
+        {
+            "id": "submission-1",
+            "eventType": "SUBMISSION",
+            "speaker": "STUDENT",
+            "submissionType": "SUPPORT_REQUEST",
+            "content": "我还没有新的思路。",
+            "correctness": None,
+            "completeness": None,
+            "action": None,
+            "createdAt": timeline_items[0]["createdAt"],
+        },
         {
             "id": "solution-3",
             "eventType": "FULL_SOLUTION",
+            "speaker": "SYSTEM",
+            "submissionType": None,
             "content": "已展示完整解析。",
             "correctness": None,
             "completeness": None,
             "action": None,
-            "createdAt": timeline_response.json()[0]["createdAt"],
+            "createdAt": timeline_items[1]["createdAt"],
         }
     ]

@@ -69,7 +69,9 @@ export interface GuidedAnswer {
 
 export interface LearningTimelineItem {
   id: string
-  eventType: "EVALUATION" | "SUPPORT" | "FULL_SOLUTION" | "NEED_HUMAN"
+  eventType: "SUBMISSION" | "EVALUATION" | "SUPPORT" | "FULL_SOLUTION" | "NEED_HUMAN"
+  speaker: "STUDENT" | "AI" | "SYSTEM"
+  submissionType: "SELF_EXPLANATION" | "SUPPORT_REQUEST" | "GUIDED_ANSWER" | "DOUBT" | "APPEAL" | null
   content: string
   correctness: AIEvaluation["correctness"] | null
   completeness: AIEvaluation["completeness"] | null

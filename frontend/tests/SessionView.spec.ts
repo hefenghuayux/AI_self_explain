@@ -80,6 +80,7 @@ async function mountSessionView() {
 describe("SessionView", () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    localStorage.clear()
     fetchLearningTimeline.mockResolvedValue([])
     fetchQuestion.mockResolvedValue({
       id: 3,
@@ -200,9 +201,8 @@ describe("SessionView", () => {
     submitGuidedAnswers.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 6 }))
     const wrapper = await mountSessionView()
 
-    const inputs = wrapper.findAll("textarea")
-    await inputs[1].setValue("一个数量")
-    await inputs[2].setValue("2")
+    await wrapper.get('[data-testid="guided-answer-q1"]').setValue("一个数量")
+    await wrapper.get('[data-testid="guided-answer-q2"]').setValue("2")
     await wrapper.get('[data-testid="submit-guided-answers"]').trigger("click")
     await flushPromises()
 
@@ -212,5 +212,83 @@ describe("SessionView", () => {
     ], 5)
     expect(askDoubt).not.toHaveBeenCalled()
     expect(continueExplaining).not.toHaveBeenCalled()
+  })
+
+  it("renders student submissions and AI replies in the self-explanation record", async () => {
+    fetchSession.mockResolvedValue(createSession())
+    fetchLearningTimeline.mockResolvedValue([
+      {
+        id: "submission-1",
+        eventType: "SUBMISSION",
+        speaker: "STUDENT",
+        submissionType: "SELF_EXPLANATION",
+        content: "1 加 1 等于 2。",
+        correctness: null,
+        completeness: null,
+        action: null,
+        createdAt: "2026-07-20T00:00:00Z",
+      },
+      {
+        id: "evaluation-1",
+        eventType: "EVALUATION",
+        speaker: "AI",
+        submissionType: null,
+        content: "还需要说明为什么是 2。",
+        correctness: "CORRECT",
+        completeness: "INCOMPLETE",
+        action: "ASK_FOCUSED_QUESTION",
+        createdAt: "2026-07-20T00:00:01Z",
+      },
+    ])
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.text()).toContain("自讲记录")
+    const contents = wrapper.findAll('[data-testid="timeline-content"]').map((item) => item.text())
+    expect(contents).toEqual(["1 加 1 等于 2。", "还需要说明为什么是 2。"])
+  })
+
+  it("restores saved drafts for each segmented input block", async () => {
+    fetchSession.mockResolvedValue(createSession({
+      flowStage: "WAIT_GUIDED_ANSWERS",
+      latestSupport: {
+        id: 9,
+        supportType: "GIVE_HINT",
+        supportKind: "GUIDED_QUESTIONS",
+        round: 1,
+        status: "VALID",
+        content: "请回答问题。",
+        mainDraft: "我知道有两个 1。",
+        doubtText: null,
+        guidedQuestions: [
+          { id: "q1", question: "第一个 1 表示什么？" },
+        ],
+        guidedAnswers: null,
+        followUpContent: null,
+        createdAt: "2026-07-20T00:00:00Z",
+      },
+    }))
+    localStorage.setItem(
+      "ai-self-explain:session:12:dialog-drafts",
+      JSON.stringify({
+        selfExplain: "上次的自讲内容",
+        guidedAnswers: { q1: "上次的答案" },
+        doubt: "我的疑问",
+        appeal: "我不同意",
+      }),
+    )
+    const wrapper = await mountSessionView()
+
+    expect((wrapper.get('[data-testid="main-draft"]').element as HTMLTextAreaElement).value).toBe(
+      "上次的自讲内容",
+    )
+    expect((wrapper.get('[data-testid="guided-answer-q1"]').element as HTMLTextAreaElement).value).toBe(
+      "上次的答案",
+    )
+    expect((wrapper.get('[data-testid="doubt-draft"]').element as HTMLTextAreaElement).value).toBe(
+      "我的疑问",
+    )
+    expect((wrapper.get('[data-testid="appeal-draft"]').element as HTMLTextAreaElement).value).toBe(
+      "我不同意",
+    )
   })
 })

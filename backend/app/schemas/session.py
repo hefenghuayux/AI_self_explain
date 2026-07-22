@@ -73,7 +73,21 @@ class SolutionUnderstandingInput(StudentActionInput):
     understood: bool
 
 
-TimelineEventType = Literal["EVALUATION", "SUPPORT", "FULL_SOLUTION", "NEED_HUMAN"]
+TimelineEventType = Literal[
+    "SUBMISSION",
+    "EVALUATION",
+    "SUPPORT",
+    "FULL_SOLUTION",
+    "NEED_HUMAN",
+]
+TimelineSpeaker = Literal["STUDENT", "AI", "SYSTEM"]
+TimelineSubmissionType = Literal[
+    "SELF_EXPLANATION",
+    "SUPPORT_REQUEST",
+    "GUIDED_ANSWER",
+    "DOUBT",
+    "APPEAL",
+]
 TimelineSupportType = Literal[
     "ASK_FOCUSED_QUESTION",
     "GIVE_HINT",
@@ -85,6 +99,8 @@ TimelineSupportType = Literal[
 class LearningTimelineItemResponse(QuestionSchema):
     id: str
     event_type: TimelineEventType
+    speaker: TimelineSpeaker
+    submission_type: TimelineSubmissionType | None
     content: str
     correctness: Correctness | None
     completeness: Completeness | None

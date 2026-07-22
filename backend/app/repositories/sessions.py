@@ -11,6 +11,7 @@ from app.models.explanation_attempt import ExplanationAttempt
 from app.models.external_call_record import ExternalCallRecord
 from app.models.session import Session
 from app.models.state_transition_event import StateTransitionEvent
+from app.models.student_submission import StudentSubmission
 from app.models.support_event import SupportEvent
 from app.rules.session_lifecycle import (
     FLOW_STAGE_AI_EVALUATING,
@@ -198,6 +199,13 @@ class SessionRepository:
         return self.database_session.scalars(statement).first()
 
     def get_student_timeline(self, session_id: int) -> list[dict[str, object]]:
+        student_submissions = list(
+            self.database_session.scalars(
+                select(StudentSubmission)
+                .where(StudentSubmission.session_id == session_id)
+                .order_by(StudentSubmission.created_at, StudentSubmission.id)
+            )
+        )
         support_events = list(
             self.database_session.scalars(
                 select(SupportEvent)
@@ -210,7 +218,30 @@ class SessionRepository:
             for support in support_events
             if support.evaluation_id is not None
         }
+        guided_answer_submissions_by_support_id = {
+            int(submission.context["supportEventId"]): submission
+            for submission in student_submissions
+            if (
+                submission.submission_type == "GUIDED_ANSWER"
+                and isinstance(submission.context, dict)
+                and "supportEventId" in submission.context
+            )
+        }
         timeline: list[dict[str, object]] = []
+        for submission in student_submissions:
+            timeline.append(
+                {
+                    "id": f"submission-{submission.id}",
+                    "event_type": "SUBMISSION",
+                    "speaker": "STUDENT",
+                    "submission_type": submission.submission_type,
+                    "content": submission.content,
+                    "correctness": None,
+                    "completeness": None,
+                    "action": None,
+                    "created_at": submission.created_at,
+                }
+            )
         evaluations = self.database_session.scalars(
             select(AIEvaluation)
             .where(
@@ -225,6 +256,8 @@ class SessionRepository:
                 {
                     "id": f"evaluation-{evaluation.id}",
                     "event_type": "EVALUATION",
+                    "speaker": "AI",
+                    "submission_type": None,
                     "content": evaluation.feedback,
                     "correctness": evaluation.correctness,
                     "completeness": evaluation.completeness,
@@ -240,13 +273,34 @@ class SessionRepository:
                     {
                         "id": f"support-{support.id}",
                         "event_type": "SUPPORT",
-                        "content": support.follow_up_content or support.content,
+                        "speaker": "AI",
+                        "submission_type": None,
+                        "content": support.content,
                         "correctness": None,
                         "completeness": None,
                         "action": support.support_type,
                         "created_at": support.created_at,
                     }
                 )
+                if support.follow_up_content:
+                    answer_submission = guided_answer_submissions_by_support_id.get(support.id)
+                    timeline.append(
+                        {
+                            "id": f"support-follow-up-{support.id}",
+                            "event_type": "SUPPORT",
+                            "speaker": "AI",
+                            "submission_type": None,
+                            "content": support.follow_up_content,
+                            "correctness": None,
+                            "completeness": None,
+                            "action": support.support_type,
+                            "created_at": (
+                                answer_submission.created_at
+                                if answer_submission is not None
+                                else support.created_at
+                            ),
+                        }
+                    )
         solution_transitions = self.database_session.scalars(
             select(StateTransitionEvent)
             .where(
@@ -260,6 +314,8 @@ class SessionRepository:
                 {
                     "id": f"solution-{transition.id}",
                     "event_type": "FULL_SOLUTION",
+                    "speaker": "SYSTEM",
+                    "submission_type": None,
                     "content": "已展示完整解析。",
                     "correctness": None,
                     "completeness": None,
@@ -280,6 +336,8 @@ class SessionRepository:
                 {
                     "id": f"human-{transition.id}",
                     "event_type": "NEED_HUMAN",
+                    "speaker": "SYSTEM",
+                    "submission_type": None,
                     "content": student_need_human_message(transition.trigger_type),
                     "correctness": None,
                     "completeness": None,
@@ -287,7 +345,7 @@ class SessionRepository:
                     "created_at": transition.created_at,
                 }
             )
-        return sorted(timeline, key=lambda item: (item["created_at"], str(item["id"])))
+        return sorted(timeline, key=_timeline_sort_key)
 
     def choose_initial_choice(self, session: Session, choice: str) -> Session:
         before_snapshot = session_snapshot(session)
@@ -316,6 +374,12 @@ class SessionRepository:
         )
         self.database_session.add(attempt)
         self.database_session.flush()
+        self._record_student_submission(
+            session=session,
+            submission_type="SELF_EXPLANATION",
+            content=confirmed_text,
+            context={"inputMode": "TEXT", "attemptId": attempt.id, "round": session.round},
+        )
         session.current_draft = confirmed_text
         session.last_support_draft = confirmed_text
         session.flow_stage = FLOW_STAGE_AI_EVALUATING
@@ -392,6 +456,12 @@ class SessionRepository:
         before_snapshot = session_snapshot(session)
         attempt.confirmed_text = confirmed_text
         attempt.confirmed_at = datetime.now(UTC)
+        self._record_student_submission(
+            session=session,
+            submission_type="SELF_EXPLANATION",
+            content=confirmed_text,
+            context={"inputMode": "VOICE", "attemptId": attempt.id, "round": session.round},
+        )
         session.current_draft = confirmed_text
         session.last_support_draft = confirmed_text
         session.flow_stage = FLOW_STAGE_AI_EVALUATING
@@ -679,6 +749,19 @@ class SessionRepository:
         self.database_session.refresh(session)
         return session.no_progress_help_request_count > settings.guided_question_request_limit
 
+    def record_support_submission(
+        self,
+        *,
+        session: Session,
+        main_draft: str,
+        doubt_text: str | None,
+    ) -> None:
+        self._record_support_submission(
+            session=session,
+            main_draft=main_draft,
+            doubt_text=doubt_text,
+        )
+
     def record_guided_questions(
         self,
         *,
@@ -820,6 +903,14 @@ class SessionRepository:
         follow_up_content: str,
     ) -> Session:
         before_snapshot = session_snapshot(session)
+        self._record_student_submission(
+            session=session,
+            submission_type="GUIDED_ANSWER",
+            content=_format_guided_answers_for_timeline(
+                support_event.guided_questions or [], answers
+            ),
+            context={"supportEventId": support_event.id, "round": session.round},
+        )
         support_event.guided_answers = [item.model_dump() for item in answers]
         support_event.follow_up_content = follow_up_content
         session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
@@ -895,6 +986,12 @@ class SessionRepository:
 
     def appeal(self, *, session: Session, reason: str, evaluation_id: int) -> Session:
         before_snapshot = session_snapshot(session)
+        self._record_student_submission(
+            session=session,
+            submission_type="APPEAL",
+            content=reason,
+            context={"evaluationId": evaluation_id, "round": session.round},
+        )
         session.status = STATUS_NEED_HUMAN
         session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
         session.need_human_reason = f"学生申诉：{reason}"
@@ -979,6 +1076,45 @@ class SessionRepository:
         self.database_session.commit()
         self.database_session.refresh(session)
         return session
+
+    def _record_student_submission(
+        self,
+        *,
+        session: Session,
+        submission_type: str,
+        content: str,
+        context: dict[str, object] | None = None,
+    ) -> None:
+        self.database_session.add(
+            StudentSubmission(
+                session_id=session.id,
+                submission_type=submission_type,
+                content=content,
+                context=context or {},
+            )
+        )
+
+    def _record_support_submission(
+        self,
+        *,
+        session: Session,
+        main_draft: str,
+        doubt_text: str | None,
+    ) -> None:
+        if doubt_text is not None:
+            self._record_student_submission(
+                session=session,
+                submission_type="DOUBT",
+                content=doubt_text,
+                context={"mainDraft": main_draft, "round": session.round},
+            )
+            return
+        self._record_student_submission(
+            session=session,
+            submission_type="SUPPORT_REQUEST",
+            content=main_draft,
+            context={"round": session.round},
+        )
 
     def _create_evaluation(
         self,
@@ -1102,6 +1238,41 @@ def student_need_human_message(trigger_type: str) -> str:
     if trigger_type == "APPLY_AI_EVALUATION":
         return "暂无法可靠判断，已转人工帮助。"
     return "当前无法自动继续，已转人工帮助。"
+
+
+def _format_guided_answers_for_timeline(
+    guided_questions: list[dict[str, str]], answers: list[GuidedAnswer]
+) -> str:
+    question_by_id = {
+        str(question["id"]): str(question["question"])
+        for question in guided_questions
+        if "id" in question and "question" in question
+    }
+    answer_blocks = []
+    for index, answer in enumerate(answers, start=1):
+        question = question_by_id.get(answer.question_id, f"第 {index} 个子问题")
+        answer_blocks.append(f"{question}\n答：{answer.answer}")
+    return "\n\n".join(answer_blocks)
+
+
+def _timeline_sort_key(item: dict[str, object]) -> tuple[object, int, str]:
+    event_type = str(item["event_type"])
+    submission_type = str(item.get("submission_type"))
+    if event_type == "SUBMISSION" and submission_type == "SELF_EXPLANATION":
+        event_order = 0
+    elif event_type == "EVALUATION":
+        event_order = 1
+    elif event_type == "SUBMISSION":
+        event_order = 2
+    elif event_type == "SUPPORT":
+        event_order = 3
+    else:
+        event_order = 4
+    return (
+        item["created_at"],
+        event_order,
+        str(item["id"]),
+    )
 
 
 def _normalize_draft(value: str) -> str:

@@ -263,6 +263,11 @@ def request_support(
     question = database_session.get(Question, session.question_id)
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
+    repository.record_support_submission(
+        session=session,
+        main_draft=action_input.main_draft,
+        doubt_text=None,
+    )
     limited_session = repository.resolve_support_limit(
         session=session,
         settings=request.app.state.settings,
@@ -309,6 +314,11 @@ def ask_doubt(
     question = database_session.get(Question, session.question_id)
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
+    repository.record_support_submission(
+        session=session,
+        main_draft=action_input.main_draft,
+        doubt_text=action_input.doubt_text,
+    )
     support_service = AISupportService(database_session, request.app.state.settings)
     output = support_service.generate_request(
         question=question,
