@@ -2,10 +2,10 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
+from conftest import authenticated_test_client
 from sqlalchemy import create_engine, text
 
 from alembic import command
-from app.main import create_app
 from app.services.ai_evaluation import AIModelClient, AIModelResponse
 
 
@@ -29,7 +29,7 @@ def migrate_database(settings, monkeypatch) -> None:
 
 def prepare_client(settings, monkeypatch):
     migrate_database(settings, monkeypatch)
-    return create_app(settings)
+    return authenticated_test_client(settings)
 
 
 def create_session(client) -> dict[str, object]:
@@ -52,9 +52,7 @@ def create_session(client) -> dict[str, object]:
     ],
 )
 def test_pause_and_resume_preserve_stage_and_counters(settings, monkeypatch, flow_stage):
-    from fastapi.testclient import TestClient
-
-    with TestClient(prepare_client(settings, monkeypatch)) as client:
+    with prepare_client(settings, monkeypatch) as client:
         session = create_session(client)
         engine = create_engine(settings.database_url)
         try:
@@ -92,9 +90,7 @@ def test_pause_and_resume_preserve_stage_and_counters(settings, monkeypatch, flo
 
 
 def test_processing_stage_cannot_pause(settings, monkeypatch):
-    from fastapi.testclient import TestClient
-
-    with TestClient(prepare_client(settings, monkeypatch)) as client:
+    with prepare_client(settings, monkeypatch) as client:
         session = create_session(client)
         engine = create_engine(settings.database_url)
         try:
@@ -115,8 +111,6 @@ def test_processing_stage_cannot_pause(settings, monkeypatch):
 
 
 def test_audit_state_events_include_request_id(settings, monkeypatch):
-    from fastapi.testclient import TestClient
-
     monkeypatch.setattr(
         AIModelClient,
         "evaluate",
@@ -129,7 +123,7 @@ def test_audit_state_events_include_request_id(settings, monkeypatch):
             1,
         ),
     )
-    with TestClient(prepare_client(settings, monkeypatch)) as client:
+    with prepare_client(settings, monkeypatch) as client:
         session = create_session(client)
         response = client.post(
             f"/api/sessions/{session['id']}/pause",
@@ -145,8 +139,6 @@ def test_audit_state_events_include_request_id(settings, monkeypatch):
 
 
 def test_external_call_audit_includes_request_id(settings, monkeypatch):
-    from fastapi.testclient import TestClient
-
     monkeypatch.setattr(
         AIModelClient,
         "evaluate",
@@ -159,7 +151,7 @@ def test_external_call_audit_includes_request_id(settings, monkeypatch):
             1,
         ),
     )
-    with TestClient(prepare_client(settings, monkeypatch)) as client:
+    with prepare_client(settings, monkeypatch) as client:
         session = create_session(client)
         chosen = client.post(
             f"/api/sessions/{session['id']}/initial-choice",

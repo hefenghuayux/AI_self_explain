@@ -1,8 +1,12 @@
 import type { GuidedAnswer, InitialChoice, LearningTimelineItem, Session } from "../types/session"
+import { getAuthToken } from "../stores/auth"
 
 async function requestSessionApi<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
+    },
     ...options,
   })
   if (!response.ok) {

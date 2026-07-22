@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import HealthStatus from "../components/HealthStatus.vue"
+import { authUser } from "../stores/auth"
 </script>
 
 <template>
@@ -13,7 +14,7 @@ import HealthStatus from "../components/HealthStatus.vue"
       </template>
       <p class="intro">阶段 01：项目骨架与配置</p>
       <HealthStatus />
-      <RouterLink class="question-link" to="/questions">
+      <RouterLink v-if="authUser?.role === 'TEACHER'" class="question-link" to="/questions">
         <el-button type="primary">进入题目管理</el-button>
       </RouterLink>
     </el-card>

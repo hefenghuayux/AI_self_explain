@@ -1,25 +1,11 @@
-from collections.abc import Generator
-from typing import Annotated
+from fastapi import APIRouter, HTTPException, status
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session
-
+from app.core.auth import CurrentUser, DatabaseSession, TeacherUser
 from app.models.question import Question
 from app.repositories.questions import QuestionRepository
 from app.schemas.question import QuestionInput, QuestionResponse
 
 router = APIRouter(prefix="/questions", tags=["questions"])
-
-
-def get_database_session(request: Request) -> Generator[Session, None, None]:
-    session: Session = request.app.state.database_session_factory()
-    try:
-        yield session
-    finally:
-        session.close()
-
-
-DatabaseSession = Annotated[Session, Depends(get_database_session)]
 
 
 def get_question_or_404(repository: QuestionRepository, question_id: int) -> Question:
@@ -35,19 +21,26 @@ def get_question_or_404(repository: QuestionRepository, question_id: int) -> Que
 def create_question(
     question_input: QuestionInput,
     session: DatabaseSession,
+    _teacher: TeacherUser,
 ) -> QuestionResponse:
     return QuestionRepository(session).create(question_input)
 
 
 @router.get("", response_model=list[QuestionResponse])
 def list_questions(
-    session: DatabaseSession, include_archived: bool = False
+    session: DatabaseSession, user: CurrentUser, include_archived: bool = False
 ) -> list[QuestionResponse]:
+    if include_archived and user.role != "TEACHER":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="当前账号没有题目管理权限"
+        )
     return QuestionRepository(session).list_questions(include_archived=include_archived)
 
 
 @router.get("/{question_id}", response_model=QuestionResponse)
-def get_question(question_id: int, session: DatabaseSession) -> QuestionResponse:
+def get_question(
+    question_id: int, session: DatabaseSession, _user: CurrentUser
+) -> QuestionResponse:
     repository = QuestionRepository(session)
     return get_question_or_404(repository, question_id)
 
@@ -57,6 +50,7 @@ def update_question(
     question_id: int,
     question_input: QuestionInput,
     session: DatabaseSession,
+    _teacher: TeacherUser,
 ) -> QuestionResponse:
     repository = QuestionRepository(session)
     question = get_question_or_404(repository, question_id)
@@ -66,14 +60,18 @@ def update_question(
 
 
 @router.post("/{question_id}/archive", response_model=QuestionResponse)
-def archive_question(question_id: int, session: DatabaseSession) -> QuestionResponse:
+def archive_question(
+    question_id: int, session: DatabaseSession, _teacher: TeacherUser
+) -> QuestionResponse:
     repository = QuestionRepository(session)
     question = get_question_or_404(repository, question_id)
     return repository.archive(question)
 
 
 @router.post("/{question_id}/restore", response_model=QuestionResponse)
-def restore_question(question_id: int, session: DatabaseSession) -> QuestionResponse:
+def restore_question(
+    question_id: int, session: DatabaseSession, _teacher: TeacherUser
+) -> QuestionResponse:
     repository = QuestionRepository(session)
     question = get_question_or_404(repository, question_id)
     return repository.restore(question)

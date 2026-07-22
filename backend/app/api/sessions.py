@@ -3,9 +3,17 @@ import json
 import logging
 import time
 
-from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 
-from app.api.questions import DatabaseSession
+from app.core.auth import DatabaseSession, get_current_user
 from app.models.question import Question
 from app.models.session import Session
 from app.repositories.sessions import SessionRepository
@@ -43,7 +51,9 @@ from app.services.audio_storage import AudioStorage, AudioStorageError
 from app.services.realtime_asr import ASRServiceError, ASRStreamEvent, RealtimeASRService
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/sessions", tags=["sessions"])
+router = APIRouter(
+    prefix="/sessions", tags=["sessions"], dependencies=[Depends(get_current_user)]
+)
 
 
 def get_session_or_404(repository: SessionRepository, session_id: int) -> Session:
@@ -466,7 +476,8 @@ async def start_realtime_asr(
 
 @router.websocket("/{session_id}/voice-stream")
 async def stream_voice_input(websocket: WebSocket, session_id: int, version: int) -> None:
-    await websocket.accept()
+    requested_protocols = websocket.headers.get("Sec-WebSocket-Protocol", "")
+    await websocket.accept(subprotocol="bearer" if requested_protocols else None)
     database_session = websocket.app.state.database_session_factory()
     capture = None
     service: RealtimeASRService | None = None

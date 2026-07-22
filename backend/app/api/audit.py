@@ -1,10 +1,10 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.questions import DatabaseSession
+from app.core.auth import DatabaseSession, get_current_user
 from app.repositories.sessions import SessionRepository
 from app.schemas.audit import ExternalCallRecordResponse, StateTransitionEventResponse
 
-router = APIRouter(prefix="/sessions", tags=["audit"])
+router = APIRouter(prefix="/sessions", tags=["audit"], dependencies=[Depends(get_current_user)])
 
 
 def require_session(repository: SessionRepository, session_id: int) -> None:

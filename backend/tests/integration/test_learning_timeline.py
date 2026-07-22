@@ -2,11 +2,11 @@ import json
 from pathlib import Path
 
 from alembic.config import Config
+from conftest import authenticated_test_client
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
 from alembic import command
-from app.main import create_app
 from app.services.ai_evaluation import AIModelClient, AIModelResponse
 
 
@@ -30,7 +30,7 @@ def migrate_database(settings, monkeypatch) -> None:
 
 def prepare_client(settings, monkeypatch) -> TestClient:
     migrate_database(settings, monkeypatch)
-    return TestClient(create_app(settings))
+    return authenticated_test_client(settings)
 
 
 def create_started_session(client: TestClient) -> dict[str, object]:

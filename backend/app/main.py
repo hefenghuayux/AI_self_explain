@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import sessionmaker
 
 from app.api.audit import router as audit_router
+from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.questions import router as questions_router
 from app.api.sessions import router as sessions_router
@@ -38,6 +39,7 @@ def create_app(settings: Settings) -> FastAPI:
     application = FastAPI(title="AI 自讲 Demo API", version="0.1.0", lifespan=lifespan)
     application.state.settings = settings
     application.include_router(health_router, prefix="/api")
+    application.include_router(auth_router, prefix="/api")
     application.include_router(questions_router, prefix="/api")
     application.include_router(sessions_router, prefix="/api")
     application.include_router(audit_router, prefix="/api")

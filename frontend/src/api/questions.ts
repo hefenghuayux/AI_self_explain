@@ -1,8 +1,12 @@
 import type { Question, QuestionInput } from "../types/question"
+import { getAuthToken } from "../stores/auth"
 
 async function requestQuestionApi<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
+    },
     ...options,
   })
   if (!response.ok) {

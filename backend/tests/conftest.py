@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 
 TEST_ENV = {
     "FIRST_ROUND_SUPPORT_LIMIT": "6",
@@ -44,8 +46,10 @@ TEST_ENV = {
 for key, value in TEST_ENV.items():
     os.environ[key] = value
 
+from app.core.auth import create_auth_session, hash_password  # noqa: E402
 from app.core.config import Settings  # noqa: E402
 from app.main import create_app  # noqa: E402
+from app.models.user import User  # noqa: E402
 
 
 @pytest.fixture
@@ -67,3 +71,26 @@ def settings(settings_values: dict[str, str]) -> Settings:
 def client(settings: Settings) -> Iterator[TestClient]:
     with TestClient(create_app(settings)) as test_client:
         yield test_client
+
+
+def authenticated_test_client(settings: Settings) -> TestClient:
+    engine = create_engine(settings.database_url)
+    try:
+        with Session(engine) as session:
+            user = session.scalar(select(User).where(User.username == "test-teacher"))
+            if user is None:
+                user = User(
+                    username="test-teacher",
+                    password_hash=hash_password("test-password"),
+                    full_name="测试教师",
+                    role="TEACHER",
+                )
+                session.add(user)
+                session.commit()
+                session.refresh(user)
+            token, _ = create_auth_session(session, user, settings.auth_session_days)
+    finally:
+        engine.dispose()
+    client = TestClient(create_app(settings))
+    client.headers.update({"Authorization": f"Bearer {token}"})
+    return client

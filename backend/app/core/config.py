@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     database_busy_timeout_seconds: PositiveFloat
     log_max_size_mib: PositiveInt
     log_backup_count: PositiveInt
+    auth_session_days: PositiveInt = 30
 
     ai_provider: NonEmptyString
     ai_base_url: AnyHttpUrl

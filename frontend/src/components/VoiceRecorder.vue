@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref } from "vue"
 
+import { getAuthToken } from "../stores/auth"
+
 const props = defineProps<{
   sessionId: string
   version: number
@@ -25,8 +27,13 @@ let silentGainNode: GainNode | undefined
 let targetSampleRate = 16000
 
 function createVoiceStreamUrl() {
+  const token = getAuthToken()
+  if (!token) throw new Error("请先登录")
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-  return `${protocol}//${window.location.host}/api/sessions/${props.sessionId}/voice-stream?version=${props.version}`
+  return {
+    url: `${protocol}//${window.location.host}/api/sessions/${props.sessionId}/voice-stream?version=${props.version}`,
+    token,
+  }
 }
 
 function encodePcm16(input: Float32Array, sourceSampleRate: number) {
@@ -65,7 +72,8 @@ async function start() {
   previewText.value = ""
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    socket = new WebSocket(createVoiceStreamUrl())
+    const voiceStream = createVoiceStreamUrl()
+    socket = new WebSocket(voiceStream.url, ["bearer", voiceStream.token])
     socket.binaryType = "arraybuffer"
     socket.onmessage = (event) => {
       const message = JSON.parse(String(event.data)) as {

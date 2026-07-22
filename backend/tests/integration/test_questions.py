@@ -3,12 +3,12 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
+from conftest import authenticated_test_client
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, insert, inspect
 
 from alembic import command
 from app.core.config import Settings
-from app.main import create_app
 from app.models.question import Question
 
 
@@ -35,7 +35,7 @@ def migrated_settings(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> Se
 
 @pytest.fixture
 def question_client(migrated_settings: Settings) -> Iterator[TestClient]:
-    with TestClient(create_app(migrated_settings)) as test_client:
+    with authenticated_test_client(migrated_settings) as test_client:
         yield test_client
 
 

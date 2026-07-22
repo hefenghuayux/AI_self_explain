@@ -4,12 +4,11 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
-from fastapi.testclient import TestClient
+from conftest import authenticated_test_client
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session as DatabaseSession
 
 from alembic import command
-from app.main import create_app
 from app.models.audio_file import AudioFile
 from app.models.explanation_attempt import ExplanationAttempt
 from app.models.external_call_record import ExternalCallRecord
@@ -87,7 +86,7 @@ def test_realtime_voice_transcript_is_confirmed_before_ai_evaluation(settings, m
     monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
     migrate_database(settings, monkeypatch)
 
-    with TestClient(create_app(settings)) as client:
+    with authenticated_test_client(settings) as client:
         question = client.post("/api/questions", json=question_payload()).json()
         session = client.post("/api/sessions", json={"questionId": question["id"]}).json()
         session = client.post(
@@ -147,7 +146,7 @@ def test_audio_write_failure_does_not_create_partial_database_records(
     settings, monkeypatch
 ) -> None:
     migrate_database(settings, monkeypatch)
-    with TestClient(create_app(settings)) as client:
+    with authenticated_test_client(settings) as client:
         question = client.post("/api/questions", json=question_payload()).json()
         created_session = client.post("/api/sessions", json={"questionId": question["id"]}).json()
         client.post(
