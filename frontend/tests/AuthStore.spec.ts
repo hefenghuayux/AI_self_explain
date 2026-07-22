@@ -48,6 +48,7 @@ describe("auth store", () => {
 
     expect(localStorage.getItem("ai-self-explain-auth-token")).toBeNull()
     expect(auth.getAuthToken()).toBe("memory-token")
+    expect(await auth.initializeAuth()).toBe(true)
   })
 
   it("clears the remembered token after logout", async () => {

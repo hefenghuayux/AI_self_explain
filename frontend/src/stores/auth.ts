@@ -16,6 +16,10 @@ export function getAuthToken(): string | undefined {
 }
 
 export async function initializeAuth(): Promise<boolean> {
+  if (isAuthenticated.value) {
+    initialized = true
+    return true
+  }
   if (initialized) return isAuthenticated.value
   initialized = true
   const savedToken = localStorage.getItem(STORAGE_KEY)

@@ -330,7 +330,7 @@ async function respondToSolution(understood: boolean) {
       <template #header>
         <div class="page-header">
           <div><p class="eyebrow">SELF EXPLANATION</p><h1>开始自讲</h1></div>
-          <RouterLink v-if="session" :to="`/questions/${session.questionId}`"><el-button>返回题目</el-button></RouterLink>
+          <RouterLink v-if="session" to="/"><el-button>返回题目列表</el-button></RouterLink>
         </div>
       </template>
       <el-alert v-if="errorMessage" :title="errorMessage" type="error" :closable="false" show-icon />

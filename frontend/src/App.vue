@@ -15,8 +15,7 @@ async function signOut() {
   <el-header v-if="isAuthenticated" class="app-header">
     <strong>AI 自讲 Demo</strong>
     <nav>
-      <RouterLink to="/">首页</RouterLink>
-      <RouterLink v-if="authUser?.role === 'TEACHER'" to="/questions">题目管理</RouterLink>
+      <RouterLink to="/">题目列表</RouterLink>
       <span>{{ authUser?.fullName }}</span>
       <el-button link @click="signOut">退出登录</el-button>
     </nav>

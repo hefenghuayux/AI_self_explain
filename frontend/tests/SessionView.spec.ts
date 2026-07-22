@@ -66,8 +66,8 @@ async function mountSessionView() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: "/", component: { template: "<div />" } },
       { path: "/sessions/:sessionId", component: SessionView },
-      { path: "/questions/:questionId", component: { template: "<div />" } },
     ],
   })
   await router.push("/sessions/12")
