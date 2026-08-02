@@ -2,12 +2,20 @@
 import { onBeforeUnmount, ref } from "vue"
 
 import { getAuthToken } from "../stores/auth"
+import type { VoiceInputTarget } from "../types/session"
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   sessionId: string
   version: number
+  target: VoiceInputTarget
+  targetId?: string
+  startTestId?: string
+  stopTestId?: string
   disabled?: boolean
-}>()
+}>(), {
+  startTestId: "start-voice",
+  stopTestId: "stop-voice",
+})
 
 const emit = defineEmits<{
   finalTranscript: [text: string]
@@ -29,8 +37,13 @@ function createVoiceStreamUrl() {
   const token = getAuthToken()
   if (!token) throw new Error("请先登录")
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
+  const query = new URLSearchParams({
+    version: String(props.version),
+    target: props.target,
+  })
+  if (props.targetId) query.set("targetId", props.targetId)
   return {
-    url: `${protocol}//${window.location.host}/api/sessions/${props.sessionId}/voice-stream?version=${props.version}`,
+    url: `${protocol}//${window.location.host}/api/sessions/${props.sessionId}/voice-stream?${query}`,
     token,
   }
 }
@@ -137,8 +150,8 @@ defineExpose({ start })
 <template>
   <section class="voice-recorder">
     <div class="actions">
-      <el-button v-if="!recording" data-testid="start-voice" :disabled="disabled" @click="start">开始录音</el-button>
-      <el-button v-else data-testid="stop-voice" type="danger" @click="stop">结束录音</el-button>
+      <el-button v-if="!recording" :data-testid="startTestId" :disabled="disabled" @click="start">开始录音</el-button>
+      <el-button v-else :data-testid="stopTestId" type="danger" @click="stop">结束录音</el-button>
     </div>
   </section>
 </template>

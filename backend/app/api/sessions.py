@@ -7,6 +7,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Query,
     Request,
     WebSocket,
     WebSocketDisconnect,
@@ -42,9 +43,10 @@ from app.schemas.session import (
     SolutionUnderstandingInput,
     StudentActionInput,
     TextAttemptInput,
+    VoiceInputTarget,
     VoiceTranscriptConfirmationInput,
 )
-from app.schemas.support import SupportEventResponse
+from app.schemas.support import GuidedAnswer, SupportEventResponse
 from app.services.ai_evaluation import AIEvaluationService
 from app.services.ai_support import AISupportService
 from app.services.audio_storage import AudioStorage, AudioStorageError
@@ -216,6 +218,8 @@ def confirm_voice_attempt(
     attempt = repository.get_pending_voice_attempt(session.id)
     if attempt is None or attempt.id != attempt_input.attempt_id:
         reject_operation("待确认的语音转写不存在或已变化")
+    if attempt.voice_target != "SELF_EXPLANATION":
+        reject_operation(f"当前语音转写不属于自讲输入：{attempt.voice_target}")
     confirmed_session, confirmed_attempt = repository.confirm_voice_attempt(
         session=session,
         attempt=attempt,
@@ -230,6 +234,31 @@ def confirm_voice_attempt(
         question=question, session=confirmed_session, attempt=confirmed_attempt
     )
     return to_session_response(repository, evaluated_session)
+
+
+@router.post("/{session_id}/voice-attempts/confirm-draft", response_model=SessionResponse)
+def confirm_voice_draft(
+    session_id: int,
+    attempt_input: VoiceTranscriptConfirmationInput,
+    database_session: DatabaseSession,
+) -> SessionResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id)
+    validate_in_progress(session)
+    validate_version(session, attempt_input.version)
+    if session.flow_stage != FLOW_STAGE_CONFIRMING_TEXT:
+        reject_operation(f"当前流程阶段不能确认语音草稿：{session.flow_stage}")
+    attempt = repository.get_pending_voice_attempt(session.id)
+    if attempt is None or attempt.id != attempt_input.attempt_id:
+        reject_operation("待确认的语音转写不存在或已变化")
+    if attempt.voice_target == "SELF_EXPLANATION":
+        reject_operation("自讲语音必须通过提交自讲确认")
+    confirmed_session = repository.confirm_voice_draft(
+        session=session,
+        attempt=attempt,
+        confirmed_text=attempt_input.confirmed_text,
+    )
+    return to_session_response(repository, confirmed_session)
 
 
 @router.post("/{session_id}/continue", response_model=SessionResponse)
@@ -358,6 +387,38 @@ def submit_guided_answers(
     support_event = repository.get_pending_guided_support(session.id)
     if support_event is None:
         raise RuntimeError(f"会话 {session.id} 缺少待回答的子问题支持事件")
+    question_ids = [
+        str(item["id"])
+        for item in support_event.guided_questions or []
+        if "id" in item
+    ]
+    submitted_by_id = {answer.question_id: answer for answer in action_input.answers}
+    if len(submitted_by_id) != len(action_input.answers):
+        reject_operation("同一次提交不能包含重复的子问题答案")
+    unknown_question_ids = set(submitted_by_id) - set(question_ids)
+    if unknown_question_ids:
+        reject_operation(f"提交了不存在的子问题：{sorted(unknown_question_ids)}")
+    existing_answers = [
+        GuidedAnswer.model_validate(answer) for answer in support_event.guided_answers or []
+    ]
+    existing_by_id = {answer.question_id: answer for answer in existing_answers}
+    repeated_question_ids = set(submitted_by_id) & set(existing_by_id)
+    if repeated_question_ids:
+        reject_operation(f"子问题已经提交过答案：{sorted(repeated_question_ids)}")
+    merged_by_id = {**existing_by_id, **submitted_by_id}
+    merged_answers = [
+        merged_by_id[question_id]
+        for question_id in question_ids
+        if question_id in merged_by_id
+    ]
+    if len(merged_answers) < len(question_ids):
+        updated_session = repository.record_partial_guided_answers(
+            session=session,
+            support_event=support_event,
+            submitted_answers=action_input.answers,
+            merged_answers=merged_answers,
+        )
+        return to_session_response(repository, updated_session)
     question = database_session.get(Question, session.question_id)
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
@@ -366,14 +427,15 @@ def submit_guided_answers(
         question=question,
         session=session,
         support_event=support_event,
-        answers=action_input.answers,
+        answers=merged_answers,
     )
     if assessment is None:
         return to_session_response(repository, session)
     updated_session = repository.record_guided_answers(
         session=session,
         support_event=support_event,
-        answers=action_input.answers,
+        submitted_answers=action_input.answers,
+        merged_answers=merged_answers,
         follow_up_content=assessment.content,
     )
     return to_session_response(repository, updated_session)
@@ -485,7 +547,13 @@ async def start_realtime_asr(
 
 
 @router.websocket("/{session_id}/voice-stream")
-async def stream_voice_input(websocket: WebSocket, session_id: int, version: int) -> None:
+async def stream_voice_input(
+    websocket: WebSocket,
+    session_id: int,
+    version: int,
+    target: VoiceInputTarget = "SELF_EXPLANATION",
+    target_id: str | None = Query(default=None, alias="targetId"),
+) -> None:
     requested_protocols = websocket.headers.get("Sec-WebSocket-Protocol", "")
     await websocket.accept(subprotocol="bearer" if requested_protocols else None)
     database_session = websocket.app.state.database_session_factory()
@@ -507,12 +575,41 @@ async def stream_voice_input(websocket: WebSocket, session_id: int, version: int
             return
         pending_voice_attempt = repository.get_pending_voice_attempt(session.id)
         can_rerecord_pending_voice = (
-            session.flow_stage == FLOW_STAGE_CONFIRMING_TEXT and pending_voice_attempt is not None
+            session.flow_stage == FLOW_STAGE_CONFIRMING_TEXT
+            and pending_voice_attempt is not None
+            and pending_voice_attempt.voice_target == target
+            and pending_voice_attempt.voice_target_id == target_id
         )
-        if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT and not can_rerecord_pending_voice:
+        expected_stage = {
+            "SELF_EXPLANATION": FLOW_STAGE_CAPTURING_INPUT,
+            "GUIDED_ANSWER": FLOW_STAGE_WAIT_GUIDED_ANSWERS,
+            "DOUBT": FLOW_STAGE_WAIT_STUDENT_ACTION,
+            "APPEAL": FLOW_STAGE_WAIT_STUDENT_ACTION,
+        }[target]
+        if session.flow_stage != expected_stage and not can_rerecord_pending_voice:
             await reject_voice_stream(
                 websocket, f"当前流程阶段不能进行语音输入：{session.flow_stage}"
             )
+            return
+        if target == "GUIDED_ANSWER":
+            support_event = repository.get_pending_guided_support(session.id)
+            guided_question_ids = (
+                {
+                    str(item["id"])
+                    for item in support_event.guided_questions or []
+                    if "id" in item
+                }
+                if support_event is not None
+                else set()
+            )
+            if target_id is None or target_id not in guided_question_ids:
+                await reject_voice_stream(websocket, "语音输入对应的子问题不存在或已经提交")
+                return
+        elif target_id is not None:
+            await reject_voice_stream(websocket, "当前语音输入目标不能携带 targetId")
+            return
+        if target == "APPEAL" and repository.get_latest_valid_evaluation(session.id) is None:
+            await reject_voice_stream(websocket, "尚未获得 AI 评价，不能录制申诉")
             return
 
         settings = websocket.app.state.settings
@@ -627,6 +724,8 @@ async def stream_voice_input(websocket: WebSocket, session_id: int, version: int
                         capture=capture,
                         audio_storage=audio_storage,
                         asr_transcript=asr_transcript,
+                        voice_target=target,
+                        voice_target_id=target_id,
                     )
                     repository.record_external_call(
                         session=completed_session,

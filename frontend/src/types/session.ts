@@ -1,4 +1,5 @@
 export type InitialChoice = "KNOW" | "NOT_KNOW" | "HAS_QUESTION"
+export type VoiceInputTarget = "SELF_EXPLANATION" | "GUIDED_ANSWER" | "DOUBT" | "APPEAL"
 
 export type SessionStatus = "IN_PROGRESS" | "COMPLETED" | "STOPPED_LIMIT" | "NEED_HUMAN" | "PAUSED"
 
@@ -106,4 +107,6 @@ export interface PendingVoiceAttempt {
   id: number
   audioFileId: number
   asrTranscript: string
+  voiceTarget: VoiceInputTarget
+  voiceTargetId: string | null
 }

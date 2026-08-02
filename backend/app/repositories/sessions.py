@@ -402,6 +402,8 @@ class SessionRepository:
         capture: AudioCapture,
         audio_storage: AudioStorage,
         asr_transcript: str,
+        voice_target: str,
+        voice_target_id: str | None,
     ) -> tuple[Session, ExplanationAttempt]:
         before_snapshot = session_snapshot(session)
         pending_attempt = self.get_pending_voice_attempt(session.id)
@@ -419,6 +421,8 @@ class SessionRepository:
                 session_id=session.id,
                 round=session.round,
                 input_mode="VOICE",
+                voice_target=voice_target,
+                voice_target_id=voice_target_id,
                 audio_file_id=audio_file.id,
                 asr_transcript=asr_transcript,
                 confirmed_text=None,
@@ -429,6 +433,11 @@ class SessionRepository:
         else:
             # 重新录音复用待确认记录，避免产生多个无法确认的语音尝试。
             attempt = pending_attempt
+            if (
+                attempt.voice_target != voice_target
+                or attempt.voice_target_id != voice_target_id
+            ):
+                raise ValueError("重新录音目标与待确认语音尝试不一致")
             audio_file = self.database_session.get(AudioFile, attempt.audio_file_id)
             if audio_file is None:
                 raise RuntimeError(
@@ -462,6 +471,29 @@ class SessionRepository:
         self.database_session.refresh(session)
         self.database_session.refresh(attempt)
         return session, attempt
+
+    def confirm_voice_draft(
+        self, *, session: Session, attempt: ExplanationAttempt, confirmed_text: str
+    ) -> Session:
+        before_snapshot = session_snapshot(session)
+        attempt.confirmed_text = confirmed_text
+        attempt.confirmed_at = datetime.now(UTC)
+        if attempt.voice_target == "GUIDED_ANSWER":
+            session.flow_stage = FLOW_STAGE_WAIT_GUIDED_ANSWERS
+        elif attempt.voice_target in {"DOUBT", "APPEAL"}:
+            session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+        else:
+            raise ValueError(f"语音目标不能作为独立草稿确认：{attempt.voice_target}")
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="CONFIRM_VOICE_DRAFT",
+            before_snapshot=before_snapshot,
+            related_attempt_id=attempt.id,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
 
     def confirm_voice_attempt(
         self, *, session: Session, attempt: ExplanationAttempt, confirmed_text: str
@@ -907,12 +939,41 @@ class SessionRepository:
         self.database_session.refresh(session)
         return session
 
+    def record_partial_guided_answers(
+        self,
+        *,
+        session: Session,
+        support_event: SupportEvent,
+        submitted_answers: list[GuidedAnswer],
+        merged_answers: list[GuidedAnswer],
+    ) -> Session:
+        before_snapshot = session_snapshot(session)
+        self._record_student_submission(
+            session=session,
+            submission_type="GUIDED_ANSWER",
+            content=_format_guided_answers_for_timeline(
+                support_event.guided_questions or [], submitted_answers
+            ),
+            context={"supportEventId": support_event.id, "round": session.round},
+        )
+        support_event.guided_answers = [item.model_dump() for item in merged_answers]
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="SUBMIT_PARTIAL_GUIDED_ANSWER",
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
     def record_guided_answers(
         self,
         *,
         session: Session,
         support_event: SupportEvent,
-        answers: list[GuidedAnswer],
+        submitted_answers: list[GuidedAnswer],
+        merged_answers: list[GuidedAnswer],
         follow_up_content: str,
     ) -> Session:
         before_snapshot = session_snapshot(session)
@@ -920,11 +981,11 @@ class SessionRepository:
             session=session,
             submission_type="GUIDED_ANSWER",
             content=_format_guided_answers_for_timeline(
-                support_event.guided_questions or [], answers
+                support_event.guided_questions or [], submitted_answers
             ),
             context={"supportEventId": support_event.id, "round": session.round},
         )
-        support_event.guided_answers = [item.model_dump() for item in answers]
+        support_event.guided_answers = [item.model_dump() for item in merged_answers]
         support_event.follow_up_content = follow_up_content
         session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
         session.version += 1
@@ -947,7 +1008,17 @@ class SessionRepository:
             .order_by(SupportEvent.id.desc())
         )
         for support_event in self.database_session.scalars(statement):
-            if support_event.guided_answers is None:
+            question_ids = {
+                str(question["id"])
+                for question in support_event.guided_questions or []
+                if "id" in question
+            }
+            answered_ids = {
+                str(answer["question_id"])
+                for answer in support_event.guided_answers or []
+                if "question_id" in answer
+            }
+            if question_ids - answered_ids:
                 return support_event
         return None
 

@@ -68,6 +68,18 @@ export function confirmVoiceAttempt(
   })
 }
 
+export function confirmVoiceDraft(
+  sessionId: string,
+  attemptId: number,
+  confirmedText: string,
+  version: number,
+): Promise<Session> {
+  return requestSessionApi<Session>(`/api/sessions/${sessionId}/voice-attempts/confirm-draft`, {
+    method: "POST",
+    body: JSON.stringify({ attemptId, confirmedText, version }),
+  })
+}
+
 export function retryEvaluation(sessionId: string, version: number): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}/evaluate`, {
     method: "POST",

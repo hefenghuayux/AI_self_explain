@@ -19,6 +19,7 @@ FlowStage = Literal[
     "SHOWING_FULL_SOLUTION",
 ]
 InitialChoice = Literal["KNOW", "NOT_KNOW", "HAS_QUESTION"]
+VoiceInputTarget = Literal["SELF_EXPLANATION", "GUIDED_ANSWER", "DOUBT", "APPEAL"]
 
 
 class CreateSessionInput(QuestionSchema):
@@ -43,6 +44,8 @@ class PendingVoiceAttemptResponse(QuestionSchema):
     id: int
     audio_file_id: int
     asr_transcript: str
+    voice_target: VoiceInputTarget
+    voice_target_id: str | None
 
 
 class EvaluationRetryInput(QuestionSchema):

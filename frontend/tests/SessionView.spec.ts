@@ -12,6 +12,7 @@ import type { Session } from "../src/types/session"
 vi.mock("../src/api/questions", () => ({ fetchQuestion: vi.fn() }))
 vi.mock("../src/api/sessions", () => ({
   askDoubt: vi.fn(),
+  confirmVoiceDraft: vi.fn(),
   confirmVoiceAttempt: vi.fn(),
   continueExplaining: vi.fn(),
   fetchLearningTimeline: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock("../src/api/sessions", () => ({
 
 const askDoubt = vi.mocked(sessionApi.askDoubt)
 const continueExplaining = vi.mocked(sessionApi.continueExplaining)
+const confirmVoiceDraft = vi.mocked(sessionApi.confirmVoiceDraft)
 const confirmVoiceAttempt = vi.mocked(sessionApi.confirmVoiceAttempt)
 const fetchLearningTimeline = vi.mocked(sessionApi.fetchLearningTimeline)
 const fetchSession = vi.mocked(sessionApi.fetchSession)
@@ -171,7 +173,13 @@ describe("SessionView", () => {
       .mockResolvedValueOnce(createSession({
         flowStage: "CONFIRMING_TEXT",
         version: 7,
-        pendingVoiceAttempt: { id: 15, audioFileId: 9, asrTranscript: "原始转写" },
+        pendingVoiceAttempt: {
+          id: 15,
+          audioFileId: 9,
+          asrTranscript: "原始转写",
+          voiceTarget: "SELF_EXPLANATION",
+          voiceTargetId: null,
+        },
       }))
     confirmVoiceAttempt.mockResolvedValue(createSession({
       flowStage: "WAIT_STUDENT_ACTION",
@@ -194,7 +202,7 @@ describe("SessionView", () => {
     expect(wrapper.text()).not.toContain("确认语音转写")
   })
 
-  it("submits all guided answers without creating another support request", async () => {
+  it("gives every guided question its own recording and submit controls", async () => {
     fetchSession.mockResolvedValue(createSession({
       flowStage: "WAIT_GUIDED_ANSWERS",
       version: 5,
@@ -216,20 +224,105 @@ describe("SessionView", () => {
         createdAt: "2026-07-20T00:00:00Z",
       },
     }))
-    submitGuidedAnswers.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 6 }))
+    submitGuidedAnswers.mockResolvedValue(createSession({ flowStage: "WAIT_GUIDED_ANSWERS", version: 6 }))
     const wrapper = await mountSessionView()
 
-    await wrapper.get('[data-testid="guided-answer-q1"]').setValue("一个数量")
-    await wrapper.get('[data-testid="guided-answer-q2"]').setValue("2")
-    await wrapper.get('[data-testid="submit-guided-answers"]').trigger("click")
+    const guidedRecorders = wrapper.findAllComponents(VoiceRecorder)
+    expect(guidedRecorders.map((recorder) => recorder.props("targetId"))).toEqual(["q1", "q2"])
+    guidedRecorders[0].vm.$emit("finalTranscript", "一个数量")
+    await flushPromises()
+    expect((wrapper.get('[data-testid="guided-answer-q1"]').element as HTMLTextAreaElement).value).toBe(
+      "一个数量",
+    )
+    expect(wrapper.find('[data-testid="submit-guided-answer-q2"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="submit-guided-answer-q1"]').trigger("click")
     await flushPromises()
 
-    expect(submitGuidedAnswers).toHaveBeenCalledWith("12", [
-      { questionId: "q1", answer: "一个数量" },
-      { questionId: "q2", answer: "2" },
-    ], 5)
+    expect(submitGuidedAnswers).toHaveBeenCalledWith(
+      "12",
+      [{ questionId: "q1", answer: "一个数量" }],
+      5,
+    )
     expect(askDoubt).not.toHaveBeenCalled()
     expect(continueExplaining).not.toHaveBeenCalled()
+  })
+
+  it("writes doubt and appeal transcripts into their own editable inputs", async () => {
+    fetchSession.mockResolvedValue(createSession({
+      flowStage: "WAIT_STUDENT_ACTION",
+      latestEvaluation: {
+        id: 7,
+        correctness: "WRONG",
+        completeness: "INCOMPLETE",
+        coveredPoints: [],
+        missingPoints: ["正确计算加法"],
+        errorEvidence: [],
+        feedback: "请检查。",
+        confidence: 1,
+        nextAction: "CORRECT_AND_ASK",
+        needHumanReason: null,
+        promptVersion: "v1",
+        modelProvider: "test",
+        modelName: "test",
+        createdAt: "2026-07-20T00:00:00Z",
+      },
+    }))
+    const wrapper = await mountSessionView()
+    const recorders = wrapper.findAllComponents(VoiceRecorder)
+    const doubtRecorder = recorders.find((recorder) => recorder.props("target") === "DOUBT")
+    const appealRecorder = recorders.find((recorder) => recorder.props("target") === "APPEAL")
+
+    doubtRecorder?.vm.$emit("finalTranscript", "这里为什么要相加？")
+    appealRecorder?.vm.$emit("finalTranscript", "我认为这一步没有错。")
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="doubt-draft"]').element as HTMLTextAreaElement).value).toBe(
+      "这里为什么要相加？",
+    )
+    expect((wrapper.get('[data-testid="appeal-draft"]').element as HTMLTextAreaElement).value).toBe(
+      "我认为这一步没有错。",
+    )
+  })
+
+  it("confirms a doubt voice draft before the doubt button submits it", async () => {
+    fetchSession.mockResolvedValue(createSession({
+      flowStage: "CONFIRMING_TEXT",
+      version: 7,
+      pendingVoiceAttempt: {
+        id: 16,
+        audioFileId: 10,
+        asrTranscript: "为什么要相加？",
+        voiceTarget: "DOUBT",
+        voiceTargetId: null,
+      },
+    }))
+    confirmVoiceDraft.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 8 }))
+    askDoubt.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 9 }))
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.findAllComponents(VoiceRecorder).map((recorder) => recorder.props("target"))).toEqual([
+      "DOUBT",
+    ])
+    await wrapper.get('[data-testid="doubt-draft"]').setValue("修改后的疑问")
+    await wrapper.get('[data-testid="submit-doubt"]').trigger("click")
+    await flushPromises()
+
+    expect(confirmVoiceDraft).toHaveBeenCalledWith("12", 16, "修改后的疑问", 7)
+    expect(askDoubt).toHaveBeenCalledWith("12", "", "修改后的疑问", 8)
+  })
+
+  it("can reload the current session after an error", async () => {
+    fetchSession
+      .mockRejectedValueOnce(new Error("会话加载失败"))
+      .mockResolvedValueOnce(createSession())
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.text()).toContain("会话加载失败")
+    await wrapper.get('[data-testid="continue-session"]').trigger("click")
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="question-content"]').text()).toBe("计算 1 + 1。")
   })
 
   it("renders student submissions and AI replies in the self-explanation record", async () => {

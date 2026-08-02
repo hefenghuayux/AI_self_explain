@@ -154,6 +154,8 @@ def test_realtime_voice_transcript_can_be_edited_or_re_recorded_before_ai_evalua
         assert audio_file.size_bytes == 3200
         assert Path(settings.audio_storage_dir, audio_file.relative_path).is_file()
         assert attempt.input_mode == "VOICE"
+        assert attempt.voice_target == "SELF_EXPLANATION"
+        assert attempt.voice_target_id is None
         assert attempt.asr_transcript == "重新录音后的文本。"
         assert attempt.confirmed_text == "学生修改后的最终文本"
         assert len(asr_calls) == 2
@@ -194,10 +196,93 @@ def test_audio_write_failure_does_not_create_partial_database_records(
                     capture=capture,
                     audio_storage=storage,
                     asr_transcript="测试转写",
+                    voice_target="SELF_EXPLANATION",
+                    voice_target_id=None,
                 )
 
         with DatabaseSession(engine) as database_session:
             assert database_session.scalars(select(AudioFile)).all() == []
             assert database_session.scalars(select(ExplanationAttempt)).all() == []
+    finally:
+        engine.dispose()
+
+
+def test_doubt_voice_draft_returns_to_student_action_without_ai_evaluation(
+    settings, monkeypatch
+) -> None:
+    class FakeRecognition:
+        def __init__(self, event_queue: asyncio.Queue[ASRStreamEvent]) -> None:
+            self.event_queue = event_queue
+            self.sent = False
+
+        def start(self) -> None:
+            return None
+
+        def send_audio_frame(self, frame: bytes) -> None:
+            if self.sent:
+                return
+            self.sent = True
+            self.event_queue.put_nowait(
+                ASRStreamEvent(
+                    event_type="final_transcript",
+                    text="为什么这里要相加？",
+                    raw_response={"text": "为什么这里要相加？", "end_time": 1},
+                )
+            )
+
+        def stop(self) -> None:
+            self.event_queue.put_nowait(ASRStreamEvent(event_type="completed"))
+
+    def fake_create_recognition(**kwargs):
+        return FakeRecognition(kwargs["event_queue"])
+
+    monkeypatch.setattr(realtime_asr, "create_recognition", fake_create_recognition)
+    migrate_database(settings, monkeypatch)
+
+    with authenticated_test_client(settings) as client:
+        question = client.post("/api/questions", json=question_payload()).json()
+        session = client.post("/api/sessions", json={"questionId": question["id"]}).json()
+        session = client.post(
+            f"/api/sessions/{session['id']}/initial-choice",
+            json={"choice": "HAS_QUESTION", "version": session["version"]},
+        ).json()
+
+        with client.websocket_connect(
+            f"/api/sessions/{session['id']}/voice-stream"
+            f"?version={session['version']}&target=DOUBT"
+        ) as websocket:
+            assert websocket.receive_json()["type"] == "ready"
+            websocket.send_bytes(b"\x00\x00" * 1600)
+            assert websocket.receive_json() == {
+                "type": "final_transcript",
+                "text": "为什么这里要相加？",
+            }
+            websocket.send_text(json.dumps({"type": "stop"}))
+            completed = websocket.receive_json()
+
+        pending = client.get(f"/api/sessions/{session['id']}").json()
+        assert pending["flowStage"] == "CONFIRMING_TEXT"
+        assert pending["pendingVoiceAttempt"]["voiceTarget"] == "DOUBT"
+        assert pending["pendingVoiceAttempt"]["voiceTargetId"] is None
+
+        confirmed = client.post(
+            f"/api/sessions/{session['id']}/voice-attempts/confirm-draft",
+            json={
+                "attemptId": completed["attemptId"],
+                "confirmedText": "修改后的疑问",
+                "version": completed["version"],
+            },
+        )
+
+    assert confirmed.status_code == 200
+    assert confirmed.json()["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert confirmed.json()["pendingVoiceAttempt"] is None
+
+    engine = create_engine(settings.database_url)
+    try:
+        with DatabaseSession(engine) as database_session:
+            attempt = database_session.scalars(select(ExplanationAttempt)).one()
+        assert attempt.voice_target == "DOUBT"
+        assert attempt.confirmed_text == "修改后的疑问"
     finally:
         engine.dispose()

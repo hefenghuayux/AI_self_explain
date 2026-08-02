@@ -130,7 +130,9 @@ def test_help_request_generates_questions_without_configured_guided_questions(
     assert len(saved["latestSupport"]["guidedQuestions"]) == 2
 
 
-def test_guided_answers_are_a_follow_up_not_a_second_support(settings, monkeypatch) -> None:
+def test_guided_answers_can_be_submitted_separately_without_second_support(
+    settings, monkeypatch
+) -> None:
     _stub_ai(monkeypatch, {})
     with _client(settings, monkeypatch) as client:
         session = _start_help(client, _create_session(client))
@@ -138,14 +140,27 @@ def test_guided_answers_are_a_follow_up_not_a_second_support(settings, monkeypat
             f"/api/sessions/{session['id']}/request-support",
             json={"mainDraft": "我知道题目有两个 1。", "version": session["version"]},
         ).json()
-        response = client.post(
+        first_response = client.post(
             f"/api/sessions/{session['id']}/guided-answers",
             json={
                 "version": prompted["version"],
-                "answers": [
-                    {"questionId": "q1", "answer": "一个数量"},
-                    {"questionId": "q2", "answer": "3"},
-                ],
+                "answers": [{"questionId": "q1", "answer": "一个数量"}],
+            },
+        )
+        assert first_response.status_code == 200
+        partially_answered = first_response.json()
+        assert partially_answered["flowStage"] == "WAIT_GUIDED_ANSWERS"
+        assert partially_answered["supportCountRound"] == 1
+        assert partially_answered["latestSupport"]["guidedAnswers"] == [
+            {"questionId": "q1", "answer": "一个数量"}
+        ]
+        assert partially_answered["latestSupport"]["followUpContent"] is None
+
+        response = client.post(
+            f"/api/sessions/{session['id']}/guided-answers",
+            json={
+                "version": partially_answered["version"],
+                "answers": [{"questionId": "q2", "answer": "3"}],
             },
         )
 
@@ -153,6 +168,10 @@ def test_guided_answers_are_a_follow_up_not_a_second_support(settings, monkeypat
     saved = response.json()
     assert saved["flowStage"] == "WAIT_STUDENT_ACTION"
     assert saved["supportCountRound"] == 1
+    assert saved["latestSupport"]["guidedAnswers"] == [
+        {"questionId": "q1", "answer": "一个数量"},
+        {"questionId": "q2", "answer": "3"},
+    ]
     assert saved["latestSupport"]["followUpContent"].startswith("你已确认")
 
 

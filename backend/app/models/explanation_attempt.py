@@ -13,6 +13,8 @@ class ExplanationAttempt(Base):
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"), index=True, nullable=False)
     round: Mapped[int] = mapped_column(Integer, nullable=False)
     input_mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    voice_target: Mapped[str | None] = mapped_column(String(30))
+    voice_target_id: Mapped[str | None] = mapped_column(String(100))
     audio_file_id: Mapped[int | None] = mapped_column(ForeignKey("audio_files.id"))
     asr_transcript: Mapped[str | None] = mapped_column(Text)
     confirmed_text: Mapped[str | None] = mapped_column(Text)
