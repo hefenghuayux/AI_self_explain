@@ -11,6 +11,7 @@ const props = withDefaults(defineProps<{
   targetId?: string
   startTestId?: string
   stopTestId?: string
+  inline?: boolean
   disabled?: boolean
 }>(), {
   startTestId: "start-voice",
@@ -148,7 +149,7 @@ defineExpose({ start })
 </script>
 
 <template>
-  <section class="voice-recorder">
+  <section class="voice-recorder" :class="{ 'is-inline': inline }">
     <div class="actions">
       <el-button v-if="!recording" :data-testid="startTestId" :disabled="disabled" @click="start">开始录音</el-button>
       <el-button v-else :data-testid="stopTestId" type="danger" @click="stop">结束录音</el-button>
@@ -159,4 +160,6 @@ defineExpose({ start })
 <style scoped>
 .voice-recorder { margin-top: 16px; }
 .actions { display: flex; gap: 8px; margin-top: 12px; }
+.voice-recorder.is-inline { margin-top: 0; }
+.voice-recorder.is-inline .actions { margin-top: 0; }
 </style>

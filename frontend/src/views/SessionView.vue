@@ -665,6 +665,7 @@ async function respondToSolution(understood: boolean) {
                         :target-id="item.id"
                         :start-test-id="`start-voice-guided-${item.id}`"
                         :stop-test-id="`stop-voice-guided-${item.id}`"
+                        inline
                         :disabled="submitting
                           || guidedAnswerSubmitted(item.id)
                           || (voiceRecording && activeVoiceKey !== `guided-${item.id}`)"
@@ -713,6 +714,7 @@ async function respondToSolution(understood: boolean) {
                     target="DOUBT"
                     start-test-id="start-voice-doubt"
                     stop-test-id="stop-voice-doubt"
+                    inline
                     :disabled="submitting || (voiceRecording && activeVoiceKey !== 'doubt')"
                     @final-transcript="doubtDraft = appendTranscript(doubtDraft, $event)"
                     @completed="handleVoiceCompleted"
@@ -751,6 +753,7 @@ async function respondToSolution(understood: boolean) {
                     target="APPEAL"
                     start-test-id="start-voice-appeal"
                     stop-test-id="stop-voice-appeal"
+                    inline
                     :disabled="submitting || (voiceRecording && activeVoiceKey !== 'appeal')"
                     @final-transcript="appealDraft = appendTranscript(appealDraft, $event)"
                     @completed="handleVoiceCompleted"

@@ -229,6 +229,7 @@ describe("SessionView", () => {
 
     const guidedRecorders = wrapper.findAllComponents(VoiceRecorder)
     expect(guidedRecorders.map((recorder) => recorder.props("targetId"))).toEqual(["q1", "q2"])
+    expect(guidedRecorders.every((recorder) => recorder.props("inline") === true)).toBe(true)
     guidedRecorders[0].vm.$emit("finalTranscript", "一个数量")
     await flushPromises()
     expect((wrapper.get('[data-testid="guided-answer-q1"]').element as HTMLTextAreaElement).value).toBe(
