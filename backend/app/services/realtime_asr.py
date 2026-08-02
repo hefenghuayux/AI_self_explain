@@ -51,13 +51,25 @@ def create_recognition(
             )
 
         def on_error(self, message) -> None:
-            error_message = getattr(message, "message", str(message))
+            error_message = getattr(message, "message", None)
+            if not isinstance(error_message, str) or not error_message:
+                error_message = (
+                    "DashScope ASR 返回错误："
+                    f"code={getattr(message, 'code', None)}, "
+                    f"request_id={getattr(message, 'request_id', None)}"
+                )
             loop.call_soon_threadsafe(
                 event_queue.put_nowait,
                 ASRStreamEvent(
                     event_type="error",
                     error_type="ASR_SERVICE_ERROR",
                     error_message=error_message,
+                    raw_response={
+                        "status_code": getattr(message, "status_code", None),
+                        "request_id": getattr(message, "request_id", None),
+                        "code": getattr(message, "code", None),
+                        "message": error_message,
+                    },
                 ),
             )
 
@@ -114,6 +126,9 @@ class RealtimeASRService:
 
     def stop(self) -> None:
         if self.recognition is None or self.stopped:
+            return
+        if getattr(self.recognition, "_running", True) is False:
+            self.stopped = True
             return
         try:
             self.recognition.stop()
