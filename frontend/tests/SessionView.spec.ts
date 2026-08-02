@@ -165,7 +165,7 @@ describe("SessionView", () => {
     )
   })
 
-  it("automatically confirms the voice transcript after recording completes", async () => {
+  it("keeps the voice transcript editable until the student submits it", async () => {
     fetchSession
       .mockResolvedValueOnce(createSession({ flowStage: "CAPTURING_INPUT", version: 6 }))
       .mockResolvedValueOnce(createSession({
@@ -182,6 +182,11 @@ describe("SessionView", () => {
 
     await wrapper.get('[data-testid="main-draft"]').setValue("学生确认后的文本")
     wrapper.findComponent(VoiceRecorder).vm.$emit("completed")
+    await flushPromises()
+
+    expect(confirmVoiceAttempt).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="start-voice"]').text()).toBe("开始录音")
+    await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
     await flushPromises()
 
     expect(confirmVoiceAttempt).toHaveBeenCalledWith("12", 15, "学生确认后的文本", 7)

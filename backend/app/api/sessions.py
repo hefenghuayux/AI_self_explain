@@ -505,7 +505,11 @@ async def stream_voice_input(websocket: WebSocket, session_id: int, version: int
                 websocket, f"会话版本已变化，当前版本为 {session.version}，请刷新后重试"
             )
             return
-        if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT:
+        pending_voice_attempt = repository.get_pending_voice_attempt(session.id)
+        can_rerecord_pending_voice = (
+            session.flow_stage == FLOW_STAGE_CONFIRMING_TEXT and pending_voice_attempt is not None
+        )
+        if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT and not can_rerecord_pending_voice:
             await reject_voice_stream(
                 websocket, f"当前流程阶段不能进行语音输入：{session.flow_stage}"
             )

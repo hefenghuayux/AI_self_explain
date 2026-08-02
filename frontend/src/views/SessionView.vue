@@ -167,7 +167,6 @@ onMounted(async () => {
     session.value = await fetchSession(sessionId)
     applyStoredDialogDrafts(session.value.currentDraft)
     syncActiveSegmentWithStage()
-    await autoConfirmVoiceAttempt()
     question.value = await fetchQuestion(String(session.value.questionId))
     timeline.value = await fetchLearningTimeline(sessionId)
   } catch (error) {
@@ -251,12 +250,21 @@ async function submitExplanation() {
   submitting.value = true
   errorMessage.value = ""
   try {
-    if (session.value.flowStage === "WAIT_INITIAL_CHOICE") {
-      session.value = await submitInitialChoice(sessionId, "KNOW", session.value.version)
-    } else if (session.value.flowStage === "WAIT_STUDENT_ACTION") {
-      session.value = await continueExplaining(sessionId, session.value.version)
+    if (session.value.flowStage === "CONFIRMING_TEXT" && session.value.pendingVoiceAttempt) {
+      session.value = await confirmVoiceAttempt(
+        sessionId,
+        session.value.pendingVoiceAttempt.id,
+        selfExplainDraft.value,
+        session.value.version,
+      )
+    } else {
+      if (session.value.flowStage === "WAIT_INITIAL_CHOICE") {
+        session.value = await submitInitialChoice(sessionId, "KNOW", session.value.version)
+      } else if (session.value.flowStage === "WAIT_STUDENT_ACTION") {
+        session.value = await continueExplaining(sessionId, session.value.version)
+      }
+      session.value = await submitTextAttempt(sessionId, selfExplainDraft.value, session.value.version)
     }
-    session.value = await submitTextAttempt(sessionId, selfExplainDraft.value, session.value.version)
     selfExplainDraft.value = session.value.currentDraft
     syncActiveSegmentWithStage()
     await refreshTimeline()
@@ -301,35 +309,8 @@ function appendFinalTranscript(text: string) {
 async function handleVoiceCompleted() {
   try {
     session.value = await fetchSession(sessionId)
-    await autoConfirmVoiceAttempt()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
-  }
-}
-
-async function autoConfirmVoiceAttempt() {
-  if (!session.value?.pendingVoiceAttempt || session.value.flowStage !== "CONFIRMING_TEXT") return
-  const confirmedText = selfExplainDraft.value.trim() || session.value.pendingVoiceAttempt.asrTranscript.trim()
-  if (!confirmedText) {
-    errorMessage.value = "实时语音识别未返回有效文本"
-    return
-  }
-  submitting.value = true
-  errorMessage.value = ""
-  try {
-    session.value = await confirmVoiceAttempt(
-      sessionId,
-      session.value.pendingVoiceAttempt.id,
-      confirmedText,
-      session.value.version,
-    )
-    selfExplainDraft.value = session.value.currentDraft
-    syncActiveSegmentWithStage()
-    await refreshTimeline()
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
-  } finally {
-    submitting.value = false
   }
 }
 
@@ -510,7 +491,8 @@ async function respondToSolution(understood: boolean) {
                   :disabled="submitting || session.flowStage === 'AI_EVALUATING'"
                 />
                 <VoiceRecorder
-                  v-if="session.flowStage === 'CAPTURING_INPUT'"
+                  v-if="session.flowStage === 'CAPTURING_INPUT'
+                    || (session.flowStage === 'CONFIRMING_TEXT' && session.pendingVoiceAttempt)"
                   ref="voiceRecorderRef"
                   :session-id="sessionId"
                   :version="session.version"
@@ -522,14 +504,16 @@ async function respondToSolution(understood: boolean) {
                 />
                 <div
                   v-if="session.flowStage !== 'WAIT_GUIDED_ANSWERS'
-                    && session.flowStage !== 'CONFIRMING_TEXT'
                     && session.flowStage !== 'AI_EVALUATING'
-                    && session.flowStage !== 'SHOWING_FULL_SOLUTION'"
+                    && session.flowStage !== 'SHOWING_FULL_SOLUTION'
+                    && (session.flowStage !== 'CONFIRMING_TEXT' || session.pendingVoiceAttempt)"
                   class="actions"
                 >
                   <el-button data-testid="submit-explanation" type="primary" :loading="submitting" @click="submitExplanation">提交自讲</el-button>
                   <el-button
-                    v-if="session.flowStage === 'WAIT_INITIAL_CHOICE' || session.flowStage === 'WAIT_STUDENT_ACTION'"
+                    v-if="session.flowStage === 'WAIT_INITIAL_CHOICE'
+                      || session.flowStage === 'WAIT_STUDENT_ACTION'
+                      || (session.flowStage === 'CONFIRMING_TEXT' && session.pendingVoiceAttempt)"
                     data-testid="start-voice"
                     :loading="submitting"
                     @click="startVoiceRecording"

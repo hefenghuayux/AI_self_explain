@@ -404,21 +404,17 @@ class SessionRepository:
         asr_transcript: str,
     ) -> tuple[Session, ExplanationAttempt]:
         before_snapshot = session_snapshot(session)
-        audio_file = AudioFile(
-            session_id=session.id,
-            relative_path="",
-            content_type=audio_storage.content_type,
-            size_bytes=capture.size_bytes,
-            sha256=capture.sha256.hexdigest(),
-        )
-        self.database_session.add(audio_file)
-        self.database_session.flush()
-        relative_path: str | None = None
-        try:
-            relative_path = audio_storage.finalize_capture(
-                capture, session_id=session.id, audio_file_id=audio_file.id
+        pending_attempt = self.get_pending_voice_attempt(session.id)
+        if pending_attempt is None:
+            audio_file = AudioFile(
+                session_id=session.id,
+                relative_path="",
+                content_type=audio_storage.content_type,
+                size_bytes=capture.size_bytes,
+                sha256=capture.sha256.hexdigest(),
             )
-            audio_file.relative_path = relative_path
+            self.database_session.add(audio_file)
+            self.database_session.flush()
             attempt = ExplanationAttempt(
                 session_id=session.id,
                 round=session.round,
@@ -430,6 +426,23 @@ class SessionRepository:
             )
             self.database_session.add(attempt)
             self.database_session.flush()
+        else:
+            # 重新录音复用待确认记录，避免产生多个无法确认的语音尝试。
+            attempt = pending_attempt
+            audio_file = self.database_session.get(AudioFile, attempt.audio_file_id)
+            if audio_file is None:
+                raise RuntimeError(
+                    f"语音尝试 {attempt.id} 关联音频文件不存在：{attempt.audio_file_id}"
+                )
+            audio_file.size_bytes = capture.size_bytes
+            audio_file.sha256 = capture.sha256.hexdigest()
+            attempt.asr_transcript = asr_transcript
+        relative_path: str | None = None
+        try:
+            relative_path = audio_storage.finalize_capture(
+                capture, session_id=session.id, audio_file_id=audio_file.id
+            )
+            audio_file.relative_path = relative_path
             session.flow_stage = FLOW_STAGE_CONFIRMING_TEXT
             session.version += 1
             self._record_transition(

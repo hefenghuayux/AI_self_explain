@@ -39,11 +39,16 @@ def question_payload() -> dict[str, object]:
     }
 
 
-def test_realtime_voice_transcript_is_confirmed_before_ai_evaluation(settings, monkeypatch) -> None:
+def test_realtime_voice_transcript_can_be_edited_or_re_recorded_before_ai_evaluation(
+    settings, monkeypatch
+) -> None:
+    transcripts = iter(["1 加 1 等于 2。", "重新录音后的文本。"])
+
     class FakeRecognition:
         def __init__(self, event_queue: asyncio.Queue[ASRStreamEvent]) -> None:
             self.event_queue = event_queue
             self.sent = False
+            self.transcript = next(transcripts)
 
         def start(self) -> None:
             return None
@@ -58,8 +63,8 @@ def test_realtime_voice_transcript_is_confirmed_before_ai_evaluation(settings, m
             self.event_queue.put_nowait(
                 ASRStreamEvent(
                     event_type="final_transcript",
-                    text="1 加 1 等于 2。",
-                    raw_response={"text": "1 加 1 等于 2。", "end_time": 1},
+                    text=self.transcript,
+                    raw_response={"text": self.transcript, "end_time": 1},
                 )
             )
 
@@ -112,12 +117,27 @@ def test_realtime_voice_transcript_is_confirmed_before_ai_evaluation(settings, m
         assert pending["flowStage"] == "CONFIRMING_TEXT"
         assert pending["pendingVoiceAttempt"]["asrTranscript"] == "1 加 1 等于 2。"
 
+        with client.websocket_connect(
+            f"/api/sessions/{session['id']}/voice-stream?version={pending['version']}"
+        ) as websocket:
+            assert websocket.receive_json()["type"] == "ready"
+            websocket.send_bytes(b"\x00\x00" * 1600)
+            assert websocket.receive_json()["type"] == "partial_transcript"
+            assert websocket.receive_json()["text"] == "重新录音后的文本。"
+            websocket.send_text(json.dumps({"type": "stop"}))
+            rerecorded = websocket.receive_json()
+
+        assert rerecorded["type"] == "completed"
+        assert rerecorded["attemptId"] == completed["attemptId"]
+        pending = client.get(f"/api/sessions/{session['id']}").json()
+        assert pending["pendingVoiceAttempt"]["asrTranscript"] == "重新录音后的文本。"
+
         confirmed = client.post(
             f"/api/sessions/{session['id']}/voice-attempts/confirm",
             json={
-                "attemptId": completed["attemptId"],
+                "attemptId": rerecorded["attemptId"],
                 "confirmedText": "学生修改后的最终文本",
-                "version": completed["version"],
+                "version": rerecorded["version"],
             },
         )
         assert confirmed.status_code == 200
@@ -128,16 +148,16 @@ def test_realtime_voice_transcript_is_confirmed_before_ai_evaluation(settings, m
         with DatabaseSession(engine) as database_session:
             audio_file = database_session.scalars(select(AudioFile)).one()
             attempt = database_session.scalars(select(ExplanationAttempt)).one()
-            asr_call = database_session.scalars(
+            asr_calls = database_session.scalars(
                 select(ExternalCallRecord).where(ExternalCallRecord.call_type == "ASR")
-            ).one()
+            ).all()
         assert audio_file.size_bytes == 3200
         assert Path(settings.audio_storage_dir, audio_file.relative_path).is_file()
         assert attempt.input_mode == "VOICE"
-        assert attempt.asr_transcript == "1 加 1 等于 2。"
+        assert attempt.asr_transcript == "重新录音后的文本。"
         assert attempt.confirmed_text == "学生修改后的最终文本"
-        assert asr_call.call_type == "ASR"
-        assert asr_call.status == "SUCCESS"
+        assert len(asr_calls) == 2
+        assert all(call.status == "SUCCESS" for call in asr_calls)
     finally:
         engine.dispose()
 
