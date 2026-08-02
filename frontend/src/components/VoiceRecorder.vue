@@ -17,7 +17,6 @@ const emit = defineEmits<{
 }>()
 
 const recording = ref(false)
-const previewText = ref("")
 let socket: WebSocket | undefined
 let audioContext: AudioContext | undefined
 let mediaStream: MediaStream | undefined
@@ -69,7 +68,6 @@ function finishRecording() {
 
 async function start() {
   if (recording.value || props.disabled) return
-  previewText.value = ""
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
     const voiceStream = createVoiceStreamUrl()
@@ -98,10 +96,7 @@ async function start() {
         silentGainNode.connect(audioContext.destination)
         recording.value = true
         emit("recordingChange", true)
-      } else if (message.type === "partial_transcript") {
-        previewText.value = message.text ?? ""
       } else if (message.type === "final_transcript") {
-        previewText.value = ""
         if (message.text) emit("finalTranscript", message.text)
       } else if (message.type === "completed") {
         finishRecording()
@@ -141,19 +136,14 @@ defineExpose({ start })
 
 <template>
   <section class="voice-recorder">
-    <h3>实时语音输入</h3>
-    <p>录音时仍可编辑上方文本；句末转写会追加到输入框，未确认前不会进入 AI 评价。</p>
-    <p v-if="previewText" class="transcript-preview">正在转写：{{ previewText }}</p>
     <div class="actions">
       <el-button v-if="!recording" data-testid="start-voice" :disabled="disabled" @click="start">开始录音</el-button>
-      <el-button v-else data-testid="stop-voice" type="danger" @click="stop">停止录音</el-button>
+      <el-button v-else data-testid="stop-voice" type="danger" @click="stop">结束录音</el-button>
     </div>
   </section>
 </template>
 
 <style scoped>
 .voice-recorder { margin-top: 16px; }
-.voice-recorder h3 { margin: 0; }
-.transcript-preview { color: #606266; }
 .actions { display: flex; gap: 8px; margin-top: 12px; }
 </style>

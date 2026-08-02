@@ -142,6 +142,16 @@ describe("SessionView", () => {
     expect(requestSupport).toHaveBeenCalledWith("12", "我知道有两个 1，并想继续计算。", 4)
   })
 
+  it("shows only the direct start-recording entry without voice guidance text", async () => {
+    fetchSession.mockResolvedValue(createSession())
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.get('[data-testid="start-voice"]').text()).toBe("开始录音")
+    expect(wrapper.text()).not.toContain("使用语音自讲")
+    expect(wrapper.text()).not.toContain("实时语音输入")
+    expect(wrapper.text()).not.toContain("确认语音转写")
+  })
+
   it("appends only final voice transcripts to the editable draft", async () => {
     fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT" }))
     const wrapper = await mountSessionView()
@@ -155,13 +165,14 @@ describe("SessionView", () => {
     )
   })
 
-  it("confirms an edited voice transcript before entering the existing evaluation flow", async () => {
-    fetchSession.mockResolvedValue(createSession({
-      flowStage: "CONFIRMING_TEXT",
-      currentDraft: "原始转写",
-      version: 7,
-      pendingVoiceAttempt: { id: 15, audioFileId: 9, asrTranscript: "原始转写" },
-    }))
+  it("automatically confirms the voice transcript after recording completes", async () => {
+    fetchSession
+      .mockResolvedValueOnce(createSession({ flowStage: "CAPTURING_INPUT", version: 6 }))
+      .mockResolvedValueOnce(createSession({
+        flowStage: "CONFIRMING_TEXT",
+        version: 7,
+        pendingVoiceAttempt: { id: 15, audioFileId: 9, asrTranscript: "原始转写" },
+      }))
     confirmVoiceAttempt.mockResolvedValue(createSession({
       flowStage: "WAIT_STUDENT_ACTION",
       currentDraft: "学生确认后的文本",
@@ -170,10 +181,12 @@ describe("SessionView", () => {
     const wrapper = await mountSessionView()
 
     await wrapper.get('[data-testid="main-draft"]').setValue("学生确认后的文本")
-    await wrapper.get('[data-testid="confirm-voice-transcript"]').trigger("click")
+    wrapper.findComponent(VoiceRecorder).vm.$emit("completed")
     await flushPromises()
 
     expect(confirmVoiceAttempt).toHaveBeenCalledWith("12", 15, "学生确认后的文本", 7)
+    expect(wrapper.text()).not.toContain("实时语音输入")
+    expect(wrapper.text()).not.toContain("确认语音转写")
   })
 
   it("submits all guided answers without creating another support request", async () => {
