@@ -360,6 +360,92 @@ def test_correction_and_question_creates_one_counted_guided_question(
     ]
 
 
+def test_doubt_and_appeal_are_allowed_while_evaluation_questions_are_pending(
+    settings, monkeypatch
+) -> None:
+    evaluation = {
+        "correctness": "WRONG",
+        "completeness": "INCOMPLETE",
+        "coveredPoints": [],
+        "missingPoints": ["正确计算加法", "得出结果 2"],
+        "errorEvidence": [],
+        "feedback": "请重新检查。",
+        "confidence": 1,
+        "nextAction": "CORRECT_AND_ASK",
+        "needHumanReason": None,
+        "guidedQuestions": [{"id": "evaluation-q1", "question": "两个 1 合起来实际是多少？"}],
+    }
+    _stub_ai(monkeypatch, evaluation)
+    with _client(settings, monkeypatch) as client:
+        session = _create_session(client)
+        selected = client.post(
+            f"/api/sessions/{session['id']}/initial-choice",
+            json={"choice": "KNOW", "version": session["version"]},
+        ).json()
+        pending_questions = client.post(
+            f"/api/sessions/{session['id']}/text-attempts",
+            json={"confirmedText": "1 加 1 等于 3", "version": selected["version"]},
+        ).json()
+        doubt = client.post(
+            f"/api/sessions/{session['id']}/ask-doubt",
+            json={
+                "mainDraft": "1 加 1 等于 3",
+                "doubtText": "为什么这里需要重新计算？",
+                "version": pending_questions["version"],
+            },
+        )
+
+        another_session = _create_session(client)
+        another_selected = client.post(
+            f"/api/sessions/{another_session['id']}/initial-choice",
+            json={"choice": "KNOW", "version": another_session["version"]},
+        ).json()
+        another_pending_questions = client.post(
+            f"/api/sessions/{another_session['id']}/text-attempts",
+            json={"confirmedText": "1 加 1 等于 3", "version": another_selected["version"]},
+        ).json()
+        appeal = client.post(
+            f"/api/sessions/{another_session['id']}/appeal",
+            json={
+                "reason": "我认为 1 加 1 等于 3 的判断没有问题。",
+                "version": another_pending_questions["version"],
+            },
+        )
+
+    assert doubt.status_code == 200
+    assert doubt.json()["supportCountRound"] == 2
+    assert appeal.status_code == 200
+    assert appeal.json()["status"] == "IN_PROGRESS"
+    assert appeal.json()["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert appeal.json()["supportCountRound"] == 1
+    assert appeal.json()["needHumanReason"].startswith("学生申诉：")
+
+
+def test_appeal_is_allowed_while_help_questions_are_pending_without_evaluation(
+    settings, monkeypatch
+) -> None:
+    _stub_ai(monkeypatch, {})
+    with _client(settings, monkeypatch) as client:
+        session = _start_help(client, _create_session(client))
+        pending_questions = client.post(
+            f"/api/sessions/{session['id']}/request-support",
+            json={"mainDraft": "我不知道怎样判断最小值。", "version": session["version"]},
+        ).json()
+        appeal = client.post(
+            f"/api/sessions/{session['id']}/appeal",
+            json={
+                "reason": "这个提示没有回答我的疑问。",
+                "version": pending_questions["version"],
+            },
+        )
+
+    assert appeal.status_code == 200
+    assert appeal.json()["status"] == "IN_PROGRESS"
+    assert appeal.json()["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert appeal.json()["supportCountRound"] == 1
+    assert appeal.json()["needHumanReason"].startswith("学生申诉：")
+
+
 def test_full_solution_request_is_refused_without_counting_support(settings, monkeypatch) -> None:
     def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
         content = {

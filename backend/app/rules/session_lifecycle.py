@@ -19,10 +19,23 @@ FLOW_STAGE_AI_EVALUATING = "AI_EVALUATING"
 FLOW_STAGE_WAIT_STUDENT_ACTION = "WAIT_STUDENT_ACTION"
 FLOW_STAGE_WAIT_GUIDED_ANSWERS = "WAIT_GUIDED_ANSWERS"
 FLOW_STAGE_SHOWING_FULL_SOLUTION = "SHOWING_FULL_SOLUTION"
+STUDENT_INTERRUPTION_FLOW_STAGES = frozenset(
+    {
+        FLOW_STAGE_WAIT_INITIAL_CHOICE,
+        FLOW_STAGE_CAPTURING_INPUT,
+        FLOW_STAGE_WAIT_STUDENT_ACTION,
+        FLOW_STAGE_WAIT_GUIDED_ANSWERS,
+        FLOW_STAGE_SHOWING_FULL_SOLUTION,
+    }
+)
 
 
 def can_pause(flow_stage: str) -> bool:
     return flow_stage in PAUSABLE_FLOW_STAGES
+
+
+def can_submit_student_interruption(flow_stage: str) -> bool:
+    return flow_stage in STUDENT_INTERRUPTION_FLOW_STAGES
 
 
 def flow_stage_after_initial_choice(choice: str) -> str:

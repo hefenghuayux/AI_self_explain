@@ -66,6 +66,14 @@ const segmentOptions: Array<{ label: string; value: SegmentKey }> = [
   { label: "AI说错了", value: "appeal" },
 ]
 
+const studentInterruptionFlowStages = new Set<Session["flowStage"]>([
+  "WAIT_INITIAL_CHOICE",
+  "CAPTURING_INPUT",
+  "WAIT_STUDENT_ACTION",
+  "WAIT_GUIDED_ANSWERS",
+  "SHOWING_FULL_SOLUTION",
+])
+
 const sessionStatusLabels: Record<SessionStatus, string> = {
   IN_PROGRESS: "进行中",
   COMPLETED: "已完成",
@@ -221,6 +229,15 @@ function syncActiveSegmentWithStage() {
   }
 }
 
+function canSubmitStudentInterruption() {
+  return session.value?.status === "IN_PROGRESS"
+    && studentInterruptionFlowStages.has(session.value.flowStage)
+}
+
+function hasAppealableAiResponse() {
+  return Boolean(session.value?.latestEvaluation || session.value?.latestSupport)
+}
+
 async function continueAfterError() {
   loading.value = true
   errorMessage.value = ""
@@ -340,7 +357,7 @@ async function startDoubtVoiceRecording() {
     await chooseInitialChoice("HAS_QUESTION")
     await nextTick()
   }
-  if (session.value.flowStage !== "WAIT_STUDENT_ACTION") return
+  if (!canSubmitStudentInterruption()) return
   await doubtVoiceRecorderRef.value?.start()
 }
 
@@ -671,9 +688,7 @@ async function respondToSolution(understood: boolean) {
                     data-testid="submit-doubt"
                     type="primary"
                     :loading="submitting"
-                    :disabled="voiceRecording
-                      || (session.flowStage !== 'WAIT_INITIAL_CHOICE'
-                        && session.flowStage !== 'WAIT_STUDENT_ACTION')"
+                    :disabled="submitting || voiceRecording || !canSubmitStudentInterruption()"
                     @click="submitDoubt"
                   >我有疑问</el-button>
                   <el-button
@@ -684,7 +699,7 @@ async function respondToSolution(understood: boolean) {
                     @click="startDoubtVoiceRecording"
                   >开始录音</el-button>
                   <VoiceRecorder
-                    v-if="session.flowStage === 'WAIT_STUDENT_ACTION'"
+                    v-if="canSubmitStudentInterruption()"
                     ref="doubtVoiceRecorderRef"
                     :session-id="sessionId"
                     :version="session.version"
@@ -714,16 +729,17 @@ async function respondToSolution(understood: boolean) {
                     data-testid="submit-appeal"
                     type="warning"
                     :loading="submitting"
-                    :disabled="voiceRecording
-                      || !session.latestEvaluation
-                        || session.flowStage !== 'WAIT_STUDENT_ACTION'"
+                    :disabled="submitting
+                      || voiceRecording
+                      || !hasAppealableAiResponse()
+                      || !canSubmitStudentInterruption()"
                     @click="appealEvaluation"
                   >
                     AI说错了
                   </el-button>
                   <VoiceRecorder
-                    v-if="session.latestEvaluation
-                      && session.flowStage === 'WAIT_STUDENT_ACTION'"
+                    v-if="hasAppealableAiResponse()
+                      && canSubmitStudentInterruption()"
                     :session-id="sessionId"
                     :version="session.version"
                     target="APPEAL"

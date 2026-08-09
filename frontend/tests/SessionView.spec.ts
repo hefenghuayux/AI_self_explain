@@ -29,6 +29,7 @@ const fetchLearningTimeline = vi.mocked(sessionApi.fetchLearningTimeline)
 const fetchSession = vi.mocked(sessionApi.fetchSession)
 const fetchQuestion = vi.mocked(questionApi.fetchQuestion)
 const requestSupport = vi.mocked(sessionApi.requestSupport)
+const submitAppeal = vi.mocked(sessionApi.submitAppeal)
 const submitGuidedAnswers = vi.mocked(sessionApi.submitGuidedAnswers)
 const submitInitialChoice = vi.mocked(sessionApi.submitInitialChoice)
 const submitTextAttempt = vi.mocked(sessionApi.submitTextAttempt)
@@ -226,7 +227,9 @@ describe("SessionView", () => {
     submitGuidedAnswers.mockResolvedValue(createSession({ flowStage: "WAIT_GUIDED_ANSWERS", version: 6 }))
     const wrapper = await mountSessionView()
 
-    const guidedRecorders = wrapper.findAllComponents(VoiceRecorder)
+    const guidedRecorders = wrapper.findAllComponents(VoiceRecorder).filter(
+      (recorder) => recorder.props("target") === "GUIDED_ANSWER",
+    )
     expect(guidedRecorders.map((recorder) => recorder.props("targetId"))).toEqual(["q1", "q2"])
     expect(guidedRecorders.every((recorder) => recorder.props("inline") === true)).toBe(true)
     guidedRecorders[0].vm.$emit("finalTranscript", "一个数量")
@@ -247,6 +250,85 @@ describe("SessionView", () => {
     )
     expect(askDoubt).not.toHaveBeenCalled()
     expect(continueExplaining).not.toHaveBeenCalled()
+  })
+
+  it("allows doubt and appeal submissions while evaluation questions are pending", async () => {
+    const pendingQuestionSession = createSession({
+      flowStage: "WAIT_GUIDED_ANSWERS",
+      version: 5,
+      latestEvaluation: {
+        id: 7,
+        correctness: "WRONG",
+        completeness: "INCOMPLETE",
+        coveredPoints: [],
+        missingPoints: ["正确计算加法"],
+        errorEvidence: [],
+        feedback: "请检查。",
+        confidence: 1,
+        nextAction: "CORRECT_AND_ASK",
+        needHumanReason: null,
+        promptVersion: "v1",
+        modelProvider: "test",
+        modelName: "test",
+        createdAt: "2026-07-20T00:00:00Z",
+      },
+      latestSupport: {
+        id: 9,
+        supportType: "CORRECT_AND_ASK",
+        supportKind: "GUIDED_QUESTIONS",
+        round: 1,
+        status: "VALID",
+        content: "请回答问题。",
+        mainDraft: "我知道有两个 1。",
+        doubtText: null,
+        guidedQuestions: [{ id: "q1", question: "两个 1 合起来是多少？" }],
+        guidedAnswers: null,
+        followUpContent: null,
+        createdAt: "2026-07-20T00:00:00Z",
+      },
+    })
+    fetchSession.mockResolvedValue(pendingQuestionSession)
+    askDoubt.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 6 }))
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.get('[data-testid="submit-doubt"]').attributes("disabled")).toBeUndefined()
+    expect(wrapper.get('[data-testid="submit-appeal"]').attributes("disabled")).toBeUndefined()
+
+    await wrapper.get('[data-testid="doubt-draft"]').setValue("为什么要重新计算？")
+    await wrapper.get('[data-testid="submit-doubt"]').trigger("click")
+    await flushPromises()
+
+    expect(askDoubt).toHaveBeenCalledWith("12", "", "为什么要重新计算？", 5, undefined)
+  })
+
+  it("allows an appeal for a pending help question without an evaluation", async () => {
+    fetchSession.mockResolvedValue(createSession({
+      flowStage: "WAIT_GUIDED_ANSWERS",
+      version: 5,
+      latestSupport: {
+        id: 9,
+        supportType: "GIVE_HINT",
+        supportKind: "GUIDED_QUESTIONS",
+        round: 1,
+        status: "VALID",
+        content: "请回答问题。",
+        mainDraft: "我知道有两个 1。",
+        doubtText: null,
+        guidedQuestions: [{ id: "q1", question: "两个 1 合起来是多少？" }],
+        guidedAnswers: null,
+        followUpContent: null,
+        createdAt: "2026-07-20T00:00:00Z",
+      },
+    }))
+    submitAppeal.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 6 }))
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.get('[data-testid="submit-appeal"]').attributes("disabled")).toBeUndefined()
+    await wrapper.get('[data-testid="appeal-draft"]').setValue("这个提示没有回答我的疑问。")
+    await wrapper.get('[data-testid="submit-appeal"]').trigger("click")
+    await flushPromises()
+
+    expect(submitAppeal).toHaveBeenCalledWith("12", "这个提示没有回答我的疑问。", 5, undefined)
   })
 
   it("writes doubt and appeal transcripts into their own editable inputs", async () => {

@@ -26,8 +26,10 @@ from app.rules.session_lifecycle import (
     FLOW_STAGE_WAIT_STUDENT_ACTION,
     STATUS_IN_PROGRESS,
     STATUS_PAUSED,
+    STUDENT_INTERRUPTION_FLOW_STAGES,
     TERMINAL_STATUSES,
     can_pause,
+    can_submit_student_interruption,
 )
 from app.schemas.ai_evaluation import AIEvaluationResponse
 from app.schemas.session import (
@@ -307,7 +309,7 @@ def ask_doubt(
     session = get_session_or_404(repository, session_id)
     validate_in_progress(session)
     validate_version(session, action_input.version)
-    if session.flow_stage != FLOW_STAGE_WAIT_STUDENT_ACTION:
+    if not can_submit_student_interruption(session.flow_stage):
         reject_operation(f"当前流程阶段不能提出疑问：{session.flow_stage}")
     question = database_session.get(Question, session.question_id)
     if question is None:
@@ -458,11 +460,11 @@ def appeal(
     session = get_session_or_404(repository, session_id)
     validate_in_progress(session)
     validate_version(session, appeal_input.version)
-    if session.flow_stage != FLOW_STAGE_WAIT_STUDENT_ACTION:
+    if not can_submit_student_interruption(session.flow_stage):
         reject_operation(f"当前流程阶段不能提交申诉：{session.flow_stage}")
     evaluation = repository.get_latest_valid_evaluation(session.id)
-    if evaluation is None:
-        reject_operation("尚未获得 AI 评价，不能提交申诉")
+    if evaluation is None and repository.get_latest_valid_support(session.id) is None:
+        reject_operation("尚未获得可申诉的 AI 回复")
     if appeal_input.voice_attempt_id is not None:
         voice_attempt = get_voice_attempt_for_submission(
             repository,
@@ -474,7 +476,9 @@ def appeal(
             attempt=voice_attempt, confirmed_text=appeal_input.reason
         )
     appealed_session = repository.appeal(
-        session=session, reason=appeal_input.reason, evaluation_id=evaluation.id
+        session=session,
+        reason=appeal_input.reason,
+        evaluation_id=evaluation.id if evaluation is not None else None,
     )
     return to_session_response(repository, appealed_session)
 
@@ -564,13 +568,13 @@ async def stream_voice_input(
                 websocket, f"会话版本已变化，当前版本为 {session.version}，请刷新后重试"
             )
             return
-        expected_stage = {
-            "SELF_EXPLANATION": FLOW_STAGE_CAPTURING_INPUT,
-            "GUIDED_ANSWER": FLOW_STAGE_WAIT_GUIDED_ANSWERS,
-            "DOUBT": FLOW_STAGE_WAIT_STUDENT_ACTION,
-            "APPEAL": FLOW_STAGE_WAIT_STUDENT_ACTION,
+        allowed_stages = {
+            "SELF_EXPLANATION": frozenset({FLOW_STAGE_CAPTURING_INPUT}),
+            "GUIDED_ANSWER": frozenset({FLOW_STAGE_WAIT_GUIDED_ANSWERS}),
+            "DOUBT": STUDENT_INTERRUPTION_FLOW_STAGES,
+            "APPEAL": STUDENT_INTERRUPTION_FLOW_STAGES,
         }[target]
-        if session.flow_stage != expected_stage:
+        if session.flow_stage not in allowed_stages:
             await reject_voice_stream(
                 websocket, f"当前流程阶段不能进行语音输入：{session.flow_stage}"
             )
@@ -592,8 +596,12 @@ async def stream_voice_input(
         elif target_id is not None:
             await reject_voice_stream(websocket, "当前语音输入目标不能携带 targetId")
             return
-        if target == "APPEAL" and repository.get_latest_valid_evaluation(session.id) is None:
-            await reject_voice_stream(websocket, "尚未获得 AI 评价，不能录制申诉")
+        if (
+            target == "APPEAL"
+            and repository.get_latest_valid_evaluation(session.id) is None
+            and repository.get_latest_valid_support(session.id) is None
+        ):
+            await reject_voice_stream(websocket, "尚未获得可申诉的 AI 回复")
             return
 
         settings = websocket.app.state.settings

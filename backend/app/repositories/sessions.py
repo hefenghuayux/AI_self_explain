@@ -1044,7 +1044,7 @@ class SessionRepository:
         self.database_session.refresh(session)
         return session
 
-    def appeal(self, *, session: Session, reason: str, evaluation_id: int) -> Session:
+    def appeal(self, *, session: Session, reason: str, evaluation_id: int | None) -> Session:
         self._record_student_submission(
             session=session,
             submission_type="APPEAL",
