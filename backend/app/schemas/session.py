@@ -12,7 +12,6 @@ FlowStage = Literal[
     "WAIT_INITIAL_CHOICE",
     "CAPTURING_INPUT",
     "TRANSCRIBING",
-    "CONFIRMING_TEXT",
     "AI_EVALUATING",
     "WAIT_STUDENT_ACTION",
     "WAIT_GUIDED_ANSWERS",
@@ -34,22 +33,7 @@ class InitialChoiceInput(QuestionSchema):
 class TextAttemptInput(QuestionSchema):
     confirmed_text: RequiredText
     version: int = Field(ge=0)
-
-
-class VoiceTranscriptConfirmationInput(TextAttemptInput):
-    attempt_id: int = Field(gt=0)
-
-
-class PendingVoiceAttemptResponse(QuestionSchema):
-    id: int
-    audio_file_id: int
-    asr_transcript: str
-    voice_target: VoiceInputTarget
-    voice_target_id: str | None
-
-
-class EvaluationRetryInput(QuestionSchema):
-    version: int = Field(ge=0)
+    voice_attempt_id: int | None = Field(default=None, gt=0)
 
 
 class StudentActionInput(QuestionSchema):
@@ -62,14 +46,17 @@ class HelpRequestInput(StudentActionInput):
 
 class DoubtRequestInput(HelpRequestInput):
     doubt_text: RequiredText
+    voice_attempt_id: int | None = Field(default=None, gt=0)
 
 
 class GuidedAnswersInput(StudentActionInput):
     answers: list[GuidedAnswer] = Field(min_length=1)
+    voice_attempt_id: int | None = Field(default=None, gt=0)
 
 
 class AppealInput(StudentActionInput):
     reason: RequiredText
+    voice_attempt_id: int | None = Field(default=None, gt=0)
 
 
 class SolutionUnderstandingInput(StudentActionInput):
@@ -135,4 +122,3 @@ class SessionResponse(QuestionSchema):
     finished_at: datetime | None
     latest_evaluation: AIEvaluationResponse | None = None
     latest_support: SupportEventResponse | None = None
-    pending_voice_attempt: PendingVoiceAttemptResponse | None = None

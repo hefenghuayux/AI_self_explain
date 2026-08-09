@@ -58,14 +58,15 @@ def test_timeline_persists_visible_feedback_and_hides_structured_details(
             json.dumps(
                 {
                     "correctness": "WRONG",
-                    "completeness": "INCOMPLETE",
-                    "coveredPoints": ["正确计算加法"],
-                    "missingPoints": ["得出结果 2"],
+                        "completeness": "COMPLETE",
+                        "coveredPoints": ["正确计算加法", "得出结果 2"],
+                        "missingPoints": [],
                     "errorEvidence": [],
                     "feedback": "请重新检查你得出的结果。",
                     "confidence": 1,
-                    "nextAction": "CORRECT_AND_ASK",
-                    "needHumanReason": None,
+                        "nextAction": "GIVE_CORRECTION",
+                        "needHumanReason": None,
+                        "guidedQuestions": [],
                 }
             ),
             8,
@@ -111,8 +112,8 @@ def test_timeline_persists_visible_feedback_and_hides_structured_details(
             "submissionType": None,
             "content": "请重新检查你得出的结果。",
             "correctness": "WRONG",
-            "completeness": "INCOMPLETE",
-            "action": "CORRECT_AND_ASK",
+                "completeness": "COMPLETE",
+                "action": "GIVE_CORRECTION",
             "createdAt": first_items[1]["createdAt"],
         }
     ]

@@ -20,7 +20,6 @@ from app.models.session import Session
 from app.repositories.sessions import SessionRepository
 from app.rules.session_lifecycle import (
     FLOW_STAGE_CAPTURING_INPUT,
-    FLOW_STAGE_CONFIRMING_TEXT,
     FLOW_STAGE_SHOWING_FULL_SOLUTION,
     FLOW_STAGE_WAIT_GUIDED_ANSWERS,
     FLOW_STAGE_WAIT_INITIAL_CHOICE,
@@ -30,11 +29,11 @@ from app.rules.session_lifecycle import (
     TERMINAL_STATUSES,
     can_pause,
 )
+from app.schemas.ai_evaluation import AIEvaluationResponse
 from app.schemas.session import (
     AppealInput,
     CreateSessionInput,
     DoubtRequestInput,
-    EvaluationRetryInput,
     GuidedAnswersInput,
     HelpRequestInput,
     InitialChoiceInput,
@@ -44,7 +43,6 @@ from app.schemas.session import (
     StudentActionInput,
     TextAttemptInput,
     VoiceInputTarget,
-    VoiceTranscriptConfirmationInput,
 )
 from app.schemas.support import GuidedAnswer, SupportEventResponse
 from app.services.ai_evaluation import AIEvaluationService
@@ -95,16 +93,19 @@ def validate_pauseable(session: Session) -> None:
 
 def to_session_response(repository: SessionRepository, session: Session) -> SessionResponse:
     latest_support = repository.get_latest_valid_support(session.id)
-    pending_voice_attempt = repository.get_pending_voice_attempt(session.id)
+    latest_evaluation = repository.get_latest_valid_evaluation(session.id)
     return SessionResponse.model_validate(session).model_copy(
         update={
-            "latest_evaluation": repository.get_latest_valid_evaluation(session.id),
+            "latest_evaluation": (
+                AIEvaluationResponse.model_validate(latest_evaluation)
+                if latest_evaluation is not None
+                else None
+            ),
             "latest_support": (
                 SupportEventResponse.model_validate(latest_support)
                 if latest_support is not None
                 else None
             ),
-            "pending_voice_attempt": pending_voice_attempt,
         }
     )
 
@@ -123,6 +124,21 @@ def create_session(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已归档题目不能创建会话")
     repository = SessionRepository(database_session)
     return to_session_response(repository, repository.create(session_input.question_id))
+
+
+def get_voice_attempt_for_submission(
+    repository: SessionRepository,
+    session: Session,
+    attempt_id: int,
+    target: VoiceInputTarget,
+    target_id: str | None = None,
+):
+    attempt = repository.get_voice_attempt(session.id, attempt_id)
+    if attempt is None or attempt.confirmed_text is not None:
+        reject_operation("语音转写不存在、已提交或已变化")
+    if attempt.voice_target != target or attempt.voice_target_id != target_id:
+        reject_operation("语音转写目标与当前提交不一致")
+    return attempt
 
 
 @router.get("/{session_id}", response_model=SessionResponse)
@@ -193,72 +209,25 @@ def submit_text_attempt(
     validate_version(session, attempt_input.version)
     if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT:
         reject_operation(f"当前流程阶段不能提交文本：{session.flow_stage}")
-    session, attempt = repository.submit_text(session, attempt_input.confirmed_text)
+    voice_attempt = None
+    if attempt_input.voice_attempt_id is not None:
+        voice_attempt = get_voice_attempt_for_submission(
+            repository,
+            session,
+            attempt_input.voice_attempt_id,
+            "SELF_EXPLANATION",
+        )
+    session, attempt = repository.submit_text(
+        session,
+        attempt_input.confirmed_text,
+        voice_attempt=voice_attempt,
+    )
     evaluated_session = AIEvaluationService(database_session, request.app.state.settings).evaluate(
         question=database_session.get(Question, session.question_id),
         session=session,
         attempt=attempt,
     )
     return to_session_response(repository, evaluated_session)
-
-
-@router.post("/{session_id}/voice-attempts/confirm", response_model=SessionResponse)
-def confirm_voice_attempt(
-    session_id: int,
-    attempt_input: VoiceTranscriptConfirmationInput,
-    database_session: DatabaseSession,
-    request: Request,
-) -> SessionResponse:
-    repository = SessionRepository(database_session)
-    session = get_session_or_404(repository, session_id)
-    validate_in_progress(session)
-    validate_version(session, attempt_input.version)
-    if session.flow_stage != FLOW_STAGE_CONFIRMING_TEXT:
-        reject_operation(f"当前流程阶段不能确认语音转写：{session.flow_stage}")
-    attempt = repository.get_pending_voice_attempt(session.id)
-    if attempt is None or attempt.id != attempt_input.attempt_id:
-        reject_operation("待确认的语音转写不存在或已变化")
-    if attempt.voice_target != "SELF_EXPLANATION":
-        reject_operation(f"当前语音转写不属于自讲输入：{attempt.voice_target}")
-    confirmed_session, confirmed_attempt = repository.confirm_voice_attempt(
-        session=session,
-        attempt=attempt,
-        confirmed_text=attempt_input.confirmed_text,
-    )
-    question = database_session.get(Question, confirmed_session.question_id)
-    if question is None:
-        raise RuntimeError(
-            f"会话 {confirmed_session.id} 关联题目不存在：{confirmed_session.question_id}"
-        )
-    evaluated_session = AIEvaluationService(database_session, request.app.state.settings).evaluate(
-        question=question, session=confirmed_session, attempt=confirmed_attempt
-    )
-    return to_session_response(repository, evaluated_session)
-
-
-@router.post("/{session_id}/voice-attempts/confirm-draft", response_model=SessionResponse)
-def confirm_voice_draft(
-    session_id: int,
-    attempt_input: VoiceTranscriptConfirmationInput,
-    database_session: DatabaseSession,
-) -> SessionResponse:
-    repository = SessionRepository(database_session)
-    session = get_session_or_404(repository, session_id)
-    validate_in_progress(session)
-    validate_version(session, attempt_input.version)
-    if session.flow_stage != FLOW_STAGE_CONFIRMING_TEXT:
-        reject_operation(f"当前流程阶段不能确认语音草稿：{session.flow_stage}")
-    attempt = repository.get_pending_voice_attempt(session.id)
-    if attempt is None or attempt.id != attempt_input.attempt_id:
-        reject_operation("待确认的语音转写不存在或已变化")
-    if attempt.voice_target == "SELF_EXPLANATION":
-        reject_operation("自讲语音必须通过提交自讲确认")
-    confirmed_session = repository.confirm_voice_draft(
-        session=session,
-        attempt=attempt,
-        confirmed_text=attempt_input.confirmed_text,
-    )
-    return to_session_response(repository, confirmed_session)
 
 
 @router.post("/{session_id}/continue", response_model=SessionResponse)
@@ -343,6 +312,16 @@ def ask_doubt(
     question = database_session.get(Question, session.question_id)
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
+    if action_input.voice_attempt_id is not None:
+        voice_attempt = get_voice_attempt_for_submission(
+            repository,
+            session,
+            action_input.voice_attempt_id,
+            "DOUBT",
+        )
+        repository.mark_voice_attempt_submitted(
+            attempt=voice_attempt, confirmed_text=action_input.doubt_text
+        )
     repository.record_support_submission(
         session=session,
         main_draft=action_input.main_draft,
@@ -412,6 +391,20 @@ def submit_guided_answers(
         if question_id in merged_by_id
     ]
     if len(merged_answers) < len(question_ids):
+        if action_input.voice_attempt_id is not None:
+            if len(action_input.answers) != 1:
+                reject_operation("语音转写一次只能关联一个子问题答案")
+            answer = action_input.answers[0]
+            voice_attempt = get_voice_attempt_for_submission(
+                repository,
+                session,
+                action_input.voice_attempt_id,
+                "GUIDED_ANSWER",
+                answer.question_id,
+            )
+            repository.mark_voice_attempt_submitted(
+                attempt=voice_attempt, confirmed_text=answer.answer
+            )
         updated_session = repository.record_partial_guided_answers(
             session=session,
             support_event=support_event,
@@ -422,6 +415,20 @@ def submit_guided_answers(
     question = database_session.get(Question, session.question_id)
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
+    if action_input.voice_attempt_id is not None:
+        if len(action_input.answers) != 1:
+            reject_operation("语音转写一次只能关联一个子问题答案")
+        answer = action_input.answers[0]
+        voice_attempt = get_voice_attempt_for_submission(
+            repository,
+            session,
+            action_input.voice_attempt_id,
+            "GUIDED_ANSWER",
+            answer.question_id,
+        )
+        repository.mark_voice_attempt_submitted(
+            attempt=voice_attempt, confirmed_text=answer.answer
+        )
     support_service = AISupportService(database_session, request.app.state.settings)
     assessment = support_service.assess_guided_answers(
         question=question,
@@ -456,6 +463,16 @@ def appeal(
     evaluation = repository.get_latest_valid_evaluation(session.id)
     if evaluation is None:
         reject_operation("尚未获得 AI 评价，不能提交申诉")
+    if appeal_input.voice_attempt_id is not None:
+        voice_attempt = get_voice_attempt_for_submission(
+            repository,
+            session,
+            appeal_input.voice_attempt_id,
+            "APPEAL",
+        )
+        repository.mark_voice_attempt_submitted(
+            attempt=voice_attempt, confirmed_text=appeal_input.reason
+        )
     appealed_session = repository.appeal(
         session=session, reason=appeal_input.reason, evaluation_id=evaluation.id
     )
@@ -478,32 +495,6 @@ def respond_to_first_solution(
         session=session, understood=understanding_input.understood
     )
     return to_session_response(repository, responded_session)
-
-
-@router.post("/{session_id}/evaluate", response_model=SessionResponse)
-def retry_ai_evaluation(
-    session_id: int,
-    retry_input: EvaluationRetryInput,
-    database_session: DatabaseSession,
-    request: Request,
-) -> SessionResponse:
-    repository = SessionRepository(database_session)
-    session = get_session_or_404(repository, session_id)
-    validate_in_progress(session)
-    validate_version(session, retry_input.version)
-    if session.flow_stage != FLOW_STAGE_CONFIRMING_TEXT:
-        reject_operation(f"当前流程阶段不能重新评价：{session.flow_stage}")
-    attempt = repository.get_latest_attempt(session.id)
-    if attempt is None or attempt.confirmed_text is None:
-        raise RuntimeError(f"会话 {session.id} 缺少可重新评价的确认文本")
-    session = repository.begin_ai_evaluation(session, attempt)
-    question = database_session.get(Question, session.question_id)
-    if question is None:
-        raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
-    evaluated_session = AIEvaluationService(database_session, request.app.state.settings).evaluate(
-        question=question, session=session, attempt=attempt
-    )
-    return to_session_response(repository, evaluated_session)
 
 
 async def reject_voice_stream(websocket: WebSocket, detail: str) -> None:
@@ -573,20 +564,13 @@ async def stream_voice_input(
                 websocket, f"会话版本已变化，当前版本为 {session.version}，请刷新后重试"
             )
             return
-        pending_voice_attempt = repository.get_pending_voice_attempt(session.id)
-        can_rerecord_pending_voice = (
-            session.flow_stage == FLOW_STAGE_CONFIRMING_TEXT
-            and pending_voice_attempt is not None
-            and pending_voice_attempt.voice_target == target
-            and pending_voice_attempt.voice_target_id == target_id
-        )
         expected_stage = {
             "SELF_EXPLANATION": FLOW_STAGE_CAPTURING_INPUT,
             "GUIDED_ANSWER": FLOW_STAGE_WAIT_GUIDED_ANSWERS,
             "DOUBT": FLOW_STAGE_WAIT_STUDENT_ACTION,
             "APPEAL": FLOW_STAGE_WAIT_STUDENT_ACTION,
         }[target]
-        if session.flow_stage != expected_stage and not can_rerecord_pending_voice:
+        if session.flow_stage != expected_stage:
             await reject_voice_stream(
                 websocket, f"当前流程阶段不能进行语音输入：{session.flow_stage}"
             )

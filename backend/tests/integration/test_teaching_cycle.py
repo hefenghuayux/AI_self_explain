@@ -278,7 +278,9 @@ def test_not_understanding_first_solution_requests_review_and_allows_continuing(
     assert continued.json()["flowStage"] == "CAPTURING_INPUT"
 
 
-def test_focused_question_after_explanation_is_counted(settings, monkeypatch) -> None:
+def test_focused_question_after_explanation_is_a_non_counting_guided_question(
+    settings, monkeypatch
+) -> None:
     evaluation = {
         "correctness": "CORRECT",
         "completeness": "INCOMPLETE",
@@ -289,6 +291,7 @@ def test_focused_question_after_explanation_is_counted(settings, monkeypatch) ->
         "confidence": 1,
         "nextAction": "ASK_FOCUSED_QUESTION",
         "needHumanReason": None,
+        "guidedQuestions": [{"id": "evaluation-q1", "question": "结果是多少？"}],
     }
     _stub_ai(monkeypatch, evaluation)
     with _client(settings, monkeypatch) as client:
@@ -303,8 +306,58 @@ def test_focused_question_after_explanation_is_counted(settings, monkeypatch) ->
         )
 
     assert response.status_code == 200
-    assert response.json()["supportCountRound"] == 1
+    assert response.json()["flowStage"] == "WAIT_GUIDED_ANSWERS"
+    assert response.json()["supportCountRound"] == 0
     assert response.json()["latestSupport"]["supportType"] == "ASK_FOCUSED_QUESTION"
+    assert response.json()["latestSupport"]["guidedQuestions"] == [
+        {"id": "evaluation-q1", "question": "结果是多少？"}
+    ]
+
+
+def test_correction_and_question_creates_one_counted_guided_question(
+    settings, monkeypatch
+) -> None:
+    evaluation = {
+        "correctness": "WRONG",
+        "completeness": "INCOMPLETE",
+        "coveredPoints": [],
+        "missingPoints": ["正确计算加法", "得出结果 2"],
+        "errorEvidence": [
+            {
+                "quote": "1 加 1 等于 3",
+                "locationDescription": "计算结果",
+                "reason": "加法结果错误",
+                "thinkingDirection": "重新计算两个 1 合并后的数量",
+            }
+        ],
+        "feedback": "你把 1 加 1 算成了 3，请重新检查。",
+        "confidence": 1,
+        "nextAction": "CORRECT_AND_ASK",
+        "needHumanReason": None,
+        "guidedQuestions": [
+            {"id": "evaluation-q1", "question": "两个 1 合起来实际是多少？"}
+        ],
+    }
+    _stub_ai(monkeypatch, evaluation)
+    with _client(settings, monkeypatch) as client:
+        session = _create_session(client)
+        selected = client.post(
+            f"/api/sessions/{session['id']}/initial-choice",
+            json={"choice": "KNOW", "version": session["version"]},
+        ).json()
+        response = client.post(
+            f"/api/sessions/{session['id']}/text-attempts",
+            json={"confirmedText": "1 加 1 等于 3", "version": selected["version"]},
+        )
+
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved["flowStage"] == "WAIT_GUIDED_ANSWERS"
+    assert saved["supportCountRound"] == 1
+    assert saved["latestSupport"]["supportType"] == "CORRECT_AND_ASK"
+    assert saved["latestSupport"]["guidedQuestions"] == [
+        {"id": "evaluation-q1", "question": "两个 1 合起来实际是多少？"}
+    ]
 
 
 def test_full_solution_request_is_refused_without_counting_support(settings, monkeypatch) -> None:

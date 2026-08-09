@@ -12,13 +12,10 @@ import type { Session } from "../src/types/session"
 vi.mock("../src/api/questions", () => ({ fetchQuestion: vi.fn() }))
 vi.mock("../src/api/sessions", () => ({
   askDoubt: vi.fn(),
-  confirmVoiceDraft: vi.fn(),
-  confirmVoiceAttempt: vi.fn(),
   continueExplaining: vi.fn(),
   fetchLearningTimeline: vi.fn(),
   fetchSession: vi.fn(),
   requestSupport: vi.fn(),
-  retryEvaluation: vi.fn(),
   submitAppeal: vi.fn(),
   submitGuidedAnswers: vi.fn(),
   submitInitialChoice: vi.fn(),
@@ -28,8 +25,6 @@ vi.mock("../src/api/sessions", () => ({
 
 const askDoubt = vi.mocked(sessionApi.askDoubt)
 const continueExplaining = vi.mocked(sessionApi.continueExplaining)
-const confirmVoiceDraft = vi.mocked(sessionApi.confirmVoiceDraft)
-const confirmVoiceAttempt = vi.mocked(sessionApi.confirmVoiceAttempt)
 const fetchLearningTimeline = vi.mocked(sessionApi.fetchLearningTimeline)
 const fetchSession = vi.mocked(sessionApi.fetchSession)
 const fetchQuestion = vi.mocked(questionApi.fetchQuestion)
@@ -59,7 +54,6 @@ function createSession(overrides: Partial<Session> = {}): Session {
     needHumanReason: null,
     latestEvaluation: null,
     latestSupport: null,
-    pendingVoiceAttempt: null,
     ...overrides,
   }
 }
@@ -132,7 +126,7 @@ describe("SessionView", () => {
     await flushPromises()
 
     expect(submitInitialChoice).toHaveBeenCalledWith("12", "KNOW", 1)
-    expect(submitTextAttempt).toHaveBeenCalledWith("12", "1 加 1 等于 2。", 2)
+    expect(submitTextAttempt).toHaveBeenCalledWith("12", "1 加 1 等于 2。", 2, undefined)
   })
 
   it("reminds once before allowing an empty draft to request support", async () => {
@@ -180,37 +174,29 @@ describe("SessionView", () => {
     )
   })
 
-  it("keeps the voice transcript editable until the student submits it", async () => {
+  it("returns a voice transcript to the editable draft without entering a confirmation stage", async () => {
     fetchSession
       .mockResolvedValueOnce(createSession({ flowStage: "CAPTURING_INPUT", version: 6 }))
       .mockResolvedValueOnce(createSession({
-        flowStage: "CONFIRMING_TEXT",
+        flowStage: "CAPTURING_INPUT",
         version: 7,
-        pendingVoiceAttempt: {
-          id: 15,
-          audioFileId: 9,
-          asrTranscript: "原始转写",
-          voiceTarget: "SELF_EXPLANATION",
-          voiceTargetId: null,
-        },
       }))
-    confirmVoiceAttempt.mockResolvedValue(createSession({
-      flowStage: "WAIT_STUDENT_ACTION",
+    submitTextAttempt.mockResolvedValue(createSession({
+      flowStage: "WAIT_GUIDED_ANSWERS",
       currentDraft: "学生确认后的文本",
       version: 8,
     }))
     const wrapper = await mountSessionView()
 
     await wrapper.get('[data-testid="main-draft"]').setValue("学生确认后的文本")
-    wrapper.findComponent(VoiceRecorder).vm.$emit("completed")
+    wrapper.findComponent(VoiceRecorder).vm.$emit("completed", 15)
     await flushPromises()
 
-    expect(confirmVoiceAttempt).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="start-voice"]').text()).toBe("开始录音")
     await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
     await flushPromises()
 
-    expect(confirmVoiceAttempt).toHaveBeenCalledWith("12", 15, "学生确认后的文本", 7)
+    expect(submitTextAttempt).toHaveBeenCalledWith("12", "学生确认后的文本", 7, 15)
     expect(wrapper.text()).not.toContain("实时语音输入")
     expect(wrapper.text()).not.toContain("确认语音转写")
   })
@@ -257,6 +243,7 @@ describe("SessionView", () => {
       "12",
       [{ questionId: "q1", answer: "一个数量" }],
       5,
+      undefined,
     )
     expect(askDoubt).not.toHaveBeenCalled()
     expect(continueExplaining).not.toHaveBeenCalled()
@@ -299,31 +286,23 @@ describe("SessionView", () => {
     )
   })
 
-  it("confirms a doubt voice draft before the doubt button submits it", async () => {
-    fetchSession.mockResolvedValue(createSession({
-      flowStage: "CONFIRMING_TEXT",
-      version: 7,
-      pendingVoiceAttempt: {
-        id: 16,
-        audioFileId: 10,
-        asrTranscript: "为什么要相加？",
-        voiceTarget: "DOUBT",
-        voiceTargetId: null,
-      },
-    }))
-    confirmVoiceDraft.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 8 }))
+  it("uses the original doubt action after voice transcription", async () => {
+    fetchSession
+      .mockResolvedValueOnce(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 7 }))
+      .mockResolvedValueOnce(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 8 }))
     askDoubt.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 9 }))
     const wrapper = await mountSessionView()
 
     expect(wrapper.findAllComponents(VoiceRecorder).map((recorder) => recorder.props("target"))).toEqual([
       "DOUBT",
     ])
+    wrapper.findComponent(VoiceRecorder).vm.$emit("completed", 16)
+    await flushPromises()
     await wrapper.get('[data-testid="doubt-draft"]').setValue("修改后的疑问")
     await wrapper.get('[data-testid="submit-doubt"]').trigger("click")
     await flushPromises()
 
-    expect(confirmVoiceDraft).toHaveBeenCalledWith("12", 16, "修改后的疑问", 7)
-    expect(askDoubt).toHaveBeenCalledWith("12", "", "修改后的疑问", 8)
+    expect(askDoubt).toHaveBeenCalledWith("12", "", "修改后的疑问", 8, 16)
   })
 
   it("can reload the current session after an error", async () => {

@@ -16,7 +16,6 @@ from app.models.support_event import SupportEvent
 from app.rules.session_lifecycle import (
     FLOW_STAGE_AI_EVALUATING,
     FLOW_STAGE_CAPTURING_INPUT,
-    FLOW_STAGE_CONFIRMING_TEXT,
     FLOW_STAGE_SHOWING_FULL_SOLUTION,
     FLOW_STAGE_WAIT_GUIDED_ANSWERS,
     FLOW_STAGE_WAIT_INITIAL_CHOICE,
@@ -29,7 +28,7 @@ from app.rules.session_lifecycle import (
     flow_stage_after_initial_choice,
 )
 from app.rules.teaching_cycle import (
-    SUPPORT_TYPES,
+    COUNTED_SUPPORT_TYPES,
     decide_evaluation,
     support_limit_for,
     support_limit_reached,
@@ -179,17 +178,14 @@ class SessionRepository:
         )
         return self.database_session.scalars(statement).first()
 
-    def get_pending_voice_attempt(self, session_id: int) -> ExplanationAttempt | None:
-        statement = (
-            select(ExplanationAttempt)
-            .where(
+    def get_voice_attempt(self, session_id: int, attempt_id: int) -> ExplanationAttempt | None:
+        return self.database_session.scalar(
+            select(ExplanationAttempt).where(
                 ExplanationAttempt.session_id == session_id,
+                ExplanationAttempt.id == attempt_id,
                 ExplanationAttempt.input_mode == "VOICE",
-                ExplanationAttempt.confirmed_text.is_(None),
             )
-            .order_by(ExplanationAttempt.id.desc())
         )
-        return self.database_session.scalars(statement).first()
 
     def get_latest_valid_evaluation(self, session_id: int) -> AIEvaluation | None:
         statement = (
@@ -377,23 +373,36 @@ class SessionRepository:
         return session
 
     def submit_text(
-        self, session: Session, confirmed_text: str
+        self,
+        session: Session,
+        confirmed_text: str,
+        voice_attempt: ExplanationAttempt | None = None,
     ) -> tuple[Session, ExplanationAttempt]:
         before_snapshot = session_snapshot(session)
-        attempt = ExplanationAttempt(
-            session_id=session.id,
-            round=session.round,
-            input_mode="TEXT",
-            confirmed_text=confirmed_text,
-            confirmed_at=datetime.now(UTC),
-        )
-        self.database_session.add(attempt)
-        self.database_session.flush()
+        if voice_attempt is None:
+            attempt = ExplanationAttempt(
+                session_id=session.id,
+                round=session.round,
+                input_mode="TEXT",
+                confirmed_text=confirmed_text,
+                confirmed_at=datetime.now(UTC),
+            )
+            self.database_session.add(attempt)
+            self.database_session.flush()
+        else:
+            self.mark_voice_attempt_submitted(
+                attempt=voice_attempt, confirmed_text=confirmed_text
+            )
+            attempt = voice_attempt
         self._record_student_submission(
             session=session,
             submission_type="SELF_EXPLANATION",
             content=confirmed_text,
-            context={"inputMode": "TEXT", "attemptId": attempt.id, "round": session.round},
+            context={
+                "inputMode": attempt.input_mode,
+                "attemptId": attempt.id,
+                "round": session.round,
+            },
         )
         session.current_draft = confirmed_text
         session.last_support_draft = confirmed_text
@@ -401,7 +410,9 @@ class SessionRepository:
         session.version += 1
         self._record_transition(
             session=session,
-            trigger_type="SUBMIT_TEXT",
+            trigger_type=(
+                "SUBMIT_VOICE_TRANSCRIPT" if attempt.input_mode == "VOICE" else "SUBMIT_TEXT"
+            ),
             before_snapshot=before_snapshot,
             related_attempt_id=attempt.id,
         )
@@ -421,53 +432,34 @@ class SessionRepository:
         voice_target_id: str | None,
     ) -> tuple[Session, ExplanationAttempt]:
         before_snapshot = session_snapshot(session)
-        pending_attempt = self.get_pending_voice_attempt(session.id)
-        if pending_attempt is None:
-            audio_file = AudioFile(
-                session_id=session.id,
-                relative_path="",
-                content_type=audio_storage.content_type,
-                size_bytes=capture.size_bytes,
-                sha256=capture.sha256.hexdigest(),
-            )
-            self.database_session.add(audio_file)
-            self.database_session.flush()
-            attempt = ExplanationAttempt(
-                session_id=session.id,
-                round=session.round,
-                input_mode="VOICE",
-                voice_target=voice_target,
-                voice_target_id=voice_target_id,
-                audio_file_id=audio_file.id,
-                asr_transcript=asr_transcript,
-                confirmed_text=None,
-                confirmed_at=None,
-            )
-            self.database_session.add(attempt)
-            self.database_session.flush()
-        else:
-            # 重新录音复用待确认记录，避免产生多个无法确认的语音尝试。
-            attempt = pending_attempt
-            if (
-                attempt.voice_target != voice_target
-                or attempt.voice_target_id != voice_target_id
-            ):
-                raise ValueError("重新录音目标与待确认语音尝试不一致")
-            audio_file = self.database_session.get(AudioFile, attempt.audio_file_id)
-            if audio_file is None:
-                raise RuntimeError(
-                    f"语音尝试 {attempt.id} 关联音频文件不存在：{attempt.audio_file_id}"
-                )
-            audio_file.size_bytes = capture.size_bytes
-            audio_file.sha256 = capture.sha256.hexdigest()
-            attempt.asr_transcript = asr_transcript
+        audio_file = AudioFile(
+            session_id=session.id,
+            relative_path="",
+            content_type=audio_storage.content_type,
+            size_bytes=capture.size_bytes,
+            sha256=capture.sha256.hexdigest(),
+        )
+        self.database_session.add(audio_file)
+        self.database_session.flush()
+        attempt = ExplanationAttempt(
+            session_id=session.id,
+            round=session.round,
+            input_mode="VOICE",
+            voice_target=voice_target,
+            voice_target_id=voice_target_id,
+            audio_file_id=audio_file.id,
+            asr_transcript=asr_transcript,
+            confirmed_text=None,
+            confirmed_at=None,
+        )
+        self.database_session.add(attempt)
+        self.database_session.flush()
         relative_path: str | None = None
         try:
             relative_path = audio_storage.finalize_capture(
                 capture, session_id=session.id, audio_file_id=audio_file.id
             )
             audio_file.relative_path = relative_path
-            session.flow_stage = FLOW_STAGE_CONFIRMING_TEXT
             session.version += 1
             self._record_transition(
                 session=session,
@@ -487,55 +479,13 @@ class SessionRepository:
         self.database_session.refresh(attempt)
         return session, attempt
 
-    def confirm_voice_draft(
-        self, *, session: Session, attempt: ExplanationAttempt, confirmed_text: str
-    ) -> Session:
-        before_snapshot = session_snapshot(session)
+    def mark_voice_attempt_submitted(
+        self, *, attempt: ExplanationAttempt, confirmed_text: str
+    ) -> None:
+        if attempt.confirmed_text is not None:
+            raise ValueError(f"语音尝试 {attempt.id} 已经关联过学生提交")
         attempt.confirmed_text = confirmed_text
         attempt.confirmed_at = datetime.now(UTC)
-        if attempt.voice_target == "GUIDED_ANSWER":
-            session.flow_stage = FLOW_STAGE_WAIT_GUIDED_ANSWERS
-        elif attempt.voice_target in {"DOUBT", "APPEAL"}:
-            session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
-        else:
-            raise ValueError(f"语音目标不能作为独立草稿确认：{attempt.voice_target}")
-        session.version += 1
-        self._record_transition(
-            session=session,
-            trigger_type="CONFIRM_VOICE_DRAFT",
-            before_snapshot=before_snapshot,
-            related_attempt_id=attempt.id,
-        )
-        self.database_session.commit()
-        self.database_session.refresh(session)
-        return session
-
-    def confirm_voice_attempt(
-        self, *, session: Session, attempt: ExplanationAttempt, confirmed_text: str
-    ) -> tuple[Session, ExplanationAttempt]:
-        before_snapshot = session_snapshot(session)
-        attempt.confirmed_text = confirmed_text
-        attempt.confirmed_at = datetime.now(UTC)
-        self._record_student_submission(
-            session=session,
-            submission_type="SELF_EXPLANATION",
-            content=confirmed_text,
-            context={"inputMode": "VOICE", "attemptId": attempt.id, "round": session.round},
-        )
-        session.current_draft = confirmed_text
-        session.last_support_draft = confirmed_text
-        session.flow_stage = FLOW_STAGE_AI_EVALUATING
-        session.version += 1
-        self._record_transition(
-            session=session,
-            trigger_type="CONFIRM_VOICE_TRANSCRIPT",
-            before_snapshot=before_snapshot,
-            related_attempt_id=attempt.id,
-        )
-        self.database_session.commit()
-        self.database_session.refresh(session)
-        self.database_session.refresh(attempt)
-        return session, attempt
 
     def record_asr_stream_failure(self, *, session: Session, trigger_type: str) -> Session:
         before_snapshot = session_snapshot(session)
@@ -681,13 +631,26 @@ class SessionRepository:
             session.completion_type = decision.completion_type
         if decision.need_human_reason is not None:
             session.need_human_reason = decision.need_human_reason
-        if decision.action in SUPPORT_TYPES:
+        if decision.action == "ASK_FOCUSED_QUESTION":
+            self._record_evaluation_guided_questions(
+                session=session,
+                support_type=decision.action,
+                content=evaluation.feedback,
+                evaluation_id=saved_evaluation.id,
+                guided_questions=evaluation.guided_questions,
+            )
+        elif decision.action in COUNTED_SUPPORT_TYPES:
             self._apply_support(
                 session=session,
                 support_type=decision.action,
                 content=evaluation.feedback,
                 evaluation_id=saved_evaluation.id,
                 settings=settings,
+                guided_questions=(
+                    evaluation.guided_questions
+                    if decision.action == "CORRECT_AND_ASK"
+                    else None
+                ),
             )
         if session.status in {STATUS_COMPLETED, STATUS_STOPPED_LIMIT}:
             session.finished_at = datetime.now(UTC)
@@ -1234,8 +1197,9 @@ class SessionRepository:
         content: str,
         evaluation_id: int | None,
         settings: Settings,
+        guided_questions: list[GuidedQuestion] | None = None,
     ) -> None:
-        if support_type not in SUPPORT_TYPES:
+        if support_type not in COUNTED_SUPPORT_TYPES:
             raise ValueError(f"不支持的计数支持类型：{support_type}")
         if support_limit_reached(
             round_number=session.round,
@@ -1261,17 +1225,52 @@ class SessionRepository:
                 round=session.round,
                 status="VALID",
                 content=content,
-                support_kind="EVALUATION",
+                support_kind="GUIDED_QUESTIONS" if guided_questions is not None else "EVALUATION",
                 main_draft=session.current_draft,
                 doubt_text=None,
-                guided_questions=None,
+                guided_questions=(
+                    [item.model_dump() for item in guided_questions]
+                    if guided_questions is not None
+                    else None
+                ),
                 guided_answers=None,
                 follow_up_content=None,
             )
         )
         session.support_count_round += 1
         session.support_count_total += 1
-        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+        session.flow_stage = (
+            FLOW_STAGE_WAIT_GUIDED_ANSWERS
+            if guided_questions is not None
+            else FLOW_STAGE_WAIT_STUDENT_ACTION
+        )
+
+    def _record_evaluation_guided_questions(
+        self,
+        *,
+        session: Session,
+        support_type: str,
+        content: str,
+        evaluation_id: int,
+        guided_questions: list[GuidedQuestion],
+    ) -> None:
+        self.database_session.add(
+            SupportEvent(
+                session_id=session.id,
+                evaluation_id=evaluation_id,
+                support_type=support_type,
+                round=session.round,
+                status="VALID",
+                content=content,
+                support_kind="GUIDED_QUESTIONS",
+                main_draft=session.current_draft,
+                doubt_text=None,
+                guided_questions=[item.model_dump() for item in guided_questions],
+                guided_answers=None,
+                follow_up_content=None,
+            )
+        )
+        session.flow_stage = FLOW_STAGE_WAIT_GUIDED_ANSWERS
 
 
 def student_human_review_message() -> str:

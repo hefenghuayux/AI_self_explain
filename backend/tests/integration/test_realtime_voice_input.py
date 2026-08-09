@@ -39,7 +39,7 @@ def question_payload() -> dict[str, object]:
     }
 
 
-def test_realtime_voice_transcript_can_be_edited_or_re_recorded_before_ai_evaluation(
+def test_realtime_voice_transcript_returns_to_editable_draft_without_confirmation_stage(
     settings, monkeypatch
 ) -> None:
     transcripts = iter(["1 加 1 等于 2。", "重新录音后的文本。"])
@@ -82,7 +82,8 @@ def test_realtime_voice_transcript_can_be_edited_or_re_recorded_before_ai_evalua
                 '{"correctness":"CORRECT","completeness":"INCOMPLETE",'
                 '"coveredPoints":["正确计算加法"],"missingPoints":["得出结果 2"],'
                 '"errorEvidence":[],"feedback":"请补充结果。","confidence":1,'
-                '"nextAction":"ASK_FOCUSED_QUESTION","needHumanReason":null}'
+                '"nextAction":"ASK_FOCUSED_QUESTION","needHumanReason":null,'
+                '"guidedQuestions":[{"id":"evaluation-q1","question":"结果是多少？"}]}'
             ),
             duration_ms=1,
         )
@@ -113,12 +114,11 @@ def test_realtime_voice_transcript_can_be_edited_or_re_recorded_before_ai_evalua
             completed = websocket.receive_json()
 
         assert completed["type"] == "completed"
-        pending = client.get(f"/api/sessions/{session['id']}").json()
-        assert pending["flowStage"] == "CONFIRMING_TEXT"
-        assert pending["pendingVoiceAttempt"]["asrTranscript"] == "1 加 1 等于 2。"
+        after_first_transcript = client.get(f"/api/sessions/{session['id']}").json()
+        assert after_first_transcript["flowStage"] == "CAPTURING_INPUT"
 
         with client.websocket_connect(
-            f"/api/sessions/{session['id']}/voice-stream?version={pending['version']}"
+            f"/api/sessions/{session['id']}/voice-stream?version={after_first_transcript['version']}"
         ) as websocket:
             assert websocket.receive_json()["type"] == "ready"
             websocket.send_bytes(b"\x00\x00" * 1600)
@@ -128,36 +128,40 @@ def test_realtime_voice_transcript_can_be_edited_or_re_recorded_before_ai_evalua
             rerecorded = websocket.receive_json()
 
         assert rerecorded["type"] == "completed"
-        assert rerecorded["attemptId"] == completed["attemptId"]
-        pending = client.get(f"/api/sessions/{session['id']}").json()
-        assert pending["pendingVoiceAttempt"]["asrTranscript"] == "重新录音后的文本。"
-
-        confirmed = client.post(
-            f"/api/sessions/{session['id']}/voice-attempts/confirm",
+        assert rerecorded["attemptId"] != completed["attemptId"]
+        submitted = client.post(
+            f"/api/sessions/{session['id']}/text-attempts",
             json={
-                "attemptId": rerecorded["attemptId"],
                 "confirmedText": "学生修改后的最终文本",
                 "version": rerecorded["version"],
+                "voiceAttemptId": rerecorded["attemptId"],
             },
         )
-        assert confirmed.status_code == 200
-        assert confirmed.json()["flowStage"] == "WAIT_STUDENT_ACTION"
+        assert submitted.status_code == 200
+        assert submitted.json()["flowStage"] == "WAIT_GUIDED_ANSWERS"
 
     engine = create_engine(settings.database_url)
     try:
         with DatabaseSession(engine) as database_session:
-            audio_file = database_session.scalars(select(AudioFile)).one()
-            attempt = database_session.scalars(select(ExplanationAttempt)).one()
+            audio_files = database_session.scalars(select(AudioFile)).all()
+            attempts = database_session.scalars(
+                select(ExplanationAttempt).order_by(ExplanationAttempt.id)
+            ).all()
             asr_calls = database_session.scalars(
                 select(ExternalCallRecord).where(ExternalCallRecord.call_type == "ASR")
             ).all()
-        assert audio_file.size_bytes == 3200
-        assert Path(settings.audio_storage_dir, audio_file.relative_path).is_file()
-        assert attempt.input_mode == "VOICE"
-        assert attempt.voice_target == "SELF_EXPLANATION"
-        assert attempt.voice_target_id is None
-        assert attempt.asr_transcript == "重新录音后的文本。"
-        assert attempt.confirmed_text == "学生修改后的最终文本"
+        assert len(audio_files) == 2
+        assert all(audio_file.size_bytes == 3200 for audio_file in audio_files)
+        assert all(
+            Path(settings.audio_storage_dir, audio_file.relative_path).is_file()
+            for audio_file in audio_files
+        )
+        assert [attempt.input_mode for attempt in attempts] == ["VOICE", "VOICE"]
+        assert all(attempt.voice_target == "SELF_EXPLANATION" for attempt in attempts)
+        assert attempts[0].asr_transcript == "1 加 1 等于 2。"
+        assert attempts[0].confirmed_text is None
+        assert attempts[1].asr_transcript == "重新录音后的文本。"
+        assert attempts[1].confirmed_text == "学生修改后的最终文本"
         assert len(asr_calls) == 2
         assert all(call.status == "SUCCESS" for call in asr_calls)
     finally:
@@ -207,7 +211,7 @@ def test_audio_write_failure_does_not_create_partial_database_records(
         engine.dispose()
 
 
-def test_doubt_voice_draft_returns_to_student_action_without_ai_evaluation(
+def test_doubt_voice_draft_is_submitted_by_the_original_doubt_action(
     settings, monkeypatch
 ) -> None:
     class FakeRecognition:
@@ -236,7 +240,20 @@ def test_doubt_voice_draft_returns_to_student_action_without_ai_evaluation(
     def fake_create_recognition(**kwargs):
         return FakeRecognition(kwargs["event_queue"])
 
+    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+        assert "教学支持生成器" in prompt
+        return AIModelResponse(
+            raw_response='{"choices": []}',
+            content=(
+                '{"action":"SIMPLE_DOUBT_ANSWER","coveredPoints":[],'
+                '"missingPoints":["正确计算加法","得出结果 2"],'
+                '"content":"请先说明相加的两个量。","questions":[]}'
+            ),
+            duration_ms=1,
+        )
+
     monkeypatch.setattr(realtime_asr, "create_recognition", fake_create_recognition)
+    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
     migrate_database(settings, monkeypatch)
 
     with authenticated_test_client(settings) as client:
@@ -260,23 +277,20 @@ def test_doubt_voice_draft_returns_to_student_action_without_ai_evaluation(
             websocket.send_text(json.dumps({"type": "stop"}))
             completed = websocket.receive_json()
 
-        pending = client.get(f"/api/sessions/{session['id']}").json()
-        assert pending["flowStage"] == "CONFIRMING_TEXT"
-        assert pending["pendingVoiceAttempt"]["voiceTarget"] == "DOUBT"
-        assert pending["pendingVoiceAttempt"]["voiceTargetId"] is None
-
-        confirmed = client.post(
-            f"/api/sessions/{session['id']}/voice-attempts/confirm-draft",
+        after_transcript = client.get(f"/api/sessions/{session['id']}").json()
+        assert after_transcript["flowStage"] == "WAIT_STUDENT_ACTION"
+        submitted = client.post(
+            f"/api/sessions/{session['id']}/ask-doubt",
             json={
-                "attemptId": completed["attemptId"],
-                "confirmedText": "修改后的疑问",
-                "version": completed["version"],
+                "mainDraft": "",
+                "doubtText": "修改后的疑问",
+                "voiceAttemptId": completed["attemptId"],
+                "version": after_transcript["version"],
             },
         )
 
-    assert confirmed.status_code == 200
-    assert confirmed.json()["flowStage"] == "WAIT_STUDENT_ACTION"
-    assert confirmed.json()["pendingVoiceAttempt"] is None
+    assert submitted.status_code == 200
+    assert submitted.json()["flowStage"] == "WAIT_STUDENT_ACTION"
 
     engine = create_engine(settings.database_url)
     try:

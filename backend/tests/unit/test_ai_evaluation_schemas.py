@@ -21,6 +21,7 @@ def valid_payload() -> dict[str, object]:
         "confidence": 1,
         "nextAction": "ASK_FOCUSED_QUESTION",
         "needHumanReason": None,
+        "guidedQuestions": [{"id": "evaluation-q1", "question": "最后的结果是多少？"}],
     }
 
 
@@ -49,11 +50,13 @@ def test_evaluation_schema_rejects_missing_fields_and_unknown_enum() -> None:
         ({"coveredPoints": ["正确计算加法"], "missingPoints": ["正确计算加法"]}, "不能重叠"),
         ({"nextAction": "GIVE_HINT"}, "组合不符合"),
         ({"nextAction": "NEED_HUMAN", "needHumanReason": None}, "needHumanReason 必填"),
+        ({"guidedQuestions": []}, "必须恰好包含一个"),
         (
             {
                 "correctness": "WRONG",
                 "completeness": "COMPLETE",
                 "nextAction": "GIVE_CORRECTION",
+                "guidedQuestions": [],
                 "errorEvidence": [
                     {
                         "quote": "不存在的原文",

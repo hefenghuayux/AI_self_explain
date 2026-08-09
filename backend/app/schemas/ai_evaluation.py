@@ -1,9 +1,10 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, field_validator
 
 from app.schemas.question import QuestionSchema, RequiredText, to_camel_case
+from app.schemas.support import GuidedQuestion
 
 Correctness = Literal["CORRECT", "WRONG", "UNCERTAIN"]
 Completeness = Literal["COMPLETE", "INCOMPLETE"]
@@ -48,6 +49,7 @@ class AIEvaluationOutput(QuestionSchema):
     confidence: Literal[1]
     next_action: NextAction
     need_human_reason: RequiredText | None
+    guided_questions: list[GuidedQuestion]
 
 
 class AIEvaluationResponse(QuestionSchema):
@@ -65,6 +67,13 @@ class AIEvaluationResponse(QuestionSchema):
     model_provider: str
     model_name: str
     created_at: datetime
+
+    @field_validator("error_evidence", mode="before")
+    @classmethod
+    def parse_error_evidence(cls, value: object) -> object:
+        if value is None:
+            return []
+        return [ErrorEvidence.model_validate(item) for item in value]
 
 
 def evaluation_json_schema(rubric_points: list[str]) -> dict[str, object]:
@@ -116,6 +125,12 @@ def validate_evaluation_relationships(
         )
     if evaluation.correctness == "UNCERTAIN" and evaluation.next_action != "NEED_HUMAN":
         errors.append("correctness 为 UNCERTAIN 时 nextAction 必须为 NEED_HUMAN")
+
+    if evaluation.next_action in {"ASK_FOCUSED_QUESTION", "CORRECT_AND_ASK"}:
+        if len(evaluation.guided_questions) != 1:
+            errors.append("聚焦追问和纠错后追问必须恰好包含一个 guidedQuestions 子问题")
+    elif evaluation.guided_questions:
+        errors.append("非追问动作的 guidedQuestions 必须为空列表")
 
     for evidence in evaluation.error_evidence:
         if evidence.quote not in confirmed_text:

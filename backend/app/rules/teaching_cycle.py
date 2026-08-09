@@ -2,9 +2,7 @@ from dataclasses import dataclass
 
 from app.core.config import Settings
 
-SUPPORT_TYPES = frozenset(
-    {"ASK_FOCUSED_QUESTION", "GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"}
-)
+COUNTED_SUPPORT_TYPES = frozenset({"GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"})
 
 
 @dataclass(frozen=True)

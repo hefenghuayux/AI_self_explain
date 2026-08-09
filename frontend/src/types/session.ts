@@ -6,7 +6,6 @@ export type SessionStatus = "IN_PROGRESS" | "COMPLETED" | "STOPPED_LIMIT" | "NEE
 export type FlowStage =
   | "WAIT_INITIAL_CHOICE"
   | "CAPTURING_INPUT"
-  | "CONFIRMING_TEXT"
   | "TRANSCRIBING"
   | "AI_EVALUATING"
   | "WAIT_STUDENT_ACTION"
@@ -100,13 +99,4 @@ export interface Session {
   needHumanReason: string | null
   latestEvaluation: AIEvaluation | null
   latestSupport: SupportEvent | null
-  pendingVoiceAttempt: PendingVoiceAttempt | null
-}
-
-export interface PendingVoiceAttempt {
-  id: number
-  audioFileId: number
-  asrTranscript: string
-  voiceTarget: VoiceInputTarget
-  voiceTargetId: string | null
 }

@@ -4,13 +4,10 @@ import { useRoute } from "vue-router"
 
 import {
   askDoubt,
-  confirmVoiceDraft,
-  confirmVoiceAttempt,
   continueExplaining,
   fetchLearningTimeline,
   fetchSession,
   requestSupport,
-  retryEvaluation,
   submitAppeal,
   submitGuidedAnswers,
   submitInitialChoice,
@@ -54,6 +51,7 @@ const submitting = ref(false)
 const errorMessage = ref("")
 const voiceRecording = ref(false)
 const activeVoiceKey = ref<string>()
+const voiceAttemptIds = ref<Record<string, number>>({})
 const voiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 const doubtVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 
@@ -218,15 +216,6 @@ function timelineItemClass(item: LearningTimelineItem) {
 }
 
 function syncActiveSegmentWithStage() {
-  if (session.value?.pendingVoiceAttempt) {
-    activeSegment.value = {
-      SELF_EXPLANATION: "selfExplain",
-      GUIDED_ANSWER: "guidedAnswers",
-      DOUBT: "doubt",
-      APPEAL: "appeal",
-    }[session.value.pendingVoiceAttempt.voiceTarget] as SegmentKey
-    return
-  }
   if (session.value?.flowStage === "WAIT_GUIDED_ANSWERS") {
     activeSegment.value = "guidedAnswers"
   }
@@ -295,21 +284,19 @@ async function submitExplanation() {
   submitting.value = true
   errorMessage.value = ""
   try {
-    if (session.value.flowStage === "CONFIRMING_TEXT" && session.value.pendingVoiceAttempt) {
-      session.value = await confirmVoiceAttempt(
-        sessionId,
-        session.value.pendingVoiceAttempt.id,
-        selfExplainDraft.value,
-        session.value.version,
-      )
-    } else {
-      if (session.value.flowStage === "WAIT_INITIAL_CHOICE") {
-        session.value = await submitInitialChoice(sessionId, "KNOW", session.value.version)
-      } else if (session.value.flowStage === "WAIT_STUDENT_ACTION") {
-        session.value = await continueExplaining(sessionId, session.value.version)
-      }
-      session.value = await submitTextAttempt(sessionId, selfExplainDraft.value, session.value.version)
+    if (session.value.flowStage === "WAIT_INITIAL_CHOICE") {
+      session.value = await submitInitialChoice(sessionId, "KNOW", session.value.version)
+    } else if (session.value.flowStage === "WAIT_STUDENT_ACTION") {
+      session.value = await continueExplaining(sessionId, session.value.version)
     }
+    const voiceAttemptId = getVoiceAttemptId("SELF_EXPLANATION")
+    session.value = await submitTextAttempt(
+      sessionId,
+      selfExplainDraft.value,
+      session.value.version,
+      voiceAttemptId,
+    )
+    clearVoiceAttemptId("SELF_EXPLANATION")
     selfExplainDraft.value = session.value.currentDraft
     syncActiveSegmentWithStage()
     await refreshTimeline()
@@ -343,8 +330,7 @@ async function startVoiceRecording() {
     await prepareSelfExplanationVoiceInput()
     await nextTick()
   }
-  if (session.value.flowStage !== "CAPTURING_INPUT"
-    && !pendingVoiceMatches("SELF_EXPLANATION")) return
+  if (session.value.flowStage !== "CAPTURING_INPUT") return
   await voiceRecorderRef.value?.start()
 }
 
@@ -354,7 +340,7 @@ async function startDoubtVoiceRecording() {
     await chooseInitialChoice("HAS_QUESTION")
     await nextTick()
   }
-  if (session.value.flowStage !== "WAIT_STUDENT_ACTION" && !pendingVoiceMatches("DOUBT")) return
+  if (session.value.flowStage !== "WAIT_STUDENT_ACTION") return
   await doubtVoiceRecorderRef.value?.start()
 }
 
@@ -379,29 +365,24 @@ function handleRecordingChange(voiceKey: string, recording: boolean) {
   activeVoiceKey.value = recording ? voiceKey : undefined
 }
 
-function pendingVoiceMatches(target: VoiceInputTarget, targetId?: string) {
-  const pendingAttempt = session.value?.pendingVoiceAttempt
-  return pendingAttempt?.voiceTarget === target
-    && pendingAttempt.voiceTargetId === (targetId ?? null)
+function voiceAttemptKey(target: VoiceInputTarget, targetId?: string) {
+  return `${target}:${targetId ?? ""}`
 }
 
-async function confirmPendingVoiceDraft(
-  target: Exclude<VoiceInputTarget, "SELF_EXPLANATION">,
-  confirmedText: string,
-  targetId?: string,
+function getVoiceAttemptId(target: VoiceInputTarget, targetId?: string) {
+  return voiceAttemptIds.value[voiceAttemptKey(target, targetId)]
+}
+
+function clearVoiceAttemptId(target: VoiceInputTarget, targetId?: string) {
+  delete voiceAttemptIds.value[voiceAttemptKey(target, targetId)]
+}
+
+async function handleVoiceCompleted(
+  target: VoiceInputTarget,
+  targetId: string | undefined,
+  attemptId: number,
 ) {
-  if (!session.value || !pendingVoiceMatches(target, targetId)) return
-  const pendingAttempt = session.value.pendingVoiceAttempt
-  if (!pendingAttempt) return
-  session.value = await confirmVoiceDraft(
-    sessionId,
-    pendingAttempt.id,
-    confirmedText,
-    session.value.version,
-  )
-}
-
-async function handleVoiceCompleted() {
+  voiceAttemptIds.value[voiceAttemptKey(target, targetId)] = attemptId
   try {
     session.value = await fetchSession(sessionId)
     syncActiveSegmentWithStage()
@@ -437,11 +418,18 @@ async function submitDoubt() {
   submitting.value = true
   errorMessage.value = ""
   try {
-    await confirmPendingVoiceDraft("DOUBT", doubtDraft.value)
     if (session.value.flowStage === "WAIT_INITIAL_CHOICE") {
       session.value = await submitInitialChoice(sessionId, "HAS_QUESTION", session.value.version)
     }
-    session.value = await askDoubt(sessionId, selfExplainDraft.value, doubtDraft.value, session.value.version)
+    const voiceAttemptId = getVoiceAttemptId("DOUBT")
+    session.value = await askDoubt(
+      sessionId,
+      selfExplainDraft.value,
+      doubtDraft.value,
+      session.value.version,
+      voiceAttemptId,
+    )
+    clearVoiceAttemptId("DOUBT")
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
@@ -467,27 +455,15 @@ async function submitGuidedQuestionAnswer(questionId: string) {
   submitting.value = true
   errorMessage.value = ""
   try {
-    await confirmPendingVoiceDraft("GUIDED_ANSWER", answer, questionId)
+    const voiceAttemptId = getVoiceAttemptId("GUIDED_ANSWER", questionId)
     session.value = await submitGuidedAnswers(
       sessionId,
       [{ questionId, answer }],
       session.value.version,
+      voiceAttemptId,
     )
+    clearVoiceAttemptId("GUIDED_ANSWER", questionId)
     syncActiveSegmentWithStage()
-    await refreshTimeline()
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
-  } finally {
-    submitting.value = false
-  }
-}
-
-async function retryAiEvaluation() {
-  if (!session.value) return
-  submitting.value = true
-  errorMessage.value = ""
-  try {
-    session.value = await retryEvaluation(sessionId, session.value.version)
     await refreshTimeline()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
@@ -504,8 +480,14 @@ async function appealEvaluation() {
   submitting.value = true
   errorMessage.value = ""
   try {
-    await confirmPendingVoiceDraft("APPEAL", appealDraft.value)
-    session.value = await submitAppeal(sessionId, appealDraft.value, session.value.version)
+    const voiceAttemptId = getVoiceAttemptId("APPEAL")
+    session.value = await submitAppeal(
+      sessionId,
+      appealDraft.value,
+      session.value.version,
+      voiceAttemptId,
+    )
+    clearVoiceAttemptId("APPEAL")
     await refreshTimeline()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
@@ -601,24 +583,21 @@ async function respondToSolution(understood: boolean) {
                   :disabled="submitting || session.flowStage === 'AI_EVALUATING'"
                 />
                 <VoiceRecorder
-                  v-if="session.flowStage === 'CAPTURING_INPUT'
-                    || pendingVoiceMatches('SELF_EXPLANATION')"
+                  v-if="session.flowStage === 'CAPTURING_INPUT'"
                   ref="voiceRecorderRef"
                   :session-id="sessionId"
                   :version="session.version"
                   target="SELF_EXPLANATION"
                   :disabled="submitting || (voiceRecording && activeVoiceKey !== 'self-explanation')"
                   @final-transcript="appendFinalTranscript"
-                  @completed="handleVoiceCompleted"
+                  @completed="handleVoiceCompleted('SELF_EXPLANATION', undefined, $event)"
                   @recording-change="handleRecordingChange('self-explanation', $event)"
                   @error="errorMessage = $event"
                 />
                 <div
                   v-if="session.flowStage !== 'WAIT_GUIDED_ANSWERS'
                     && session.flowStage !== 'AI_EVALUATING'
-                    && session.flowStage !== 'SHOWING_FULL_SOLUTION'
-                    && (session.flowStage !== 'CONFIRMING_TEXT'
-                      || pendingVoiceMatches('SELF_EXPLANATION'))"
+                    && session.flowStage !== 'SHOWING_FULL_SOLUTION'"
                   class="actions"
                 >
                   <el-button data-testid="submit-explanation" type="primary" :loading="submitting" @click="submitExplanation">提交自讲</el-button>
@@ -651,15 +630,13 @@ async function respondToSolution(understood: boolean) {
                         :loading="submitting"
                         :disabled="guidedAnswerSubmitted(item.id)
                           || voiceRecording
-                          || (session.flowStage !== 'WAIT_GUIDED_ANSWERS'
-                            && !pendingVoiceMatches('GUIDED_ANSWER', item.id))"
+                          || session.flowStage !== 'WAIT_GUIDED_ANSWERS'"
                         @click="submitGuidedQuestionAnswer(item.id)"
                       >
                         提交回答
                       </el-button>
                       <VoiceRecorder
-                        v-if="(session.flowStage === 'WAIT_GUIDED_ANSWERS' && !guidedAnswerSubmitted(item.id))
-                          || pendingVoiceMatches('GUIDED_ANSWER', item.id)"
+                        v-if="session.flowStage === 'WAIT_GUIDED_ANSWERS' && !guidedAnswerSubmitted(item.id)"
                         :session-id="sessionId"
                         :version="session.version"
                         target="GUIDED_ANSWER"
@@ -671,7 +648,7 @@ async function respondToSolution(understood: boolean) {
                           || guidedAnswerSubmitted(item.id)
                           || (voiceRecording && activeVoiceKey !== `guided-${item.id}`)"
                         @final-transcript="appendGuidedTranscript(item.id, $event)"
-                        @completed="handleVoiceCompleted"
+                        @completed="handleVoiceCompleted('GUIDED_ANSWER', item.id, $event)"
                         @recording-change="handleRecordingChange(`guided-${item.id}`, $event)"
                         @error="errorMessage = $event"
                       />
@@ -696,8 +673,7 @@ async function respondToSolution(understood: boolean) {
                     :loading="submitting"
                     :disabled="voiceRecording
                       || (session.flowStage !== 'WAIT_INITIAL_CHOICE'
-                        && session.flowStage !== 'WAIT_STUDENT_ACTION'
-                        && !pendingVoiceMatches('DOUBT'))"
+                        && session.flowStage !== 'WAIT_STUDENT_ACTION')"
                     @click="submitDoubt"
                   >我有疑问</el-button>
                   <el-button
@@ -708,7 +684,7 @@ async function respondToSolution(understood: boolean) {
                     @click="startDoubtVoiceRecording"
                   >开始录音</el-button>
                   <VoiceRecorder
-                    v-if="session.flowStage === 'WAIT_STUDENT_ACTION' || pendingVoiceMatches('DOUBT')"
+                    v-if="session.flowStage === 'WAIT_STUDENT_ACTION'"
                     ref="doubtVoiceRecorderRef"
                     :session-id="sessionId"
                     :version="session.version"
@@ -718,7 +694,7 @@ async function respondToSolution(understood: boolean) {
                     inline
                     :disabled="submitting || (voiceRecording && activeVoiceKey !== 'doubt')"
                     @final-transcript="doubtDraft = appendTranscript(doubtDraft, $event)"
-                    @completed="handleVoiceCompleted"
+                    @completed="handleVoiceCompleted('DOUBT', undefined, $event)"
                     @recording-change="handleRecordingChange('doubt', $event)"
                     @error="errorMessage = $event"
                   />
@@ -740,15 +716,14 @@ async function respondToSolution(understood: boolean) {
                     :loading="submitting"
                     :disabled="voiceRecording
                       || !session.latestEvaluation
-                      || (session.flowStage !== 'WAIT_STUDENT_ACTION'
-                        && !pendingVoiceMatches('APPEAL'))"
+                        || session.flowStage !== 'WAIT_STUDENT_ACTION'"
                     @click="appealEvaluation"
                   >
                     AI说错了
                   </el-button>
                   <VoiceRecorder
                     v-if="session.latestEvaluation
-                      && (session.flowStage === 'WAIT_STUDENT_ACTION' || pendingVoiceMatches('APPEAL'))"
+                      && session.flowStage === 'WAIT_STUDENT_ACTION'"
                     :session-id="sessionId"
                     :version="session.version"
                     target="APPEAL"
@@ -757,7 +732,7 @@ async function respondToSolution(understood: boolean) {
                     inline
                     :disabled="submitting || (voiceRecording && activeVoiceKey !== 'appeal')"
                     @final-transcript="appealDraft = appendTranscript(appealDraft, $event)"
-                    @completed="handleVoiceCompleted"
+                    @completed="handleVoiceCompleted('APPEAL', undefined, $event)"
                     @recording-change="handleRecordingChange('appeal', $event)"
                     @error="errorMessage = $event"
                   />
@@ -765,8 +740,7 @@ async function respondToSolution(understood: boolean) {
               </div>
             </div>
           </section>
-          <section v-if="session.flowStage === 'CONFIRMING_TEXT' && !session.pendingVoiceAttempt" class="session-section"><h2>AI 服务暂时不可用</h2><p>确认文本已保留。你可以重新发起评价。</p><div class="actions"><el-button data-testid="retry-evaluation" type="primary" :loading="submitting" @click="retryAiEvaluation">重新评价</el-button></div></section>
-          <section v-else-if="session.flowStage === 'AI_EVALUATING'" class="session-section"><h2>AI 正在评价</h2><p>请等待评价结果返回。</p></section>
+          <section v-if="session.flowStage === 'AI_EVALUATING'" class="session-section"><h2>AI 正在评价</h2><p>请等待评价结果返回。</p></section>
           <section v-else-if="session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2>完整解析</h2><p v-if="question">{{ question.fullSolution }}</p><p>请确认你是否已经理解解析；确认后需要从头完成第二轮自讲。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，开始第二轮自讲</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
         </template>
       </template>

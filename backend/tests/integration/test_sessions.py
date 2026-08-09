@@ -21,7 +21,8 @@ def stub_ai_evaluation(monkeypatch) -> None:
                 '{"correctness":"CORRECT","completeness":"INCOMPLETE",'
                 '"coveredPoints":["正确计算加法"],"missingPoints":["得出结果 2"],'
                 '"errorEvidence":[],"feedback":"请补充结果。","confidence":1,'
-                '"nextAction":"ASK_FOCUSED_QUESTION","needHumanReason":null}'
+                '"nextAction":"ASK_FOCUSED_QUESTION","needHumanReason":null,'
+                '"guidedQuestions":[{"id":"evaluation-q1","question":"结果是多少？"}]}'
             ),
             duration_ms=1,
         )
@@ -139,7 +140,7 @@ def test_know_choice_opens_text_input_and_text_is_saved(settings: Settings, monk
 
     assert submit_response.status_code == 200
     submitted = submit_response.json()
-    assert submitted["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert submitted["flowStage"] == "WAIT_GUIDED_ANSWERS"
     assert submitted["version"] == 3
     assert submitted["latestEvaluation"]["feedback"] == "请补充结果。"
 

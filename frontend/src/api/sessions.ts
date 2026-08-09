@@ -49,41 +49,11 @@ export function submitTextAttempt(
   sessionId: string,
   confirmedText: string,
   version: number,
+  voiceAttemptId?: number,
 ): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}/text-attempts`, {
     method: "POST",
-    body: JSON.stringify({ confirmedText, version }),
-  })
-}
-
-export function confirmVoiceAttempt(
-  sessionId: string,
-  attemptId: number,
-  confirmedText: string,
-  version: number,
-): Promise<Session> {
-  return requestSessionApi<Session>(`/api/sessions/${sessionId}/voice-attempts/confirm`, {
-    method: "POST",
-    body: JSON.stringify({ attemptId, confirmedText, version }),
-  })
-}
-
-export function confirmVoiceDraft(
-  sessionId: string,
-  attemptId: number,
-  confirmedText: string,
-  version: number,
-): Promise<Session> {
-  return requestSessionApi<Session>(`/api/sessions/${sessionId}/voice-attempts/confirm-draft`, {
-    method: "POST",
-    body: JSON.stringify({ attemptId, confirmedText, version }),
-  })
-}
-
-export function retryEvaluation(sessionId: string, version: number): Promise<Session> {
-  return requestSessionApi<Session>(`/api/sessions/${sessionId}/evaluate`, {
-    method: "POST",
-    body: JSON.stringify({ version }),
+    body: JSON.stringify({ confirmedText, version, voiceAttemptId }),
   })
 }
 
@@ -106,10 +76,11 @@ export function askDoubt(
   mainDraft: string,
   doubtText: string,
   version: number,
+  voiceAttemptId?: number,
 ): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}/ask-doubt`, {
     method: "POST",
-    body: JSON.stringify({ mainDraft, doubtText, version }),
+    body: JSON.stringify({ mainDraft, doubtText, version, voiceAttemptId }),
   })
 }
 
@@ -117,17 +88,23 @@ export function submitGuidedAnswers(
   sessionId: string,
   answers: GuidedAnswer[],
   version: number,
+  voiceAttemptId?: number,
 ): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}/guided-answers`, {
     method: "POST",
-    body: JSON.stringify({ answers, version }),
+    body: JSON.stringify({ answers, version, voiceAttemptId }),
   })
 }
 
-export function submitAppeal(sessionId: string, reason: string, version: number): Promise<Session> {
+export function submitAppeal(
+  sessionId: string,
+  reason: string,
+  version: number,
+  voiceAttemptId?: number,
+): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}/appeal`, {
     method: "POST",
-    body: JSON.stringify({ reason, version }),
+    body: JSON.stringify({ reason, version, voiceAttemptId }),
   })
 }
 

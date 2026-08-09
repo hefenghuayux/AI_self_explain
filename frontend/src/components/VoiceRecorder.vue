@@ -20,7 +20,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   finalTranscript: [text: string]
-  completed: []
+  completed: [attemptId: number]
   recordingChange: [recording: boolean]
   error: [message: string]
 }>()
@@ -91,6 +91,7 @@ async function start() {
       const message = JSON.parse(String(event.data)) as {
         type: string
         text?: string
+        attemptId?: number
         sampleRateHz?: number
         message?: string
       }
@@ -114,7 +115,11 @@ async function start() {
         if (message.text) emit("finalTranscript", message.text)
       } else if (message.type === "completed") {
         finishRecording()
-        emit("completed")
+        if (typeof message.attemptId !== "number") {
+          emit("error", "实时语音识别未返回语音尝试编号")
+          return
+        }
+        emit("completed", message.attemptId)
       } else if (message.type === "error") {
         finishRecording()
         emit("error", message.message ?? "实时语音识别失败")

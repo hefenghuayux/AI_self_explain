@@ -54,6 +54,7 @@ def valid_evaluation_content() -> str:
             "confidence": 1,
             "nextAction": "ASK_FOCUSED_QUESTION",
             "needHumanReason": None,
+            "guidedQuestions": [{"id": "evaluation-q1", "question": "最后的结果是多少？"}],
         }
     )
 
@@ -121,8 +122,11 @@ def test_valid_evaluation_is_saved_with_call_record_and_feedback(
     assert response.status_code == 200
     saved_session = response.json()
     assert saved_session["status"] == "IN_PROGRESS"
-    assert saved_session["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert saved_session["flowStage"] == "WAIT_GUIDED_ANSWERS"
     assert saved_session["latestEvaluation"]["feedback"] == "计算过程正确，请补充最后的结果。"
+    assert saved_session["latestSupport"]["guidedQuestions"] == [
+        {"id": "evaluation-q1", "question": "最后的结果是多少？"}
+    ]
 
     engine = create_engine(settings.database_url)
     try:
@@ -163,6 +167,7 @@ def test_schema_retry_exhaustion_requests_human_review_without_support_count(
             "confidence": 1,
             "nextAction": "GIVE_HINT",
             "needHumanReason": None,
+            "guidedQuestions": [],
         }
     )
 
@@ -209,6 +214,7 @@ def test_need_human_evaluation_requests_review_and_keeps_self_explanation_open(
             "confidence": 1,
             "nextAction": "NEED_HUMAN",
             "needHumanReason": "无法可靠确认学生的计算依据。",
+            "guidedQuestions": [],
         }
     )
 
@@ -258,6 +264,7 @@ def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
             "confidence": 1,
             "nextAction": "GIVE_HINT",
             "needHumanReason": None,
+            "guidedQuestions": [],
         }
     )
     corrected_content = json.dumps(
@@ -278,6 +285,9 @@ def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
             "confidence": 1,
             "nextAction": "ASK_FOCUSED_QUESTION",
             "needHumanReason": None,
+            "guidedQuestions": [
+                {"id": "evaluation-q1", "question": "点 P 到原点的距离应如何表示？"}
+            ],
         }
     )
     prompts: list[str] = []
@@ -304,7 +314,7 @@ def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
     assert response.status_code == 200
     saved_session = response.json()
     assert saved_session["status"] == "IN_PROGRESS"
-    assert saved_session["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert saved_session["flowStage"] == "WAIT_GUIDED_ANSWERS"
     assert saved_session["latestEvaluation"]["nextAction"] == "ASK_FOCUSED_QUESTION"
     assert len(prompts) == 2
     assert "CORRECT | INCOMPLETE | ASK_FOCUSED_QUESTION" in prompts[1]
@@ -341,6 +351,7 @@ def test_complete_evaluation_sets_completion_with_deterministic_label(
             "confidence": 1,
             "nextAction": "COMPLETE",
             "needHumanReason": None,
+            "guidedQuestions": [],
         }
     )
 
@@ -399,7 +410,7 @@ def test_transport_retry_exhaustion_requests_review_and_allows_another_explanati
     assert continued.status_code == 200
     assert continued.json()["flowStage"] == "CAPTURING_INPUT"
     assert retry_response.status_code == 200
-    assert retry_response.json()["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert retry_response.json()["flowStage"] == "WAIT_GUIDED_ANSWERS"
 
     engine = create_engine(settings.database_url)
     try:

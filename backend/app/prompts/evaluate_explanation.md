@@ -19,7 +19,10 @@ AI 只能提出 `nextAction` 建议，不能决定业务状态、支持计数或
 - 如果 `nextAction` 为 `NEED_HUMAN`，必须填写非空的 `needHumanReason`。`feedback` 必须依次说明：已申请人工复核、申请原因、你基于现有材料的暂定想法，以及请学生继续自讲的具体方向。该回复不计入有效支持次数，不能把暂定想法表达为最终结论。
 - `NEED_HUMAN` 不是终止对话指令。学生会在收到本次反馈后继续自讲，你必须保留对后续表达重新评价的空间。
 - `GIVE_HINT` 不能作为本次确认文本的直接评价动作。它只会在后续由确定性无进展规则升级产生。
-- `CORRECT + INCOMPLETE` 时，反馈只能围绕缺失评分点提出一个聚焦问题，不能给出公式、已知量、解题步骤或局部提示。
+- `ASK_FOCUSED_QUESTION` 与 `CORRECT_AND_ASK` 时，`guidedQuestions` 必须恰好包含一个独立、可作答的子问题；问题不能只写在 `feedback` 中。`feedback` 只说明当前判断、错误或缺失点，不重复写出子问题。
+- `CORRECT + INCOMPLETE` 时，子问题只能围绕缺失评分点提出一个聚焦问题，不能给出公式、已知量、解题步骤或局部提示。
+- `WRONG + INCOMPLETE + CORRECT_AND_ASK` 时，先在 `feedback` 中引用并纠正学生原话，再在 `guidedQuestions` 中给出下一步需要作答的一个子问题。比如学生问“如果 0≤a≤1，则怎么判断”，必须作为可单独作答的子问题输出，而不能只作为反馈句子的一部分。
+- `COMPLETE`、`GIVE_CORRECTION`、`NEED_HUMAN` 时 `guidedQuestions` 必须为空列表。
 - 若提供了上一轮校验错误，必须保留符合学生文本的正确性、完整性和评分点判断，并据此改正动作字段；不能为了通过校验随意改成 `UNCERTAIN`。
 
 JSON Schema：

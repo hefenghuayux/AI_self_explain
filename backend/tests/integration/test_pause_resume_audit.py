@@ -46,7 +46,6 @@ def create_session(client) -> dict[str, object]:
     [
         "WAIT_INITIAL_CHOICE",
         "CAPTURING_INPUT",
-        "CONFIRMING_TEXT",
         "WAIT_STUDENT_ACTION",
         "SHOWING_FULL_SOLUTION",
     ],
@@ -119,7 +118,7 @@ def test_audit_state_events_include_request_id(settings, monkeypatch):
             '{"correctness":"CORRECT","completeness":"COMPLETE",'
             '"coveredPoints":["正确计算加法","得出结果 2"],"missingPoints":[],'
             '"errorEvidence":[],"feedback":"完成。","confidence":1,'
-            '"nextAction":"COMPLETE","needHumanReason":null}',
+            '"nextAction":"COMPLETE","needHumanReason":null,"guidedQuestions":[]}',
             1,
         ),
     )
@@ -147,7 +146,7 @@ def test_external_call_audit_includes_request_id(settings, monkeypatch):
             '{"correctness":"CORRECT","completeness":"COMPLETE",'
             '"coveredPoints":["正确计算加法","得出结果 2"],"missingPoints":[],'
             '"errorEvidence":[],"feedback":"完成。","confidence":1,'
-            '"nextAction":"COMPLETE","needHumanReason":null}',
+            '"nextAction":"COMPLETE","needHumanReason":null,"guidedQuestions":[]}',
             1,
         ),
     )
