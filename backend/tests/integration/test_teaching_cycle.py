@@ -235,6 +235,49 @@ def test_support_limit_does_not_create_the_threshold_support_event(settings, mon
     assert response.json()["supportCountTotal"] == settings.first_round_support_limit - 1
 
 
+def test_not_understanding_first_solution_requests_review_and_allows_continuing(
+    settings, monkeypatch
+) -> None:
+    _stub_ai(monkeypatch, {})
+    with _client(settings, monkeypatch) as client:
+        session = _start_help(client, _create_session(client))
+        engine = create_engine(settings.database_url)
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE sessions SET support_count_round = :support_count "
+                        "WHERE id = :session_id"
+                    ),
+                    {
+                        "support_count": settings.first_round_support_limit - 1,
+                        "session_id": session["id"],
+                    },
+                )
+        finally:
+            engine.dispose()
+        solution_response = client.post(
+            f"/api/sessions/{session['id']}/request-support",
+            json={"mainDraft": "我没有思路。", "version": session["version"]},
+        )
+        assert solution_response.status_code == 200
+        not_understood = client.post(
+            f"/api/sessions/{session['id']}/full-solution-understanding",
+            json={"understood": False, "version": solution_response.json()["version"]},
+        )
+        continued = client.post(
+            f"/api/sessions/{session['id']}/continue",
+            json={"version": not_understood.json()["version"]},
+        )
+
+    assert not_understood.status_code == 200
+    assert not_understood.json()["status"] == "IN_PROGRESS"
+    assert not_understood.json()["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert not_understood.json()["needHumanReason"] == "学生在第一轮完整解析后仍表示不会"
+    assert continued.status_code == 200
+    assert continued.json()["flowStage"] == "CAPTURING_INPUT"
+
+
 def test_focused_question_after_explanation_is_counted(settings, monkeypatch) -> None:
     evaluation = {
         "correctness": "CORRECT",

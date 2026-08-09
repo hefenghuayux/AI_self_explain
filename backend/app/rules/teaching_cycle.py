@@ -60,7 +60,6 @@ def decide_evaluation(
             raise ValueError("NEED_HUMAN 评价缺少具体原因")
         return EvaluationDecision(
             action="NEED_HUMAN",
-            next_status="NEED_HUMAN",
             next_flow_stage="WAIT_STUDENT_ACTION",
             need_human_reason=need_human_reason,
         )

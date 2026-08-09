@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session as DatabaseSession
 
 from app.core.config import Settings
@@ -38,6 +38,18 @@ from app.rules.teaching_cycle import (
 from app.schemas.ai_evaluation import AIEvaluationOutput
 from app.schemas.support import GuidedAnswer, GuidedQuestion
 from app.services.audio_storage import AudioCapture, AudioStorage
+
+HUMAN_REVIEW_TRIGGER_TYPES = frozenset(
+    {
+        "AI_REQUESTED_HUMAN_REVIEW",
+        "AI_EVALUATION_SCHEMA_RETRY_EXHAUSTED",
+        "AI_EVALUATION_TRANSPORT_RETRY_EXHAUSTED",
+        "AI_SUPPORT_SCHEMA_RETRY_EXHAUSTED",
+        "AI_SUPPORT_TRANSPORT_RETRY_EXHAUSTED",
+        "STUDENT_APPEAL",
+        "DID_NOT_UNDERSTAND_FIRST_SOLUTION",
+    }
+)
 
 
 def session_snapshot(session: Session) -> dict[str, object]:
@@ -327,7 +339,10 @@ class SessionRepository:
             select(StateTransitionEvent)
             .where(
                 StateTransitionEvent.session_id == session_id,
-                StateTransitionEvent.to_status == STATUS_NEED_HUMAN,
+                or_(
+                    StateTransitionEvent.to_status == STATUS_NEED_HUMAN,
+                    StateTransitionEvent.trigger_type.in_(HUMAN_REVIEW_TRIGGER_TYPES),
+                ),
             )
             .order_by(StateTransitionEvent.created_at, StateTransitionEvent.id)
         )
@@ -338,7 +353,7 @@ class SessionRepository:
                     "event_type": "NEED_HUMAN",
                     "speaker": "SYSTEM",
                     "submission_type": None,
-                    "content": student_need_human_message(transition.trigger_type),
+                    "content": student_human_review_message(),
                     "correctness": None,
                     "completeness": None,
                     "action": None,
@@ -635,19 +650,20 @@ class SessionRepository:
             model_name=model_name,
         )
         self.database_session.flush()
-        new_points = set(evaluation.covered_points) - set(session.covered_points_current_round)
-        (
-            session.covered_points_current_round,
-            session.covered_points_all,
-            session.no_progress_count,
-        ) = update_coverage(
-            covered_points=evaluation.covered_points,
-            covered_points_current_round=session.covered_points_current_round,
-            covered_points_all=session.covered_points_all,
-            no_progress_count=session.no_progress_count,
-        )
-        if new_points:
-            session.no_progress_help_request_count = 0
+        if evaluation.next_action != "NEED_HUMAN":
+            new_points = set(evaluation.covered_points) - set(session.covered_points_current_round)
+            (
+                session.covered_points_current_round,
+                session.covered_points_all,
+                session.no_progress_count,
+            ) = update_coverage(
+                covered_points=evaluation.covered_points,
+                covered_points_current_round=session.covered_points_current_round,
+                covered_points_all=session.covered_points_all,
+                no_progress_count=session.no_progress_count,
+            )
+            if new_points:
+                session.no_progress_help_request_count = 0
         decision = decide_evaluation(
             next_action=evaluation.next_action,
             no_progress_count=session.no_progress_count,
@@ -673,14 +689,18 @@ class SessionRepository:
                 evaluation_id=saved_evaluation.id,
                 settings=settings,
             )
-        if session.status in {STATUS_COMPLETED, STATUS_NEED_HUMAN, STATUS_STOPPED_LIMIT}:
+        if session.status in {STATUS_COMPLETED, STATUS_STOPPED_LIMIT}:
             session.finished_at = datetime.now(UTC)
         if session.flow_stage == FLOW_STAGE_AI_EVALUATING:
             session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
         session.version += 1
         self._record_transition(
             session=session,
-            trigger_type="APPLY_AI_EVALUATION",
+            trigger_type=(
+                "AI_REQUESTED_HUMAN_REVIEW"
+                if decision.action == "NEED_HUMAN"
+                else "APPLY_AI_EVALUATION"
+            ),
             before_snapshot=before_snapshot,
             related_attempt_id=attempt.id,
             related_evaluation_id=saved_evaluation.id,
@@ -1022,34 +1042,27 @@ class SessionRepository:
                 return support_event
         return None
 
-    def return_to_wait_student_action_after_support_failure(
-        self, *, session: Session, trigger_type: str
+    def request_human_review(
+        self,
+        *,
+        session: Session,
+        need_human_reason: str,
+        trigger_type: str,
+        related_attempt_id: int | None = None,
+        related_evaluation_id: int | None = None,
     ) -> Session:
         before_snapshot = session_snapshot(session)
+        session.status = STATUS_IN_PROGRESS
         session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+        session.need_human_reason = need_human_reason
+        session.finished_at = None
         session.version += 1
         self._record_transition(
             session=session,
             trigger_type=trigger_type,
             before_snapshot=before_snapshot,
-        )
-        self.database_session.commit()
-        self.database_session.refresh(session)
-        return session
-
-    def mark_support_schema_retry_exhausted(
-        self, *, session: Session, need_human_reason: str
-    ) -> Session:
-        before_snapshot = session_snapshot(session)
-        session.status = STATUS_NEED_HUMAN
-        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
-        session.need_human_reason = need_human_reason
-        session.finished_at = datetime.now(UTC)
-        session.version += 1
-        self._record_transition(
-            session=session,
-            trigger_type="AI_SUPPORT_SCHEMA_RETRY_EXHAUSTED",
-            before_snapshot=before_snapshot,
+            related_attempt_id=related_attempt_id,
+            related_evaluation_id=related_evaluation_id,
         )
         self.database_session.commit()
         self.database_session.refresh(session)
@@ -1069,31 +1082,22 @@ class SessionRepository:
         return session
 
     def appeal(self, *, session: Session, reason: str, evaluation_id: int) -> Session:
-        before_snapshot = session_snapshot(session)
         self._record_student_submission(
             session=session,
             submission_type="APPEAL",
             content=reason,
             context={"evaluationId": evaluation_id, "round": session.round},
         )
-        session.status = STATUS_NEED_HUMAN
-        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
-        session.need_human_reason = f"学生申诉：{reason}"
-        session.finished_at = datetime.now(UTC)
-        session.version += 1
-        self._record_transition(
+        return self.request_human_review(
             session=session,
+            need_human_reason=f"学生申诉：{reason}",
             trigger_type="STUDENT_APPEAL",
-            before_snapshot=before_snapshot,
             related_evaluation_id=evaluation_id,
         )
-        self.database_session.commit()
-        self.database_session.refresh(session)
-        return session
 
     def respond_to_first_solution(self, *, session: Session, understood: bool) -> Session:
-        before_snapshot = session_snapshot(session)
         if understood:
+            before_snapshot = session_snapshot(session)
             session.round = 2
             session.support_count_round = 0
             session.no_progress_count = 0
@@ -1102,60 +1106,16 @@ class SessionRepository:
             session.flow_stage = FLOW_STAGE_CAPTURING_INPUT
             trigger_type = "UNDERSTOOD_FIRST_SOLUTION"
         else:
-            session.status = STATUS_NEED_HUMAN
-            session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
-            session.need_human_reason = "学生在第一轮完整解析后仍表示不会"
-            session.finished_at = datetime.now(UTC)
-            trigger_type = "DID_NOT_UNDERSTAND_FIRST_SOLUTION"
+            return self.request_human_review(
+                session=session,
+                need_human_reason="学生在第一轮完整解析后仍表示不会",
+                trigger_type="DID_NOT_UNDERSTAND_FIRST_SOLUTION",
+            )
         session.version += 1
         self._record_transition(
             session=session,
             trigger_type=trigger_type,
             before_snapshot=before_snapshot,
-        )
-        self.database_session.commit()
-        self.database_session.refresh(session)
-        return session
-
-    def return_to_confirming_text(
-        self,
-        *,
-        session: Session,
-        attempt: ExplanationAttempt,
-    ) -> Session:
-        before_snapshot = session_snapshot(session)
-        session.flow_stage = FLOW_STAGE_CONFIRMING_TEXT
-        session.version += 1
-        self._record_transition(
-            session=session,
-            trigger_type="AI_TRANSPORT_RETRY_EXHAUSTED",
-            before_snapshot=before_snapshot,
-            related_attempt_id=attempt.id,
-        )
-        self.database_session.commit()
-        self.database_session.refresh(session)
-        return session
-
-    def mark_schema_retry_exhausted(
-        self,
-        *,
-        session: Session,
-        attempt: ExplanationAttempt,
-        evaluation: AIEvaluation,
-        need_human_reason: str,
-    ) -> Session:
-        before_snapshot = session_snapshot(session)
-        session.status = STATUS_NEED_HUMAN
-        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
-        session.need_human_reason = need_human_reason
-        session.finished_at = datetime.now(UTC)
-        session.version += 1
-        self._record_transition(
-            session=session,
-            trigger_type="AI_SCHEMA_RETRY_EXHAUSTED",
-            before_snapshot=before_snapshot,
-            related_attempt_id=attempt.id,
-            related_evaluation_id=evaluation.id,
         )
         self.database_session.commit()
         self.database_session.refresh(session)
@@ -1314,14 +1274,8 @@ class SessionRepository:
         session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
 
 
-def student_need_human_message(trigger_type: str) -> str:
-    if trigger_type == "STUDENT_APPEAL":
-        return "已提交不同意 AI 判断的申诉，已转人工帮助。"
-    if trigger_type == "DID_NOT_UNDERSTAND_FIRST_SOLUTION":
-        return "你在阅读完整解析后仍表示不会，已转人工帮助。"
-    if trigger_type == "APPLY_AI_EVALUATION":
-        return "暂无法可靠判断，已转人工帮助。"
-    return "当前无法自动继续，已转人工帮助。"
+def student_human_review_message() -> str:
+    return "已申请人工复核，你可以继续自讲。"
 
 
 def _format_guided_answers_for_timeline(

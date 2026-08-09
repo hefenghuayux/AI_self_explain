@@ -118,11 +118,13 @@ def test_timeline_persists_visible_feedback_and_hides_structured_details(
     ]
     assert "coveredPoints" not in first_items[1]
     assert appealed_timeline.status_code == 200
+    assert appeal_response.json()["status"] == "IN_PROGRESS"
+    assert appeal_response.json()["flowStage"] == "WAIT_STUDENT_ACTION"
     assert appealed_items[-2]["eventType"] == "SUBMISSION"
     assert appealed_items[-2]["submissionType"] == "APPEAL"
     assert appealed_items[-2]["content"] == "我想再说明一次。"
     assert appealed_items[-1]["eventType"] == "NEED_HUMAN"
-    assert appealed_items[-1]["content"] == "已提交不同意 AI 判断的申诉，已转人工帮助。"
+    assert appealed_items[-1]["content"] == "已申请人工复核，你可以继续自讲。"
 
 
 def test_timeline_records_solution_display_without_revealing_solution_content(

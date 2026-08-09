@@ -72,7 +72,7 @@ const sessionStatusLabels: Record<SessionStatus, string> = {
   IN_PROGRESS: "进行中",
   COMPLETED: "已完成",
   STOPPED_LIMIT: "已达到支持上限",
-  NEED_HUMAN: "需要人工帮助",
+  NEED_HUMAN: "已申请人工复核",
   PAUSED: "已暂停",
 }
 
@@ -93,7 +93,7 @@ const actionLabels: Record<NonNullable<LearningTimelineItem["action"]>, string> 
   GIVE_CORRECTION: "纠错",
   CORRECT_AND_ASK: "纠错与追问",
   GIVE_HINT: "提示",
-  NEED_HUMAN: "转人工帮助",
+  NEED_HUMAN: "已申请人工复核",
 }
 
 const timelineEventLabels: Record<LearningTimelineItem["eventType"], string> = {
@@ -101,7 +101,7 @@ const timelineEventLabels: Record<LearningTimelineItem["eventType"], string> = {
   EVALUATION: "学习反馈",
   SUPPORT: "学习支持",
   FULL_SOLUTION: "完整解析",
-  NEED_HUMAN: "已转人工帮助",
+  NEED_HUMAN: "人工复核已申请",
 }
 
 const submissionTypeLabels: Record<NonNullable<LearningTimelineItem["submissionType"]>, string> = {
@@ -576,7 +576,8 @@ async function respondToSolution(understood: boolean) {
             </div>
           </el-scrollbar>
         </section>
-        <section v-if="session.status === 'NEED_HUMAN'" class="session-section"><h2>需要人工处理</h2><el-alert title="暂无法可靠判断，已转人工帮助。" type="warning" :closable="false" show-icon /></section>
+        <section v-if="session.needHumanReason && session.status === 'IN_PROGRESS'" class="session-section"><el-alert title="已申请人工复核，你可以继续自讲。" type="warning" :closable="false" show-icon /></section>
+        <section v-if="session.status === 'NEED_HUMAN'" class="session-section"><h2>需要人工处理</h2><el-alert title="该历史会话已转人工处理。" type="warning" :closable="false" show-icon /></section>
         <section v-else-if="session.status === 'COMPLETED'" class="session-section"><h2>本轮自讲已完成</h2></section>
         <section v-else-if="session.status === 'STOPPED_LIMIT'" class="session-section"><h2>已达到本轮支持上限</h2><p v-if="question">{{ question.fullSolution }}</p></section>
         <template v-else>

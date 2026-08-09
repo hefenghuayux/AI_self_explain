@@ -143,7 +143,12 @@ class AIEvaluationService:
                 external_attempt_number=external_attempt_number,
             )
             if model_response is None:
-                return self.repository.return_to_confirming_text(session=session, attempt=attempt)
+                return self.repository.request_human_review(
+                    session=session,
+                    need_human_reason="AI 评价服务在配置的重试次数内未成功响应",
+                    trigger_type="AI_EVALUATION_TRANSPORT_RETRY_EXHAUSTED",
+                    related_attempt_id=attempt.id,
+                )
 
             evaluation, validation_errors = _parse_and_validate_evaluation(
                 model_response.content,
@@ -166,11 +171,12 @@ class AIEvaluationService:
                     reason = "AI 结构化评价在配置的重试次数内仍不合法：" + "；".join(
                         validation_errors
                     )
-                    return self.repository.mark_schema_retry_exhausted(
+                    return self.repository.request_human_review(
                         session=session,
-                        attempt=attempt,
-                        evaluation=invalid_evaluation,
                         need_human_reason=reason,
+                        trigger_type="AI_EVALUATION_SCHEMA_RETRY_EXHAUSTED",
+                        related_attempt_id=attempt.id,
+                        related_evaluation_id=invalid_evaluation.id,
                     )
                 continue
 

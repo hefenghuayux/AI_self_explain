@@ -149,7 +149,7 @@ def test_valid_evaluation_is_saved_with_call_record_and_feedback(
     }
 
 
-def test_schema_retry_exhaustion_enters_need_human_without_support_count(
+def test_schema_retry_exhaustion_requests_human_review_without_support_count(
     settings, monkeypatch
 ) -> None:
     invalid_content = json.dumps(
@@ -175,7 +175,8 @@ def test_schema_retry_exhaustion_enters_need_human_without_support_count(
 
     assert response.status_code == 200
     saved_session = response.json()
-    assert saved_session["status"] == "NEED_HUMAN"
+    assert saved_session["status"] == "IN_PROGRESS"
+    assert saved_session["flowStage"] == "WAIT_STUDENT_ACTION"
     assert saved_session["supportCountRound"] == 0
     assert saved_session["supportCountTotal"] == 0
     assert "AI 结构化评价" in saved_session["needHumanReason"]
@@ -189,6 +190,51 @@ def test_schema_retry_exhaustion_enters_need_human_without_support_count(
     finally:
         engine.dispose()
     assert invalid_count == settings.ai_schema_max_retries + 1
+
+
+def test_need_human_evaluation_requests_review_and_keeps_self_explanation_open(
+    settings, monkeypatch
+) -> None:
+    need_human_content = json.dumps(
+        {
+            "correctness": "UNCERTAIN",
+            "completeness": "INCOMPLETE",
+            "coveredPoints": ["正确计算加法"],
+            "missingPoints": ["得出结果 2"],
+            "errorEvidence": [],
+            "feedback": (
+                "已申请人工复核。原因是当前表达无法确认计算结果的依据。"
+                "我暂时认为你可能已经掌握了加法过程，请继续说明如何得到最终结果。"
+            ),
+            "confidence": 1,
+            "nextAction": "NEED_HUMAN",
+            "needHumanReason": "无法可靠确认学生的计算依据。",
+        }
+    )
+
+    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+        return AIModelResponse("{\"choices\": []}", need_human_content, 8)
+
+    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
+    with prepare_client(settings, monkeypatch) as client:
+        response = submit_text(client, create_started_session(client))
+        saved_session = response.json()
+        continued = client.post(
+            f"/api/sessions/{saved_session['id']}/continue",
+            json={"version": saved_session["version"]},
+        )
+
+    assert response.status_code == 200
+    assert saved_session["status"] == "IN_PROGRESS"
+    assert saved_session["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert saved_session["supportCountRound"] == 0
+    assert saved_session["supportCountTotal"] == 0
+    assert saved_session["coveredPointsCurrentRound"] == []
+    assert saved_session["needHumanReason"] == "无法可靠确认学生的计算依据。"
+    assert saved_session["latestEvaluation"]["nextAction"] == "NEED_HUMAN"
+    assert "已申请人工复核" in saved_session["latestEvaluation"]["feedback"]
+    assert continued.status_code == 200
+    assert continued.json()["flowStage"] == "CAPTURING_INPUT"
 
 
 def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
@@ -313,7 +359,7 @@ def test_complete_evaluation_sets_completion_with_deterministic_label(
     assert saved_session["supportCountTotal"] == 0
 
 
-def test_transport_retry_exhaustion_keeps_confirmed_text_for_retry(
+def test_transport_retry_exhaustion_requests_review_and_allows_another_explanation(
     settings, monkeypatch
 ) -> None:
     calls = 0
@@ -334,14 +380,24 @@ def test_transport_retry_exhaustion_keeps_confirmed_text_for_retry(
     with prepare_client(settings, monkeypatch) as client:
         first_response = submit_text(client, create_started_session(client))
         first_session = first_response.json()
-        retry_response = client.post(
-            f"/api/sessions/{first_session['id']}/evaluate",
+        continued = client.post(
+            f"/api/sessions/{first_session['id']}/continue",
             json={"version": first_session["version"]},
+        )
+        retry_response = client.post(
+            f"/api/sessions/{first_session['id']}/text-attempts",
+            json={
+                "confirmedText": "我重新说明，1 加 1 等于 2。",
+                "version": continued.json()["version"],
+            },
         )
 
     assert first_response.status_code == 200
     assert first_session["status"] == "IN_PROGRESS"
-    assert first_session["flowStage"] == "CONFIRMING_TEXT"
+    assert first_session["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert "AI 评价服务" in first_session["needHumanReason"]
+    assert continued.status_code == 200
+    assert continued.json()["flowStage"] == "CAPTURING_INPUT"
     assert retry_response.status_code == 200
     assert retry_response.json()["flowStage"] == "WAIT_STUDENT_ACTION"
 
@@ -356,5 +412,5 @@ def test_transport_retry_exhaustion_keeps_confirmed_text_for_retry(
             ).scalar_one()
     finally:
         engine.dispose()
-    assert attempt_count == 1
+    assert attempt_count == 2
     assert error_count == settings.ai_transport_max_retries + 1

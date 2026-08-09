@@ -108,6 +108,19 @@ describe("SessionView", () => {
     expect(wrapper.get('[data-testid="question-content"]').text()).toBe("计算 1 + 1。")
   })
 
+  it("keeps the self-explanation input available after human review is requested", async () => {
+    fetchSession.mockResolvedValue(createSession({
+      flowStage: "WAIT_STUDENT_ACTION",
+      needHumanReason: "暂时无法可靠确认学生的计算依据。",
+    }))
+
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.text()).toContain("已申请人工复核，你可以继续自讲。")
+    expect(wrapper.get('[data-testid="main-draft"]').attributes("disabled")).toBeUndefined()
+    expect(wrapper.get('[data-testid="submit-explanation"]')).toBeTruthy()
+  })
+
   it("submits the initial draft when the student chooses to submit an explanation", async () => {
     fetchSession.mockResolvedValue(createSession())
     submitInitialChoice.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 2, initialChoice: "KNOW" }))

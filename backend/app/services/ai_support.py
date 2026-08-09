@@ -98,8 +98,10 @@ class AISupportService:
                 external_attempt_number=external_attempt_number,
             )
             if model_response is None:
-                self.repository.return_to_wait_student_action_after_support_failure(
-                    session=session, trigger_type="AI_SUPPORT_TRANSPORT_RETRY_EXHAUSTED"
+                self.repository.request_human_review(
+                    session=session,
+                    need_human_reason="AI 教学支持服务在配置的重试次数内未成功响应",
+                    trigger_type="AI_SUPPORT_TRANSPORT_RETRY_EXHAUSTED",
                 )
                 return None
             try:
@@ -126,10 +128,11 @@ class AISupportService:
                     raw_response=model_response.raw_response,
                 )
                 if schema_attempt == self.settings.ai_schema_max_retries:
-                    self.repository.mark_support_schema_retry_exhausted(
+                    self.repository.request_human_review(
                         session=session,
                         need_human_reason="AI 教学支持在配置的重试次数内仍不合法："
                         + "；".join(validation_errors),
+                        trigger_type="AI_SUPPORT_SCHEMA_RETRY_EXHAUSTED",
                     )
                     return None
                 continue
