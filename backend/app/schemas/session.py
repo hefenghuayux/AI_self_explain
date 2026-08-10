@@ -31,7 +31,7 @@ class InitialChoiceInput(QuestionSchema):
 
 
 class TextAttemptInput(QuestionSchema):
-    confirmed_text: RequiredText
+    confirmed_text: RequiredText = Field(max_length=4000)
     version: int = Field(ge=0)
     voice_attempt_id: int | None = Field(default=None, gt=0)
 
