@@ -2,11 +2,10 @@ import logging
 import sys
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from uuid import uuid4
-
-from pythonjsonlogger.json import JsonFormatter
 
 request_id_context: ContextVar[str | None] = ContextVar("request_id", default=None)
 trace_id_context: ContextVar[str | None] = ContextVar("trace_id", default=None)
@@ -72,22 +71,63 @@ class RequestContextFilter(logging.Filter):
         return True
 
 
+class CompactTextFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        timestamp = self.formatTime(record, "%Y-%m-%d %H:%M:%S")
+        event_name = getattr(record, "eventName", record.name)
+        fields = [timestamp, f"{record.levelname:<5}", str(event_name)]
+        for field_name in (
+            "method",
+            "path",
+            "statusCode",
+            "purpose",
+            "model",
+            "durationMs",
+            "errorType",
+        ):
+            value = getattr(record, field_name, None)
+            if value is not None:
+                suffix = "ms" if field_name == "durationMs" else ""
+                fields.append(f"{value}{suffix}")
+        session_id = getattr(record, "sessionId", None)
+        request_id = getattr(record, "requestId", None)
+        if session_id is not None:
+            fields.append(f"sid={session_id}")
+        if request_id:
+            fields.append(f"rid={str(request_id)[:12]}")
+        if record.levelno >= logging.ERROR:
+            fields.append(f"msg={record.getMessage()}")
+        line = " ".join(fields)
+        if record.exc_info:
+            line += "\n" + self.formatException(record.exc_info)
+        return line
+
+
+def _archive_json_application_log(log_path: Path) -> None:
+    if not log_path.exists() or log_path.stat().st_size == 0:
+        return
+    with log_path.open("r", encoding="utf-8") as log_file:
+        first_character = log_file.read(1)
+    if first_character != "{":
+        return
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    log_path.replace(log_path.with_name(f"application-{timestamp}.json.log"))
+
+
 def configure_logging(
     log_dir: Path | None = None, max_size_mib: int = 10, backup_count: int = 5
 ) -> None:
-    formatter = JsonFormatter(
-        "%(asctime)s %(levelname)s %(name)s %(message)s "
-        "%(requestId)s %(traceId)s %(spanId)s %(parentSpanId)s %(sessionId)s",
-        rename_fields={"asctime": "timestamp", "levelname": "level"},
-    )
+    formatter = CompactTextFormatter()
     handler = logging.StreamHandler(sys.stdout)
     handler.addFilter(RequestContextFilter())
     handler.setFormatter(formatter)
     handlers: list[logging.Handler] = [handler]
     if log_dir is not None:
         log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "application.log"
+        _archive_json_application_log(log_path)
         file_handler = RotatingFileHandler(
-            log_dir / "application.log",
+            log_path,
             maxBytes=max_size_mib * 1024 * 1024,
             backupCount=backup_count,
             encoding="utf-8",
@@ -101,3 +141,4 @@ def configure_logging(
     for configured_handler in handlers:
         root_logger.addHandler(configured_handler)
     root_logger.setLevel(logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.DEBUG)

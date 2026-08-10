@@ -40,12 +40,18 @@ def create_app(settings: Settings) -> FastAPI:
         database_engine = create_database_engine(settings)
         application.state.database_engine = database_engine
         application.state.database_session_factory = sessionmaker(bind=database_engine)
-        logger.info("应用启动完成", extra={"operation": "application_startup"})
+        logger.info(
+            "应用启动完成",
+            extra={"eventName": "application.started", "operation": "application_startup"},
+        )
         try:
             yield
         finally:
             database_engine.dispose()
-            logger.info("应用已停止", extra={"operation": "application_shutdown"})
+            logger.info(
+                "应用已停止",
+                extra={"eventName": "application.stopped", "operation": "application_shutdown"},
+            )
 
     application = FastAPI(title="AI 自讲 Demo API", version="0.1.0", lifespan=lifespan)
     application.state.settings = settings
@@ -104,6 +110,8 @@ def create_app(settings: Settings) -> FastAPI:
                     extra={
                         "eventName": "request.completed",
                         "operation": "http_request",
+                        "method": request.method,
+                        "path": request.url.path,
                         "durationMs": elapsed_ms,
                         "statusCode": response.status_code,
                     },

@@ -227,3 +227,81 @@ def test_voice_transcription_is_removed_after_self_explanation_submission() -> N
 
     assert [event.event_name for event in before_submission] == ["voice.transcription.completed"]
     assert after_submission == []
+
+
+def test_business_trace_groups_submission_and_ai_events_by_references() -> None:
+    service = AuditTraceService(database_session=None, export_dir=Path("unused"))
+    occurred_at = datetime(2026, 8, 10, tzinfo=UTC)
+    submission = service._event(
+        session_id=7,
+        event_id="submission-1",
+        occurred_at=occurred_at,
+        event_name="student.explanation.submitted",
+        request_id="request-1",
+        operation={"name": "SELF_EXPLANATION", "kind": "STUDENT_INPUT"},
+        result=service._result("SUCCESS"),
+        data={"round": 1, "inputMode": "TEXT"},
+        references={"attemptId": 11},
+    )
+    ai_call = service._event(
+        session_id=7,
+        event_id="external-call-2",
+        occurred_at=occurred_at,
+        event_name="ai.call.completed",
+        request_id="request-1",
+        operation={"name": "AI_EVALUATION", "kind": "EXTERNAL_CALL"},
+        result=service._result("SUCCESS", duration_ms=20),
+        data={},
+        references={"externalCallRecordId": 2},
+    )
+    ai_output = service._event(
+        session_id=7,
+        event_id="external-call-2-validation",
+        occurred_at=occurred_at,
+        event_name="ai.output.validated",
+        request_id="request-1",
+        operation={"name": "AI_EVALUATION", "kind": "OUTPUT_VALIDATION"},
+        result=service._result("SUCCESS"),
+        data={"correctness": "CORRECT", "completeness": "COMPLETE"},
+        references={"externalCallRecordId": 2, "evaluationId": 3, "attemptId": 11},
+    )
+    transition = service._event(
+        session_id=7,
+        event_id="state-transition-4",
+        occurred_at=occurred_at,
+        event_name="state.transitioned",
+        request_id="request-1",
+        operation={"name": "APPLY_AI_EVALUATION", "kind": "STATE_TRANSITION"},
+        result=service._result("SUCCESS"),
+        data={},
+        references={"evaluationId": 3, "attemptId": 11},
+    )
+    for sequence, event in enumerate(
+        [submission, ai_call, ai_output, transition], start=1
+    ):
+        event.sequence = sequence
+    trace = SessionTraceResponse(
+        schema_version="3.0",
+        producer=TraceProducerResponse(service="test", version="1"),
+        session_id=7,
+        generated_at=occurred_at,
+        summary=SessionTraceSummaryResponse(
+            status="COMPLETED",
+            flow_stage="WAIT_STUDENT_ACTION",
+            round=1,
+            event_count=4,
+            error_count=0,
+            external_call_count=1,
+        ),
+        events=[submission, ai_call, ai_output, transition],
+    )
+
+    business_trace = service._business_trace_from_trace(trace)
+
+    assert [step.kind for step in business_trace.steps] == ["SUBMISSION", "AI"]
+    assert business_trace.steps[1].event_ids == [
+        "external-call-2",
+        "external-call-2-validation",
+        "state-transition-4",
+    ]
+    assert business_trace.steps[1].duration_ms == 20

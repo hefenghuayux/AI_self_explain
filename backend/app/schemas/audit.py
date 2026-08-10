@@ -90,6 +90,26 @@ class SessionTraceResponse(QuestionSchema):
     events: list[TraceEventResponse]
 
 
+class BusinessTraceStepResponse(QuestionSchema):
+    step_id: str
+    kind: str
+    title: str
+    status: str
+    occurred_at: datetime
+    summary: str
+    event_ids: list[str]
+    events: list[TraceEventResponse]
+    request_id: str | None = None
+    duration_ms: int | None = None
+    error: TraceErrorResponse | None = None
+
+
+class BusinessTraceResponse(QuestionSchema):
+    session_id: int
+    generated_at: datetime
+    steps: list[BusinessTraceStepResponse]
+
+
 class TraceExportEnvelope(QuestionSchema):
     schema_version: str
     producer: TraceProducerResponse

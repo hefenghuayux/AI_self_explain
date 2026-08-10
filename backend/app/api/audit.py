@@ -4,6 +4,7 @@ from app.core.auth import DatabaseSession, require_teacher
 from app.repositories.sessions import SessionRepository
 from app.schemas.audit import (
     AuditExportResponse,
+    BusinessTraceResponse,
     ExternalCallRecordResponse,
     SessionTraceResponse,
     StateTransitionEventResponse,
@@ -52,6 +53,19 @@ def get_session_trace(
     require_session(SessionRepository(database_session), session_id)
     service = AuditTraceService(database_session, request.app.state.settings.audit_export_dir)
     return service.build_session_trace(session_id)
+
+
+@router.get(
+    "/{session_id}/audit/business-trace",
+    response_model=BusinessTraceResponse,
+    response_model_exclude_none=True,
+)
+def get_business_trace(
+    session_id: int, request: Request, database_session: DatabaseSession
+) -> BusinessTraceResponse:
+    require_session(SessionRepository(database_session), session_id)
+    service = AuditTraceService(database_session, request.app.state.settings.audit_export_dir)
+    return service.build_business_trace(session_id)
 
 
 @router.post("/{session_id}/audit/export", response_model=AuditExportResponse)

@@ -2,18 +2,17 @@
 import { computed, onMounted, ref } from "vue"
 import { useRoute } from "vue-router"
 
-import { exportSessionTrace, fetchSessionTrace } from "../api/audit"
-import type { AuditExport, SessionTrace, TraceEvent } from "../types/audit"
+import { exportSessionTrace, fetchBusinessTrace, fetchSessionTrace } from "../api/audit"
+import type {
+  AuditExport,
+  BusinessTrace,
+  BusinessTraceStep,
+  ModelRequestSnapshot,
+  SessionTrace,
+  TraceEvent,
+} from "../types/audit"
 
 type ViewMode = "BUSINESS" | "AUDIT"
-
-interface TraceGroup {
-  key: string
-  title: string
-  description: string
-  events: TraceEvent[]
-  relatedEvents: TraceEvent[]
-}
 
 interface RequestGroup {
   key: string
@@ -24,6 +23,7 @@ interface RequestGroup {
 const route = useRoute()
 const sessionId = String(route.params.sessionId)
 const trace = ref<SessionTrace>()
+const businessTrace = ref<BusinessTrace>()
 const loading = ref(true)
 const exporting = ref(false)
 const errorMessage = ref("")
@@ -56,96 +56,6 @@ function eventTime(occurredAt: string): string {
   return new Date(occurredAt).toLocaleString("zh-CN", { hour12: false })
 }
 
-function groupEventCount(group: TraceGroup): number {
-  return group.events.length + group.relatedEvents.length
-}
-
-function groupStatus(group: TraceGroup): string {
-  return [...group.events, ...group.relatedEvents].some((event) => event.result.status === "ERROR")
-    ? "ERROR"
-    : "SUCCESS"
-}
-
-const businessGroups = computed<TraceGroup[]>(() => {
-  const groups: TraceGroup[] = [
-    {
-      key: "session-start",
-      title: "会话开始并选择输入方式",
-      description: "记录会话建立和输入方式选择。",
-      events: [],
-      relatedEvents: [],
-    },
-    {
-      key: "student-submission",
-      title: "学生提交答案",
-      description: "记录学生输入确认、正式提交以及语音输入相关过程。",
-      events: [],
-      relatedEvents: [],
-    },
-    {
-      key: "ai-evaluation",
-      title: "AI 调用并完成结构化评价",
-      description: "将模型调用技术记录和结构化评价结果放在同一业务阶段下。",
-      events: [],
-      relatedEvents: [],
-    },
-    {
-      key: "rule-application",
-      title: "后端应用确定性规则",
-      description: "记录后端根据评价结果执行的状态、计数和阈值规则。",
-      events: [],
-      relatedEvents: [],
-    },
-    {
-      key: "support-generation",
-      title: "生成并保存教学反馈",
-      description: "记录最终保存并提供给学生的反馈、提示或引导问题。",
-      events: [],
-      relatedEvents: [],
-    },
-    {
-      key: "other",
-      title: "其他审计事件",
-      description: "保留当前业务阶段未覆盖的事件，避免新增事件被默认视图隐藏。",
-      events: [],
-      relatedEvents: [],
-    },
-  ]
-
-  for (const event of trace.value?.events ?? []) {
-    const operation = operationName(event)
-    if (event.eventName === "session.created" || operation === "SELECT_INITIAL_CHOICE") {
-      groups[0].events.push(event)
-    } else if (
-      event.eventName === "student.explanation.submitted" ||
-      event.eventName === "student.input.submitted"
-    ) {
-      groups[1].events.push(event)
-    } else if (
-      [
-        "voice.transcription.completed",
-        "audio.persisted",
-      ].includes(event.eventName) ||
-      event.eventName.startsWith("asr.call.") ||
-      operation.startsWith("SUBMIT_")
-    ) {
-      groups[1].relatedEvents.push(event)
-    } else if (event.eventName.startsWith("ai.output.")) {
-      groups[2].events.push(event)
-    } else if (event.eventName.startsWith("ai.call.")) {
-      groups[2].relatedEvents.push(event)
-    } else if (event.eventName === "support.generated") {
-      groups[4].events.push(event)
-    } else if (event.eventName === "state.transitioned") {
-      groups[3].events.push(event)
-    } else {
-      groups[5].events.push(event)
-    }
-  }
-
-  return groups.filter((group) => groupEventCount(group) > 0)
-})
-
 const requestGroups = computed<RequestGroup[]>(() => {
   const groupedEvents = new Map<string, TraceEvent[]>()
   for (const event of filteredEvents.value) {
@@ -165,7 +75,10 @@ async function loadTrace() {
   loading.value = true
   errorMessage.value = ""
   try {
-    trace.value = await fetchSessionTrace(sessionId)
+    ;[trace.value, businessTrace.value] = await Promise.all([
+      fetchSessionTrace(sessionId),
+      fetchBusinessTrace(sessionId),
+    ])
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -187,6 +100,19 @@ async function exportTrace() {
 
 function eventJson(event: TraceEvent): string {
   return JSON.stringify(event, null, 2)
+}
+
+function requestSnapshots(step: BusinessTraceStep): ModelRequestSnapshot[] {
+  return step.events.flatMap((event) => {
+    const snapshot = event.data.requestSnapshot
+    return snapshot && typeof snapshot === "object"
+      ? [snapshot as unknown as ModelRequestSnapshot]
+      : []
+  })
+}
+
+function formatted(value: unknown): string {
+  return JSON.stringify(value, null, 2)
 }
 
 onMounted(loadTrace)
@@ -247,28 +173,71 @@ onMounted(loadTrace)
           </div>
         </div>
         <template v-if="viewMode === 'BUSINESS'">
-          <p class="view-description">默认按业务阶段阅读，技术调用和状态细节仍保留在阶段内。</p>
-          <p v-if="!businessGroups.length" class="empty-state">没有可展示的业务事件。</p>
-          <details v-for="group in businessGroups" :key="group.key" class="trace-group" open>
+          <p v-if="!businessTrace?.steps.length" class="empty-state">没有可展示的业务事件。</p>
+          <details
+            v-for="step in businessTrace?.steps ?? []"
+            :key="step.stepId"
+            class="trace-step"
+            :class="`status-${step.status.toLowerCase()}`"
+            :open="step.status !== 'SUCCESS'"
+          >
             <summary>
-              <span class="group-title">{{ group.title }}</span>
-              <span>{{ groupEventCount(group) }} 个事件 · {{ groupStatus(group) }}</span>
+              <span class="step-index">{{ step.title }}</span>
+              <span>{{ step.status }} · {{ eventTime(step.occurredAt) }}</span>
             </summary>
-            <p class="group-description">{{ group.description }}</p>
-            <details v-for="event in group.events" :key="event.eventId" class="event-card">
-              <summary>
-                <span>#{{ event.sequence }} {{ eventTitle(event) }}</span>
-                <span>{{ event.result.status }} · {{ eventTime(event.occurredAt) }}</span>
-              </summary>
-              <div class="event-meta">
-                <span v-if="event.correlation.requestId">requestId: {{ event.correlation.requestId }}</span>
-                <span v-if="typeof event.result.durationMs === 'number'">耗时: {{ event.result.durationMs }} ms</span>
+            <p class="step-summary">{{ step.summary }}</p>
+            <div class="event-meta">
+              <span v-if="step.requestId">requestId: {{ step.requestId }}</span>
+              <span v-if="typeof step.durationMs === 'number'">耗时: {{ step.durationMs }} ms</span>
+            </div>
+            <p v-if="step.error" class="step-error">
+              {{ step.error.type }}：{{ step.error.message }}
+            </p>
+
+            <section
+              v-for="(snapshot, snapshotIndex) in requestSnapshots(step)"
+              :key="`${step.stepId}-request-${snapshotIndex}`"
+              class="model-request"
+            >
+              <h3>模型请求 {{ snapshotIndex + 1 }}</h3>
+              <details>
+                <summary>评价规则（当前实际以 user message 传输）</summary>
+                <pre>{{ snapshot.blocks.systemInstructions }}</pre>
+              </details>
+              <details>
+                <summary>题目与评分材料 · 教师审计内容</summary>
+                <pre>{{ formatted(snapshot.blocks.questionContext) }}</pre>
+              </details>
+              <details>
+                <summary>当前会话上下文</summary>
+                <pre>{{ formatted(snapshot.blocks.sessionContext) }}</pre>
+              </details>
+              <div class="memory-state">
+                <strong>教学记忆</strong>
+                <pre v-if="snapshot.blocks.memoryContext">{{ formatted(snapshot.blocks.memoryContext) }}</pre>
+                <span v-else>本次未注入记忆</span>
               </div>
-              <pre>{{ eventJson(event) }}</pre>
-            </details>
-            <details v-if="group.relatedEvents.length" class="related-events">
-              <summary>相关技术事件 · {{ group.relatedEvents.length }} 项</summary>
-              <details v-for="event in group.relatedEvents" :key="event.eventId" class="event-card">
+              <details open>
+                <summary>用户输入</summary>
+                <pre>{{ formatted(snapshot.blocks.userInput) }}</pre>
+              </details>
+              <details v-if="Object.keys(snapshot.blocks.retryContext).length">
+                <summary>上轮校验错误</summary>
+                <pre>{{ formatted(snapshot.blocks.retryContext) }}</pre>
+              </details>
+              <details>
+                <summary>实际 transport messages</summary>
+                <pre>{{ formatted(snapshot.transport.messages) }}</pre>
+              </details>
+              <details>
+                <summary>响应格式</summary>
+                <pre>{{ formatted(snapshot.transport.response_format) }}</pre>
+              </details>
+            </section>
+
+            <details class="technical-events">
+              <summary>技术详情 · {{ step.events.length }} 个事件</summary>
+              <details v-for="event in step.events" :key="event.eventId" class="event-card">
                 <summary>
                   <span>#{{ event.sequence }} {{ eventTitle(event) }}</span>
                   <span>{{ event.result.status }} · {{ eventTime(event.occurredAt) }}</span>
@@ -341,6 +310,21 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .view-description { margin: 0 0 16px; color: #6b7280; }
 .audit-filter { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 select { margin-left: 8px; padding: 6px 8px; }
+.trace-step { margin-top: 12px; border: 1px solid #dbe2ea; border-left: 4px solid #15803d; border-radius: 6px; padding: 14px; }
+.trace-step.status-warning { border-left-color: #a16207; }
+.trace-step.status-error { border-left-color: #b91c1c; }
+.trace-step > summary { display: flex; justify-content: space-between; gap: 12px; cursor: pointer; }
+.trace-step > summary > span:last-child { color: #64748b; font-size: 13px; text-align: right; }
+.step-index { min-width: 0; font-weight: 650; overflow-wrap: anywhere; }
+.step-summary { margin: 12px 0 0; color: #334155; }
+.step-error { overflow-wrap: anywhere; padding: 10px; border-radius: 4px; color: #991b1b; background: #fef2f2; }
+.model-request { margin: 14px 0; padding: 14px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; }
+.model-request h3 { margin: 0 0 10px; font-size: 15px; }
+.model-request details { padding: 8px 0; border-top: 1px solid #e2e8f0; }
+.model-request summary, .technical-events > summary { cursor: pointer; font-weight: 600; }
+.memory-state { display: grid; gap: 6px; padding: 8px 0; border-top: 1px solid #e2e8f0; }
+.memory-state span { color: #64748b; font-size: 13px; }
+.technical-events { margin-top: 12px; }
 .trace-group { border-top: 1px solid #e5e7eb; padding: 12px 0; }
 .trace-group > summary { display: flex; justify-content: space-between; gap: 12px; cursor: pointer; }
 .trace-group > summary > span:first-child { min-width: 0; overflow-wrap: anywhere; }
@@ -368,5 +352,7 @@ pre { max-height: 520px; overflow: auto; margin: 0; padding: 14px; border-radius
   .trace-group > summary > span:last-child { text-align: left; }
   .event-card summary { align-items: flex-start; flex-direction: column; }
   .event-card summary span:last-child { text-align: left; }
+  .trace-step > summary { align-items: flex-start; flex-direction: column; }
+  .trace-step > summary > span:last-child { text-align: left; }
 }
 </style>

@@ -17,6 +17,8 @@ from app.models.student_submission import StudentSubmission
 from app.models.support_event import SupportEvent
 from app.schemas.audit import (
     AuditExportResponse,
+    BusinessTraceResponse,
+    BusinessTraceStepResponse,
     SessionTraceResponse,
     SessionTraceSummaryResponse,
     TraceCorrelationResponse,
@@ -131,18 +133,60 @@ class AuditTraceService:
 
     def export_session(self, session_id: int) -> AuditExportResponse:
         trace = self.build_session_trace(session_id)
+        business_trace = self._business_trace_from_trace(trace)
         session_dir = self.export_dir / str(session_id)
         jsonl_path = session_dir / "trace.jsonl"
         markdown_path = session_dir / "audit.md"
         with _export_lock:
             session_dir.mkdir(parents=True, exist_ok=True)
             self._write_jsonl(jsonl_path, trace)
-            self._write_markdown(markdown_path, trace)
+            self._write_markdown(markdown_path, trace, business_trace)
         return AuditExportResponse(
             session_id=session_id,
             jsonl_path=str(jsonl_path.resolve()),
             markdown_path=str(markdown_path.resolve()),
             event_count=len(trace.events),
+        )
+
+    def build_business_trace(self, session_id: int) -> BusinessTraceResponse:
+        return self._business_trace_from_trace(self.build_session_trace(session_id))
+
+    def _business_trace_from_trace(
+        self, trace: SessionTraceResponse
+    ) -> BusinessTraceResponse:
+        attempt_steps: dict[object, str] = {}
+        evaluation_steps: dict[object, str] = {}
+        support_steps: dict[object, str] = {}
+        for event in trace.events:
+            if event.event_name == "student.explanation.submitted":
+                attempt_id = event.references.get("attemptId")
+                if attempt_id is not None:
+                    attempt_steps[attempt_id] = f"submission:{event.event_id}"
+            if event.event_name.startswith("ai.output."):
+                evaluation_id = event.references.get("evaluationId")
+                if evaluation_id is not None:
+                    evaluation_steps[evaluation_id] = _ai_step_key(event)
+            if event.event_name == "support.generated":
+                support_id = event.references.get("supportEventId")
+                if support_id is not None:
+                    support_steps[support_id] = f"support:{event.event_id}"
+
+        grouped: dict[str, list[TraceEventResponse]] = {}
+        for event in trace.events:
+            key = _business_step_key(
+                event,
+                attempt_steps=attempt_steps,
+                evaluation_steps=evaluation_steps,
+                support_steps=support_steps,
+            )
+            grouped.setdefault(key, []).append(event)
+
+        steps = [_business_step(key, events) for key, events in grouped.items()]
+        steps.sort(key=lambda step: (step.events[0].sequence, step.step_id))
+        return BusinessTraceResponse(
+            session_id=trace.session_id,
+            generated_at=trace.generated_at,
+            steps=steps,
         )
 
     def _records(self, model, session_id: int) -> list:
@@ -602,7 +646,12 @@ class AuditTraceService:
                 ) from error
         temporary_path.replace(jsonl_path)
 
-    def _write_markdown(self, markdown_path: Path, trace: SessionTraceResponse) -> None:
+    def _write_markdown(
+        self,
+        markdown_path: Path,
+        trace: SessionTraceResponse,
+        business_trace: BusinessTraceResponse,
+    ) -> None:
         lines = [
             f"# 会话审计报告：session-{trace.session_id}",
             "",
@@ -616,33 +665,52 @@ class AuditTraceService:
             f"- 外部调用：{trace.summary.external_call_count}",
             f"- 错误数量：{trace.summary.error_count}",
             "",
-            "## 执行链路",
+            "## 业务执行链路",
             "",
-            "| 序号 | 时间 | 事件 | 状态 |",
-            "| ---: | --- | --- | --- |",
+            "| 序号 | 时间 | 业务步骤 | 状态 | 摘要 |",
+            "| ---: | --- | --- | --- | --- |",
         ]
-        for event in trace.events:
+        for sequence, step in enumerate(business_trace.steps, start=1):
             lines.append(
-                f"| {event.sequence} | {event.occurred_at.isoformat()} | "
-                f"{event.event_name} | {event.result.status} |"
+                f"| {sequence} | {step.occurred_at.isoformat()} | "
+                f"{step.title} | {step.status} | {step.summary} |"
             )
-        lines.extend(["", "## 事件明细", ""])
-        for event in trace.events:
-            event_json = json.dumps(
-                event.model_dump(mode="json", by_alias=True, exclude_none=True),
-                ensure_ascii=False,
-                indent=2,
-            )
+        lines.extend(["", "## 业务步骤详情", ""])
+        for sequence, step in enumerate(business_trace.steps, start=1):
             lines.extend(
                 [
-                    f"### {event.sequence}. {event.event_name}",
+                    f"### {sequence}. {step.title}",
                     "",
-                    "```json",
-                    event_json,
-                    "```",
+                    step.summary,
                     "",
                 ]
             )
+            snapshots = [
+                event.data.get("requestSnapshot")
+                for event in step.events
+                if isinstance(event.data.get("requestSnapshot"), dict)
+            ]
+            for attempt_number, snapshot in enumerate(snapshots, start=1):
+                lines.extend(
+                    [
+                        f"#### 模型请求 {attempt_number}",
+                        "",
+                        "```json",
+                        json.dumps(snapshot, ensure_ascii=False, indent=2),
+                        "```",
+                        "",
+                    ]
+                )
+            lines.append(
+                "技术事件：" + "、".join(event.event_id for event in step.events)
+            )
+            lines.append("")
+        lines.extend(["## 技术事件和引用", ""])
+        for event in trace.events:
+            lines.append(
+                f"- #{event.sequence} `{event.event_name}`：`{event.event_id}`"
+            )
+        lines.append("")
         lines.extend(
             [
                 "## 脱敏说明",
@@ -694,3 +762,124 @@ def _privacy(
     if redacted_fields:
         result["redactedFields"] = redacted_fields
     return result or None
+
+
+def _ai_step_key(event: TraceEventResponse) -> str:
+    request_id = event.correlation.request_id
+    external_call_id = event.references.get("externalCallRecordId")
+    return f"ai:{request_id or external_call_id or event.event_id}"
+
+
+def _business_step_key(
+    event: TraceEventResponse,
+    *,
+    attempt_steps: dict[object, str],
+    evaluation_steps: dict[object, str],
+    support_steps: dict[object, str],
+) -> str:
+    event_name = event.event_name
+    references = event.references
+    if event_name in {"session.created"} or event.operation.get("name") == "SELECT_INITIAL_CHOICE":
+        return "session:started"
+    if event_name == "student.explanation.submitted":
+        return f"submission:{event.event_id}"
+    if event_name.startswith("ai."):
+        return _ai_step_key(event)
+    if event_name == "support.generated":
+        return f"support:{event.event_id}"
+    if event_name.startswith("asr.") or event_name in {
+        "voice.transcription.completed",
+        "audio.persisted",
+    }:
+        return f"voice:{event.correlation.request_id or event.event_id}"
+    if event_name == "state.transitioned":
+        support_id = references.get("supportEventId")
+        if support_id in support_steps:
+            return support_steps[support_id]
+        evaluation_id = references.get("evaluationId")
+        if evaluation_id in evaluation_steps:
+            return evaluation_steps[evaluation_id]
+        attempt_id = references.get("attemptId")
+        if attempt_id in attempt_steps:
+            return attempt_steps[attempt_id]
+    return f"event:{event.event_id}"
+
+
+def _business_step(key: str, events: list[TraceEventResponse]) -> BusinessTraceStepResponse:
+    events.sort(key=lambda event: (event.sequence, event.event_id))
+    kind = key.split(":", maxsplit=1)[0].upper()
+    titles = {
+        "SESSION": "会话开始与输入方式",
+        "SUBMISSION": "学生提交自讲",
+        "AI": "AI 评价与确定性规则",
+        "SUPPORT": "教学反馈",
+        "VOICE": "语音转写",
+        "EVENT": "后续业务动作",
+    }
+    status = "ERROR" if any(event.result.status == "ERROR" for event in events) else "SUCCESS"
+    if status == "SUCCESS" and any(event.severity == "WARNING" for event in events):
+        status = "WARNING"
+    durations = [
+        event.result.duration_ms
+        for event in events
+        if event.result.duration_ms is not None
+    ]
+    error = next(
+        (event.result.error for event in events if event.result.error is not None),
+        None,
+    )
+    request_ids = {
+        event.correlation.request_id
+        for event in events
+        if event.correlation.request_id is not None
+    }
+    summary = _business_step_summary(kind, events)
+    return BusinessTraceStepResponse(
+        step_id=f"{kind.lower()}-{events[0].event_id}",
+        kind=kind,
+        title=titles[kind],
+        status=status,
+        occurred_at=events[0].occurred_at,
+        summary=summary,
+        event_ids=[event.event_id for event in events],
+        events=events,
+        request_id=next(iter(request_ids)) if len(request_ids) == 1 else None,
+        duration_ms=max(durations) if durations else None,
+        error=error,
+    )
+
+
+def _business_step_summary(kind: str, events: list[TraceEventResponse]) -> str:
+    if kind == "SESSION":
+        return "会话已创建，并记录了学生选择的输入方式。"
+    if kind == "SUBMISSION":
+        submitted = next(
+            event for event in events if event.event_name == "student.explanation.submitted"
+        )
+        input_mode = submitted.data.get("inputMode")
+        round_number = submitted.data.get("round")
+        details = [f"第 {round_number} 轮"] if round_number is not None else []
+        if input_mode is not None:
+            details.append(f"{input_mode} 输入")
+        return "学生已提交自讲" + ("（" + "，".join(details) + "）" if details else "") + "。"
+    if kind == "AI":
+        calls = sum(event.event_name.startswith("ai.call.") for event in events)
+        output = next(
+            (event for event in events if event.event_name.startswith("ai.output.")),
+            None,
+        )
+        if output is None:
+            return f"模型共调用 {calls} 次，尚无可用的结构化输出。"
+        correctness = output.data.get("correctness")
+        completeness = output.data.get("completeness")
+        result = " / ".join(str(value) for value in (correctness, completeness) if value)
+        return f"模型共调用 {calls} 次，输出校验为 {output.result.status}" + (
+            f"，评价结果为 {result}。" if result else "。"
+        )
+    if kind == "SUPPORT":
+        support = next(event for event in events if event.event_name == "support.generated")
+        return f"已生成并保存教学反馈，类型为 {support.operation.get('name', 'UNKNOWN')}。"
+    if kind == "VOICE":
+        return "已完成语音调用、转写或音频证据保存。"
+    event = events[0]
+    return f"执行 {event.operation.get('name', event.event_name)}，结果为 {event.result.status}。"

@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -18,6 +19,7 @@ from app.schemas.teaching import TeachingContext, TeachingOutput
 from app.services.ai_evaluation import AIModelClient, AITransportError
 
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "generate_teaching.md"
+logger = logging.getLogger(__name__)
 
 
 class AITeachingError(RuntimeError):
@@ -54,6 +56,16 @@ class AITeachingService:
                 raw_response=error.raw_response,
                 request_snapshot=request,
             )
+            logger.error(
+                "AI 教学调用失败",
+                extra={
+                    "eventName": "ai.call.failed",
+                    "purpose": request.purpose,
+                    "model": self.settings.ai_model,
+                    "durationMs": error.duration_ms,
+                    "errorType": error.error_type,
+                },
+            )
             raise AITeachingError(error_type=error.error_type, message=str(error)) from error
 
         external_call = self.repository.record_external_call(
@@ -66,6 +78,15 @@ class AITeachingService:
             model=self.settings.ai_model,
             raw_response=model_response.raw_response,
             request_snapshot=request,
+        )
+        logger.info(
+            "AI 教学调用完成",
+            extra={
+                "eventName": "ai.call.completed",
+                "purpose": request.purpose,
+                "model": self.settings.ai_model,
+                "durationMs": model_response.duration_ms,
+            },
         )
 
         try:
@@ -85,12 +106,31 @@ class AITeachingService:
                 validation_status="INVALID",
                 validation_errors=errors,
             )
+            logger.error(
+                "AI 教学输出校验失败",
+                extra={
+                    "eventName": "ai.output.validation_failed",
+                    "purpose": request.purpose,
+                    "model": self.settings.ai_model,
+                    "durationMs": model_response.duration_ms,
+                    "errorType": "AI_SCHEMA_ERROR",
+                },
+            )
             raise AITeachingError(error_type="AI_SCHEMA_ERROR", message=message) from error
 
         self.repository.record_external_call_validation(
             record=external_call,
             validation_status="VALID",
             validation_errors=[],
+        )
+        logger.info(
+            "AI 教学输出校验通过",
+            extra={
+                "eventName": "ai.output.validated",
+                "purpose": request.purpose,
+                "model": self.settings.ai_model,
+                "durationMs": model_response.duration_ms,
+            },
         )
         return output
 

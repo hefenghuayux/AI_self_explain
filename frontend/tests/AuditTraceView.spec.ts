@@ -4,97 +4,114 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import AuditTraceView from "../src/views/AuditTraceView.vue"
 
+const aiEvent = {
+  eventId: "external-call-1",
+  sequence: 2,
+  occurredAt: "2026-08-10T10:02:00Z",
+  eventName: "ai.call.completed",
+  severity: "INFO",
+  correlation: { sessionId: 42, requestId: "request-1" },
+  operation: { name: "AI_EVALUATION" },
+  result: { status: "SUCCESS", durationMs: 100 },
+  data: {
+    requestSnapshot: {
+      schemaVersion: "1.0",
+      purpose: "AI_EVALUATION",
+      promptVersion: "evaluation-v1",
+      blocks: {
+        systemInstructions: "评价规则",
+        questionContext: { standardAnswer: "2" },
+        sessionContext: { round: 1 },
+        userInput: { confirmedText: "很长的学生输入" },
+        retryContext: { validationErrors: [] },
+      },
+      transport: {
+        model: "test-model",
+        messages: [{ role: "user", content: "实际提示词" }],
+        response_format: { type: "json_object" },
+      },
+      privacy: {
+        containsStudentContent: true,
+        containsAnswerMaterial: true,
+        containsMemory: false,
+      },
+    },
+  },
+  references: { externalCallRecordId: 1 },
+}
+
+const sessionEvent = {
+  eventId: "state-transition-1",
+  sequence: 1,
+  occurredAt: "2026-08-10T10:00:00Z",
+  eventName: "session.created",
+  severity: "INFO",
+  correlation: { sessionId: 42 },
+  operation: { name: "CREATE_SESSION" },
+  result: { status: "SUCCESS" },
+  data: {},
+  references: {},
+}
+
 describe("AuditTraceView", () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it("shows the business chain by default and groups full audit events by requestId", async () => {
+  it("uses backend business steps and keeps full audit grouped by requestId", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          schemaVersion: "3.0",
-          producer: {
-            service: "ai-self-explain-backend",
-            version: "0.1.0",
-          },
-          sessionId: 42,
-          generatedAt: "2026-08-10T10:00:00Z",
-          summary: {
-            status: "PAUSED",
-            flowStage: "CAPTURING_INPUT",
-            round: 1,
-            eventCount: 5,
-            errorCount: 0,
-            externalCallCount: 0,
-          },
-          events: [
-            {
-              eventId: "state-transition-1",
-              sequence: 1,
-              occurredAt: "2026-08-10T10:00:00Z",
-              eventName: "session.created",
-              severity: "INFO",
-              correlation: { sessionId: 42 },
-              operation: {},
-              result: { status: "SUCCESS" },
-              data: {},
-              references: {},
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            schemaVersion: "3.0",
+            producer: { service: "ai-self-explain-backend", version: "0.1.0" },
+            sessionId: 42,
+            generatedAt: "2026-08-10T10:00:00Z",
+            summary: {
+              status: "PAUSED",
+              flowStage: "CAPTURING_INPUT",
+              round: 1,
+              eventCount: 2,
+              errorCount: 0,
+              externalCallCount: 1,
             },
-            {
-              eventId: "state-transition-2",
-              sequence: 2,
-              occurredAt: "2026-08-10T10:01:00Z",
-              eventName: "state.transitioned",
-              severity: "INFO",
-              correlation: { sessionId: 42, requestId: "request-1" },
-              operation: { name: "SELECT_INITIAL_CHOICE" },
-              result: { status: "SUCCESS" },
-              data: {},
-              references: {},
-            },
-            {
-              eventId: "evaluation-1",
-              sequence: 3,
-              occurredAt: "2026-08-10T10:02:00Z",
-              eventName: "ai.output.validated",
-              severity: "INFO",
-              correlation: { sessionId: 42, requestId: "request-1" },
-              operation: { name: "VALIDATE_AI_EVALUATION" },
-              result: { status: "SUCCESS", durationMs: 100 },
-              data: {},
-              references: {},
-            },
-            {
-              eventId: "external-call-1",
-              sequence: 4,
-              occurredAt: "2026-08-10T10:02:00Z",
-              eventName: "ai.call.completed",
-              severity: "INFO",
-              correlation: { sessionId: 42, requestId: "request-1" },
-              operation: { name: "AI_EVALUATION" },
-              result: { status: "SUCCESS", durationMs: 100 },
-              data: {},
-              references: {},
-            },
-            {
-              eventId: "submission-1",
-              sequence: 5,
-              occurredAt: "2026-08-10T10:01:00Z",
-              eventName: "student.explanation.submitted",
-              severity: "INFO",
-              correlation: { sessionId: 42, requestId: "request-1" },
-              operation: { name: "SELF_EXPLANATION" },
-              result: { status: "SUCCESS" },
-              data: {},
-              references: {},
-              privacy: { redactedFields: ["content"] },
-            },
-          ],
+            events: [sessionEvent, aiEvent],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            sessionId: 42,
+            generatedAt: "2026-08-10T10:00:00Z",
+            steps: [
+              {
+                stepId: "session-state-transition-1",
+                kind: "SESSION",
+                title: "会话开始与输入方式",
+                status: "SUCCESS",
+                occurredAt: "2026-08-10T10:00:00Z",
+                summary: "会话已创建。",
+                eventIds: [sessionEvent.eventId],
+                events: [sessionEvent],
+              },
+              {
+                stepId: "ai-external-call-1",
+                kind: "AI",
+                title: "AI 评价与确定性规则",
+                status: "WARNING",
+                occurredAt: "2026-08-10T10:02:00Z",
+                summary: "模型共调用 2 次，输出校验通过。",
+                eventIds: [aiEvent.eventId],
+                events: [aiEvent],
+                requestId: "request-1",
+                durationMs: 100,
+              },
+            ],
+          }),
         }),
-      }),
     )
     const router = createRouter({
       history: createMemoryHistory(),
@@ -109,19 +126,14 @@ describe("AuditTraceView", () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain("PAUSED")
-    expect(wrapper.text()).toContain("事件数量")
-    expect(wrapper.text()).toContain("学生提交答案")
-    expect(wrapper.text()).toContain("state.transitioned · SELECT_INITIAL_CHOICE")
-    expect(wrapper.findAll(".trace-group")).toHaveLength(3)
-    expect(wrapper.findAll(".related-events")).toHaveLength(1)
-    expect(wrapper.findAll(".related-events")[0].text()).toContain("ai.call.completed")
+    expect(wrapper.findAll(".trace-step")).toHaveLength(2)
+    expect(wrapper.text()).toContain("AI 评价与确定性规则")
+    expect(wrapper.text()).toContain("本次未注入记忆")
+    expect(wrapper.text()).toContain("模型请求 1")
+    expect(wrapper.text()).not.toContain("undefined")
 
     await wrapper.findAll(".view-switch button")[1].trigger("click")
     expect(wrapper.text()).toContain("requestId · request-1")
     expect(wrapper.findAll(".trace-group")).toHaveLength(2)
-
-    await wrapper.find("select").setValue("session.created")
-    expect(wrapper.findAll(".trace-group")).toHaveLength(1)
-    expect(wrapper.text()).toContain("无 requestId（会话级事件）")
   })
 })

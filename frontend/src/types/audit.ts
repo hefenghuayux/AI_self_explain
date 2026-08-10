@@ -69,6 +69,26 @@ export interface SessionTrace {
   events: TraceEvent[]
 }
 
+export interface BusinessTraceStep {
+  stepId: string
+  kind: string
+  title: string
+  status: string
+  occurredAt: string
+  summary: string
+  eventIds: string[]
+  events: TraceEvent[]
+  requestId?: string
+  durationMs?: number
+  error?: { type: string; message: string }
+}
+
+export interface BusinessTrace {
+  sessionId: number
+  generatedAt: string
+  steps: BusinessTraceStep[]
+}
+
 export interface AuditExport {
   sessionId: number
   jsonlPath: string

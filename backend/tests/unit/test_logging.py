@@ -1,5 +1,5 @@
-import json
 import logging
+import re
 
 import pytest
 
@@ -7,30 +7,43 @@ from app.core.config import Settings
 from app.core.logging import bind_trace_context, configure_logging, reset_trace_context
 
 
-def test_logging_outputs_json_without_api_keys(
+def test_logging_outputs_compact_text_without_api_keys(
     capsys: pytest.CaptureFixture[str], settings: Settings
 ) -> None:
     configure_logging()
     logging.getLogger("test").info(
-        "配置校验完成：%s", settings, extra={"operation": "config_validation"}
+        "配置校验完成：%s",
+        settings,
+        extra={"eventName": "config.validated", "operation": "config_validation"},
     )
 
     output = capsys.readouterr().out
-    record = json.loads(output)
-    assert record["level"] == "INFO"
-    assert record["operation"] == "config_validation"
+    assert re.match(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} INFO\s+config\.validated", output)
+    assert output.count("\n") == 1
     assert "test-ai-secret" not in output
     assert "test-asr-secret" not in output
 
 
 def test_logging_writes_rotating_file(tmp_path) -> None:
     configure_logging(tmp_path, max_size_mib=1, backup_count=2)
-    logging.getLogger("test").info("轮转文件测试")
+    logging.getLogger("test").info("轮转文件测试", extra={"eventName": "log.rotation_test"})
 
     log_file = tmp_path / "application.log"
     assert log_file.exists()
-    record = json.loads(log_file.read_text(encoding="utf-8").splitlines()[-1])
-    assert record["message"] == "轮转文件测试"
+    assert "INFO  log.rotation_test" in log_file.read_text(encoding="utf-8")
+
+
+def test_logging_archives_existing_json_application_log(tmp_path) -> None:
+    log_file = tmp_path / "application.log"
+    log_file.write_text('{"level":"INFO"}\n', encoding="utf-8")
+
+    configure_logging(tmp_path, max_size_mib=1, backup_count=2)
+    logging.getLogger("test").info("新格式", extra={"eventName": "log.compact"})
+
+    archived = list(tmp_path.glob("application-*.json.log"))
+    assert len(archived) == 1
+    assert archived[0].read_text(encoding="utf-8") == '{"level":"INFO"}\n'
+    assert "log.compact" in log_file.read_text(encoding="utf-8")
 
 
 def test_logging_includes_trace_context(capsys: pytest.CaptureFixture[str]) -> None:
@@ -43,13 +56,11 @@ def test_logging_includes_trace_context(capsys: pytest.CaptureFixture[str]) -> N
         session_id=42,
     )
     try:
-        logging.getLogger("test").info("链路上下文测试")
+        logging.getLogger("test").info(
+            "链路上下文测试", extra={"eventName": "trace.context_test", "durationMs": 12}
+        )
     finally:
         reset_trace_context(tokens)
 
-    record = json.loads(capsys.readouterr().out)
-    assert record["requestId"] == "request-1"
-    assert record["traceId"] == "trace-1"
-    assert record["spanId"] == "span-1"
-    assert record["parentSpanId"] == "span-parent"
-    assert record["sessionId"] == 42
+    output = capsys.readouterr().out
+    assert "trace.context_test 12ms sid=42 rid=request-1" in output
