@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +29,7 @@ from app.schemas.model_request_snapshot import (
 )
 
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "evaluate_explanation.md"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -128,7 +130,7 @@ class AIEvaluationService:
         question: Question,
         session: Session,
         attempt: ExplanationAttempt,
-    ) -> AIEvaluation | None:
+    ) -> AIEvaluation | Session:
         schema = evaluation_json_schema(question.rubric_points)
         validation_errors: list[str] = []
         external_attempt_number = 0
@@ -171,6 +173,19 @@ class AIEvaluationService:
                     validation_status="INVALID",
                     validation_errors=validation_errors,
                 )
+                logger.log(
+                    logging.ERROR
+                    if schema_attempt == self.settings.ai_schema_max_retries
+                    else logging.WARNING,
+                    "AI 评价输出校验失败",
+                    extra={
+                        "eventName": "ai.output.validation_failed",
+                        "purpose": request.purpose,
+                        "model": self.settings.ai_model,
+                        "durationMs": model_response.duration_ms,
+                        "errorType": "AI_SCHEMA_ERROR",
+                    },
+                )
                 invalid_evaluation = self.repository.record_invalid_evaluation(
                     session=session,
                     attempt=attempt,
@@ -202,6 +217,15 @@ class AIEvaluationService:
                 record=external_call,
                 validation_status="VALID",
                 validation_errors=[],
+            )
+            logger.info(
+                "AI 评价输出校验通过",
+                extra={
+                    "eventName": "ai.output.validated",
+                    "purpose": request.purpose,
+                    "model": self.settings.ai_model,
+                    "durationMs": model_response.duration_ms,
+                },
             )
             return self.repository.record_valid_evaluation(
                 session=session,
@@ -240,6 +264,19 @@ class AIEvaluationService:
                     raw_response=error.raw_response,
                     request_snapshot=request,
                 )
+                logger.log(
+                    logging.ERROR
+                    if transport_attempt == self.settings.ai_transport_max_retries
+                    else logging.WARNING,
+                    "AI 评价调用失败",
+                    extra={
+                        "eventName": "ai.call.failed",
+                        "purpose": request.purpose,
+                        "model": self.settings.ai_model,
+                        "durationMs": error.duration_ms,
+                        "errorType": error.error_type,
+                    },
+                )
                 if transport_attempt == self.settings.ai_transport_max_retries:
                     return None, None, current_attempt_number
                 time.sleep(self.settings.ai_retry_backoff_seconds[transport_attempt])
@@ -255,6 +292,15 @@ class AIEvaluationService:
                 model=self.settings.ai_model,
                 raw_response=model_response.raw_response,
                 request_snapshot=request,
+            )
+            logger.info(
+                "AI 评价调用完成",
+                extra={
+                    "eventName": "ai.call.completed",
+                    "purpose": request.purpose,
+                    "model": self.settings.ai_model,
+                    "durationMs": model_response.duration_ms,
+                },
             )
             return model_response, external_call, current_attempt_number
         raise RuntimeError("AI 传输重试循环未产生结果")
