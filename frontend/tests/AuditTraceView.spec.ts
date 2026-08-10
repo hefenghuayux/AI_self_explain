@@ -73,11 +73,15 @@ describe("AuditTraceView", () => {
     const wrapper = mount(AuditTraceView, { global: { plugins: [router] } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain("PAUSED")
+    expect(wrapper.text()).toContain("已暂停")
     expect(wrapper.text()).toContain("事件数量")
-    expect(wrapper.findAll("details")).toHaveLength(2)
+    expect(wrapper.text()).toContain("会话已创建")
+    expect(wrapper.text()).toContain("字段解释")
+    expect(wrapper.text()).toContain("事件编号")
+    expect(wrapper.text()).toContain("这条事件的唯一编号")
+    expect(wrapper.findAll(".event-card")).toHaveLength(2)
 
     await wrapper.find("select").setValue("session.created")
-    expect(wrapper.findAll("details")).toHaveLength(1)
+    expect(wrapper.findAll(".event-card")).toHaveLength(1)
   })
 })
