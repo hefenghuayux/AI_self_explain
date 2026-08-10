@@ -218,7 +218,7 @@ class AuditTraceService:
             elif record.request_snapshot is None:
                 data["requestSnapshotAvailability"] = "NOT_RECORDED"
             else:
-                data["requestSnapshotAvailability"] = "RECORDED"
+                data["requestSnapshotAvailability"] = "AVAILABLE"
                 data["requestSnapshot"] = record.request_snapshot
                 snapshot_privacy = record.request_snapshot.get("privacy")
                 if isinstance(snapshot_privacy, dict):

@@ -104,7 +104,7 @@ def test_ai_external_call_projects_request_snapshot_and_validation_event() -> No
         "ai.output.validated",
     ]
     assert events[0].data["requestSnapshot"] == snapshot
-    assert events[0].data["requestSnapshotAvailability"] == "RECORDED"
+    assert events[0].data["requestSnapshotAvailability"] == "AVAILABLE"
     assert events[0].privacy == {
         "containsStudentContent": True,
         "containsAnswerMaterial": True,

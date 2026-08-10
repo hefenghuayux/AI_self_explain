@@ -53,8 +53,12 @@ def upgrade() -> None:
     )
 
     with op.batch_alter_table("external_call_records") as batch_op:
-        batch_op.alter_column("transport_status", existing_type=sa.String(length=30), nullable=False)
-        batch_op.alter_column("validation_status", existing_type=sa.String(length=30), nullable=False)
+        batch_op.alter_column(
+            "transport_status", existing_type=sa.String(length=30), nullable=False
+        )
+        batch_op.alter_column(
+            "validation_status", existing_type=sa.String(length=30), nullable=False
+        )
         batch_op.drop_column("status")
 
     with op.batch_alter_table("ai_evaluations") as batch_op:
