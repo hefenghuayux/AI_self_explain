@@ -106,3 +106,13 @@ class TeachingContext(TeachingSchema):
     teaching_metadata: TeachingMetadata
     instruction_from_rules: InstructionFromRules
     long_term_evidence: None = None
+
+
+class TeachingQuestion(TeachingSchema):
+    id: RequiredText = Field(max_length=100)
+    question: RequiredText = Field(max_length=180)
+
+
+class TeachingOutput(TeachingSchema):
+    content: RequiredText = Field(max_length=600)
+    questions: list[TeachingQuestion] = Field(max_length=1)
