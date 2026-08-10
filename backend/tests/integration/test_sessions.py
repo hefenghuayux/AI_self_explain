@@ -14,7 +14,7 @@ from app.services.ai_evaluation import AIModelClient, AIModelResponse
 
 @pytest.fixture(autouse=True)
 def stub_ai_evaluation(monkeypatch) -> None:
-    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+    def fake_evaluate(self, request) -> AIModelResponse:
         return AIModelResponse(
             raw_response='{"choices": []}',
             content=(

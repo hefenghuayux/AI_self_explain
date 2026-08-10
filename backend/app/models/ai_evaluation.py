@@ -14,6 +14,9 @@ class AIEvaluation(Base):
     attempt_id: Mapped[int] = mapped_column(
         ForeignKey("explanation_attempts.id"), index=True, nullable=False
     )
+    external_call_record_id: Mapped[int | None] = mapped_column(
+        ForeignKey("external_call_records.id"), index=True
+    )
     correctness: Mapped[str | None] = mapped_column(String(20))
     completeness: Mapped[str | None] = mapped_column(String(20))
     covered_points: Mapped[list[str] | None] = mapped_column(JSON)

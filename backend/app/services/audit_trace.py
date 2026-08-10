@@ -66,6 +66,11 @@ class AuditTraceService:
             if attempt.audio_file_id is not None
         }
         attempts_by_id = {attempt.id: attempt for attempt in attempts}
+        evaluations_by_external_call_id = {
+            evaluation.external_call_record_id: evaluation
+            for evaluation in evaluations
+            if evaluation.external_call_record_id is not None
+        }
         submitted_self_explanation_attempt_ids = {
             attempt_id
             for submission in submissions
@@ -75,7 +80,11 @@ class AuditTraceService:
 
         events: list[TraceEventResponse] = []
         events.extend(self._state_events(session_id, state_events))
-        events.extend(self._external_call_events(session_id, external_calls))
+        events.extend(
+            self._external_call_events(
+                session_id, external_calls, evaluations_by_external_call_id
+            )
+        )
         events.extend(
             self._attempt_events(
                 session_id,
@@ -84,7 +93,17 @@ class AuditTraceService:
                 submitted_self_explanation_attempt_ids,
             )
         )
-        events.extend(self._evaluation_events(session_id, evaluations, evaluation_request_ids))
+        events.extend(
+            self._evaluation_events(
+                session_id,
+                [
+                    evaluation
+                    for evaluation in evaluations
+                    if evaluation.external_call_record_id is None
+                ],
+                evaluation_request_ids,
+            )
+        )
         events.extend(
             self._submission_events(session_id, submissions, attempts_by_id, attempt_request_ids)
         )
@@ -176,16 +195,34 @@ class AuditTraceService:
         return events
 
     def _external_call_events(
-        self, session_id: int, records: list[ExternalCallRecord]
+        self,
+        session_id: int,
+        records: list[ExternalCallRecord],
+        evaluations_by_external_call_id: dict[int, AIEvaluation],
     ) -> list[TraceEventResponse]:
         events = []
         for record in records:
             target = "asr" if record.call_type == "ASR" else "ai"
-            status = "ERROR" if record.status == "ERROR" else "SUCCESS"
+            status = "ERROR" if record.transport_status == "ERROR" else "SUCCESS"
             data: dict[str, object] = {
                 "provider": record.provider,
                 "model": record.model,
+                "transportStatus": record.transport_status,
+                "validationStatus": record.validation_status,
             }
+            if record.validation_errors is not None:
+                data["validationErrors"] = record.validation_errors
+            privacy: dict[str, object] | None = None
+            if record.call_type == "ASR":
+                data["requestSnapshotAvailability"] = "NOT_APPLICABLE"
+            elif record.request_snapshot is None:
+                data["requestSnapshotAvailability"] = "NOT_RECORDED"
+            else:
+                data["requestSnapshotAvailability"] = "RECORDED"
+                data["requestSnapshot"] = record.request_snapshot
+                snapshot_privacy = record.request_snapshot.get("privacy")
+                if isinstance(snapshot_privacy, dict):
+                    privacy = dict(snapshot_privacy)
             raw_response = _text_fingerprint(record.raw_response)
             redacted_fields = None
             if raw_response is not None:
@@ -213,6 +250,46 @@ class AuditTraceService:
                     data=data,
                     references={"externalCallRecordId": record.id},
                     redacted_fields=redacted_fields,
+                    privacy=privacy,
+                )
+            )
+            if record.validation_status not in {"VALID", "INVALID"}:
+                continue
+            evaluation = evaluations_by_external_call_id.get(record.id)
+            validation_data: dict[str, object] = {
+                "validationStatus": record.validation_status,
+            }
+            references: dict[str, object] = {"externalCallRecordId": record.id}
+            if record.validation_errors is not None:
+                validation_data["validationErrors"] = record.validation_errors
+            if evaluation is not None:
+                validation_data.update(_evaluation_data(evaluation))
+                references["evaluationId"] = evaluation.id
+                references["attemptId"] = evaluation.attempt_id
+            valid = record.validation_status == "VALID"
+            events.append(
+                self._event(
+                    session_id=session_id,
+                    event_id=f"external-call-{record.id}-validation",
+                    occurred_at=(
+                        evaluation.created_at if evaluation is not None else record.created_at
+                    ),
+                    event_name="ai.output.validated" if valid else "ai.output.validation_failed",
+                    request_id=record.request_id,
+                    severity="INFO" if valid else "WARNING",
+                    operation={"name": record.call_type, "kind": "OUTPUT_VALIDATION"},
+                    result=self._result(
+                        "SUCCESS" if valid else "ERROR",
+                        error_type=None if valid else "AI_SCHEMA_ERROR",
+                        error_message=(
+                            None
+                            if valid
+                            else "；".join(record.validation_errors or ["模型输出校验失败"])
+                        ),
+                    ),
+                    data=validation_data,
+                    references=references,
+                    privacy=privacy,
                 )
             )
         return events
@@ -277,23 +354,7 @@ class AuditTraceService:
         events = []
         for record in records:
             valid = record.validation_status == "VALID"
-            data: dict[str, object] = {
-                "promptVersion": record.prompt_version,
-                "provider": record.model_provider,
-                "model": record.model_name,
-                "validationStatus": record.validation_status,
-            }
-            for field_name, value in (
-                ("correctness", record.correctness),
-                ("completeness", record.completeness),
-                ("coveredPoints", record.covered_points),
-                ("missingPoints", record.missing_points),
-                ("errorEvidence", record.error_evidence),
-                ("confidence", record.confidence),
-                ("needHumanReason", record.need_human_reason),
-            ):
-                if value is not None:
-                    data[field_name] = value
+            data = _evaluation_data(record)
             raw_response = _text_fingerprint(record.raw_response)
             if raw_response is not None:
                 data["rawResponse"] = raw_response
@@ -470,6 +531,7 @@ class AuditTraceService:
         references: dict[str, object],
         severity: str = "INFO",
         redacted_fields: list[str] | None = None,
+        privacy: dict[str, object] | None = None,
     ) -> TraceEventResponse:
         # SQLite 返回的 DateTime 可能丢失时区信息；数据库默认时间按 UTC 保存，
         # 这里统一补齐并转换为 UTC，确保接口序列化后带有 `Z`，前端不会误当成本地时间。
@@ -491,7 +553,7 @@ class AuditTraceService:
             result=result,
             data=data,
             references=references,
-            privacy=({"redactedFields": redacted_fields} if redacted_fields else None),
+            privacy=_privacy(privacy, redacted_fields),
         )
 
     def _result(
@@ -602,3 +664,33 @@ def _text_fingerprint(value: str | None) -> dict[str, object] | None:
         "characterCount": len(value),
         "sha256": hashlib.sha256(value.encode("utf-8")).hexdigest(),
     }
+
+
+def _evaluation_data(record: AIEvaluation) -> dict[str, object]:
+    data: dict[str, object] = {
+        "promptVersion": record.prompt_version,
+        "provider": record.model_provider,
+        "model": record.model_name,
+        "validationStatus": record.validation_status,
+    }
+    for field_name, value in (
+        ("correctness", record.correctness),
+        ("completeness", record.completeness),
+        ("coveredPoints", record.covered_points),
+        ("missingPoints", record.missing_points),
+        ("errorEvidence", record.error_evidence),
+        ("confidence", record.confidence),
+        ("needHumanReason", record.need_human_reason),
+    ):
+        if value is not None:
+            data[field_name] = value
+    return data
+
+
+def _privacy(
+    privacy: dict[str, object] | None, redacted_fields: list[str] | None
+) -> dict[str, object] | None:
+    result = dict(privacy or {})
+    if redacted_fields:
+        result["redactedFields"] = redacted_fields
+    return result or None

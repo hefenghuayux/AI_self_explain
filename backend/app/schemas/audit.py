@@ -25,7 +25,10 @@ class ExternalCallRecordResponse(QuestionSchema):
     provider: str
     model: str
     attempt_number: int
-    status: str
+    transport_status: str
+    validation_status: str
+    validation_errors: list[str] | None
+    request_snapshot: dict[str, object] | None
     duration_ms: int
     error_type: str | None
     error_message: str | None

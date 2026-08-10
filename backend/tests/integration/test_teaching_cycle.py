@@ -43,7 +43,8 @@ def _create_session(client: TestClient) -> dict[str, object]:
 
 
 def _stub_ai(monkeypatch, evaluation: dict[str, object]) -> None:
-    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+    def fake_evaluate(self, request) -> AIModelResponse:
+        prompt = request.transport.messages[0].content
         if "子问题作答评估器" in prompt:
             content = {
                 "results": [
@@ -447,7 +448,7 @@ def test_appeal_is_allowed_while_help_questions_are_pending_without_evaluation(
 
 
 def test_full_solution_request_is_refused_without_counting_support(settings, monkeypatch) -> None:
-    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+    def fake_evaluate(self, request) -> AIModelResponse:
         content = {
             "action": "REFUSE_FULL_SOLUTION",
             "coveredPoints": [],

@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.models.explanation_attempt import ExplanationAttempt
+from app.models.external_call_record import ExternalCallRecord
 from app.models.student_submission import StudentSubmission
 from app.schemas.audit import (
     SessionTraceResponse,
@@ -53,6 +54,88 @@ def test_error_result_uses_nested_error_object() -> None:
         "durationMs": 30001,
         "error": {"type": "AI_TIMEOUT", "message": "AI 请求超时"},
     }
+
+
+def test_ai_external_call_projects_request_snapshot_and_validation_event() -> None:
+    service = AuditTraceService(database_session=None, export_dir=Path("unused"))
+    snapshot = {
+        "schemaVersion": "1.0",
+        "purpose": "AI_EVALUATION",
+        "promptVersion": "evaluation-v1",
+        "blocks": {
+            "systemInstructions": "评价规则",
+            "questionContext": {"questionContent": "1+1"},
+            "sessionContext": {},
+            "userInput": {"confirmedText": "等于 2"},
+            "retryContext": {"validationErrors": []},
+        },
+        "transport": {
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "评价提示词"}],
+            "response_format": {"type": "json_object"},
+        },
+        "privacy": {
+            "containsStudentContent": True,
+            "containsAnswerMaterial": True,
+            "containsMemory": False,
+        },
+    }
+    record = ExternalCallRecord(
+        id=3,
+        session_id=7,
+        request_id="request-3",
+        call_type="AI_EVALUATION",
+        provider="test-provider",
+        model="test-model",
+        attempt_number=1,
+        transport_status="SUCCESS",
+        validation_status="VALID",
+        validation_errors=[],
+        request_snapshot=snapshot,
+        duration_ms=12,
+        raw_response='{"choices":[]}',
+        created_at=datetime(2026, 8, 10, tzinfo=UTC),
+    )
+
+    events = service._external_call_events(7, [record], {})
+
+    assert [event.event_name for event in events] == [
+        "ai.call.completed",
+        "ai.output.validated",
+    ]
+    assert events[0].data["requestSnapshot"] == snapshot
+    assert events[0].data["requestSnapshotAvailability"] == "RECORDED"
+    assert events[0].privacy == {
+        "containsStudentContent": True,
+        "containsAnswerMaterial": True,
+        "containsMemory": False,
+        "redactedFields": ["rawResponse"],
+    }
+
+
+def test_external_call_distinguishes_historical_ai_and_asr_snapshot_availability() -> None:
+    service = AuditTraceService(database_session=None, export_dir=Path("unused"))
+    common = {
+        "session_id": 7,
+        "request_id": None,
+        "provider": "test-provider",
+        "model": "test-model",
+        "attempt_number": 1,
+        "transport_status": "SUCCESS",
+        "validation_status": "UNKNOWN",
+        "validation_errors": None,
+        "request_snapshot": None,
+        "duration_ms": 12,
+        "created_at": datetime(2026, 8, 10, tzinfo=UTC),
+    }
+    historical_ai = ExternalCallRecord(id=4, call_type="AI_EVALUATION", **common)
+    asr = ExternalCallRecord(id=5, call_type="ASR", **common)
+
+    events = service._external_call_events(7, [historical_ai, asr], {})
+
+    assert events[0].data["requestSnapshotAvailability"] == "NOT_RECORDED"
+    assert events[1].data["requestSnapshotAvailability"] == "NOT_APPLICABLE"
+    assert all("requestSnapshot" not in event.data for event in events)
 
 
 def test_jsonl_export_replaces_old_schema_with_v3_envelopes(tmp_path: Path) -> None:

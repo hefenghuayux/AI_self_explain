@@ -7,6 +7,13 @@ from sqlalchemy.orm import Session as DatabaseSession
 from app.core.config import Settings
 from app.models.session import Session
 from app.repositories.sessions import SessionRepository
+from app.schemas.model_request_snapshot import (
+    ModelRequestBlocks,
+    ModelRequestMessage,
+    ModelRequestPrivacy,
+    ModelRequestSnapshot,
+    ModelTransportSnapshot,
+)
 from app.schemas.teaching import TeachingContext, TeachingOutput
 from app.services.ai_evaluation import AIModelClient, AITransportError
 
@@ -26,24 +33,40 @@ class AITeachingService:
         self.client = AIModelClient(settings)
 
     def generate(self, *, session: Session, context: TeachingContext) -> TeachingOutput:
-        prompt = _render_prompt(context)
-        schema = TeachingOutput.model_json_schema(by_alias=True)
+        request = _render_prompt(
+            context,
+            model=self.settings.ai_model,
+            prompt_version=self.settings.prompt_version,
+        )
         try:
-            model_response = self.client.evaluate(prompt, schema)
+            model_response = self.client.evaluate(request)
         except AITransportError as error:
             self.repository.record_external_call(
                 session=session,
                 call_type="AI_TEACHING",
                 attempt_number=1,
-                status="ERROR",
+                transport_status="ERROR",
                 duration_ms=error.duration_ms,
                 provider=self.settings.ai_provider,
                 model=self.settings.ai_model,
                 error_type=error.error_type,
                 error_message=str(error),
                 raw_response=error.raw_response,
+                request_snapshot=request,
             )
             raise AITeachingError(error_type=error.error_type, message=str(error)) from error
+
+        external_call = self.repository.record_external_call(
+            session=session,
+            call_type="AI_TEACHING",
+            attempt_number=1,
+            transport_status="SUCCESS",
+            duration_ms=model_response.duration_ms,
+            provider=self.settings.ai_provider,
+            model=self.settings.ai_model,
+            raw_response=model_response.raw_response,
+            request_snapshot=request,
+        )
 
         try:
             output = TeachingOutput.model_validate_json(model_response.content)
@@ -57,29 +80,17 @@ class AITeachingService:
                 else [str(error)]
             )
             message = "；".join(errors)
-            self.repository.record_external_call(
-                session=session,
-                call_type="AI_TEACHING",
-                attempt_number=1,
-                status="ERROR",
-                duration_ms=model_response.duration_ms,
-                provider=self.settings.ai_provider,
-                model=self.settings.ai_model,
-                error_type="AI_SCHEMA_ERROR",
-                error_message=message,
-                raw_response=model_response.raw_response,
+            self.repository.record_external_call_validation(
+                record=external_call,
+                validation_status="INVALID",
+                validation_errors=errors,
             )
             raise AITeachingError(error_type="AI_SCHEMA_ERROR", message=message) from error
 
-        self.repository.record_external_call(
-            session=session,
-            call_type="AI_TEACHING",
-            attempt_number=1,
-            status="SUCCESS",
-            duration_ms=model_response.duration_ms,
-            provider=self.settings.ai_provider,
-            model=self.settings.ai_model,
-            raw_response=model_response.raw_response,
+        self.repository.record_external_call_validation(
+            record=external_call,
+            validation_status="VALID",
+            validation_errors=[],
         )
         return output
 
@@ -108,9 +119,12 @@ def validate_teaching_output(
     return errors
 
 
-def _render_prompt(context: TeachingContext) -> str:
-    return (
-        PROMPT_PATH.read_text(encoding="utf-8")
+def _render_prompt(
+    context: TeachingContext, *, model: str, prompt_version: str
+) -> ModelRequestSnapshot:
+    template = PROMPT_PATH.read_text(encoding="utf-8")
+    prompt = (
+        template
         .replace(
             "{{JSON_SCHEMA}}",
             json.dumps(TeachingOutput.model_json_schema(by_alias=True), ensure_ascii=False),
@@ -119,6 +133,38 @@ def _render_prompt(context: TeachingContext) -> str:
             "{{CONTEXT_JSON}}",
             context.model_dump_json(by_alias=True),
         )
+    )
+    task = context.task.model_dump(mode="json", by_alias=True)
+    current_student_text = task.pop("currentStudentText")
+    session_context = {
+        "latestEvaluation": context.latest_evaluation.model_dump(mode="json", by_alias=True),
+        "learningProgress": context.learning_progress.model_dump(mode="json", by_alias=True),
+        "teachingHistory": context.teaching_history.model_dump(mode="json", by_alias=True),
+        "teachingMetadata": context.teaching_metadata.model_dump(mode="json", by_alias=True),
+        "instructionFromRules": context.instruction_from_rules.model_dump(
+            mode="json", by_alias=True
+        ),
+    }
+    return ModelRequestSnapshot(
+        purpose="AI_SUPPORT",
+        prompt_version=prompt_version,
+        blocks=ModelRequestBlocks(
+            system_instructions=template,
+            question_context=task,
+            session_context=session_context,
+            user_input={"currentStudentText": current_student_text},
+            retry_context={"validationErrors": []},
+        ),
+        transport=ModelTransportSnapshot(
+            model=model,
+            messages=[ModelRequestMessage(role="user", content=prompt)],
+            response_format={"type": "json_object"},
+        ),
+        privacy=ModelRequestPrivacy(
+            contains_student_content=True,
+            contains_answer_material=True,
+            contains_memory=False,
+        ),
     )
 
 

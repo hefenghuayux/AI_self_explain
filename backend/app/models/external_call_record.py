@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -16,7 +16,10 @@ class ExternalCallRecord(Base):
     provider: Mapped[str] = mapped_column(String(100), nullable=False)
     model: Mapped[str] = mapped_column(String(200), nullable=False)
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    transport_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    validation_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    validation_errors: Mapped[list[str] | None] = mapped_column(JSON)
+    request_snapshot: Mapped[dict[str, object] | None] = mapped_column(JSON)
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     error_type: Mapped[str | None] = mapped_column(String(50))
     error_message: Mapped[str | None] = mapped_column(Text)

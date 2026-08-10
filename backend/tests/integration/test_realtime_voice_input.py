@@ -74,7 +74,8 @@ def test_realtime_voice_transcript_returns_to_editable_draft_without_confirmatio
     def fake_create_recognition(**kwargs):
         return FakeRecognition(kwargs["event_queue"])
 
-    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+    def fake_evaluate(self, request) -> AIModelResponse:
+        prompt = request.transport.messages[0].content
         assert '"confirmedText": "学生修改后的最终文本"' in prompt
         return AIModelResponse(
             raw_response='{"choices": []}',
@@ -163,7 +164,9 @@ def test_realtime_voice_transcript_returns_to_editable_draft_without_confirmatio
         assert attempts[1].asr_transcript == "重新录音后的文本。"
         assert attempts[1].confirmed_text == "学生修改后的最终文本"
         assert len(asr_calls) == 2
-        assert all(call.status == "SUCCESS" for call in asr_calls)
+        assert all(call.transport_status == "SUCCESS" for call in asr_calls)
+        assert all(call.validation_status == "NOT_RUN" for call in asr_calls)
+        assert all(call.request_snapshot is None for call in asr_calls)
     finally:
         engine.dispose()
 
@@ -240,7 +243,8 @@ def test_doubt_voice_draft_is_submitted_by_the_original_doubt_action(
     def fake_create_recognition(**kwargs):
         return FakeRecognition(kwargs["event_queue"])
 
-    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+    def fake_evaluate(self, request) -> AIModelResponse:
+        prompt = request.transport.messages[0].content
         assert "教学支持生成器" in prompt
         return AIModelResponse(
             raw_response='{"choices": []}',

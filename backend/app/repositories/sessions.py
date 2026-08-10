@@ -33,6 +33,7 @@ from app.rules.teaching_cycle import (
     update_coverage,
 )
 from app.schemas.ai_evaluation import AIEvaluationOutput
+from app.schemas.model_request_snapshot import ModelRequestSnapshot
 from app.schemas.support import GuidedAnswer, GuidedQuestion
 from app.services.audio_storage import AudioCapture, AudioStorage
 
@@ -515,7 +516,7 @@ class SessionRepository:
         *,
         session: Session,
         attempt_number: int,
-        status: str,
+        transport_status: str,
         duration_ms: int,
         provider: str,
         model: str,
@@ -524,22 +525,46 @@ class SessionRepository:
         error_message: str | None = None,
         raw_response: str | None = None,
         request_id: str | None = None,
-    ) -> None:
-        self.database_session.add(
-            ExternalCallRecord(
-                session_id=session.id,
-                request_id=request_id or current_request_id(),
-                call_type=call_type,
-                provider=provider,
-                model=model,
-                attempt_number=attempt_number,
-                status=status,
-                duration_ms=duration_ms,
-                error_type=error_type,
-                error_message=error_message,
-                raw_response=raw_response,
-            )
+        request_snapshot: ModelRequestSnapshot | None = None,
+    ) -> ExternalCallRecord:
+        if call_type != "ASR" and request_snapshot is None:
+            raise ValueError(f"AI 外部调用缺少请求快照：{call_type}")
+        record = ExternalCallRecord(
+            session_id=session.id,
+            request_id=request_id or current_request_id(),
+            call_type=call_type,
+            provider=provider,
+            model=model,
+            attempt_number=attempt_number,
+            transport_status=transport_status,
+            validation_status="NOT_RUN",
+            validation_errors=None,
+            request_snapshot=(
+                request_snapshot.database_value() if request_snapshot is not None else None
+            ),
+            duration_ms=duration_ms,
+            error_type=error_type,
+            error_message=error_message,
+            raw_response=raw_response,
         )
+        self.database_session.add(record)
+        self.database_session.commit()
+        self.database_session.refresh(record)
+        return record
+
+    def record_external_call_validation(
+        self,
+        *,
+        record: ExternalCallRecord,
+        validation_status: str,
+        validation_errors: list[str],
+    ) -> None:
+        if record.transport_status != "SUCCESS":
+            raise ValueError(f"传输失败的外部调用不能执行输出校验：{record.id}")
+        if validation_status not in {"VALID", "INVALID"}:
+            raise ValueError(f"不支持的输出校验状态：{validation_status}")
+        record.validation_status = validation_status
+        record.validation_errors = validation_errors
         self.database_session.commit()
 
     def record_invalid_evaluation(
@@ -554,6 +579,7 @@ class SessionRepository:
         prompt_version: str,
         model_provider: str,
         model_name: str,
+        external_call_record_id: int,
     ) -> AIEvaluation:
         saved_evaluation = self._create_evaluation(
             session=session,
@@ -566,6 +592,7 @@ class SessionRepository:
             prompt_version=prompt_version,
             model_provider=model_provider,
             model_name=model_name,
+            external_call_record_id=external_call_record_id,
         )
         self.database_session.commit()
         self.database_session.refresh(saved_evaluation)
@@ -582,6 +609,7 @@ class SessionRepository:
         prompt_version: str,
         model_provider: str,
         model_name: str,
+        external_call_record_id: int,
     ) -> AIEvaluation:
         saved_evaluation = self._create_evaluation(
             session=session,
@@ -594,6 +622,7 @@ class SessionRepository:
             prompt_version=prompt_version,
             model_provider=model_provider,
             model_name=model_name,
+            external_call_record_id=external_call_record_id,
         )
         self.database_session.commit()
         self.database_session.refresh(saved_evaluation)
@@ -1075,10 +1104,12 @@ class SessionRepository:
         prompt_version: str,
         model_provider: str,
         model_name: str,
+        external_call_record_id: int,
     ) -> AIEvaluation:
         saved_evaluation = AIEvaluation(
             session_id=session.id,
             attempt_id=attempt.id,
+            external_call_record_id=external_call_record_id,
             correctness=evaluation.correctness if evaluation is not None else None,
             completeness=evaluation.completeness if evaluation is not None else None,
             covered_points=evaluation.covered_points if evaluation is not None else None,

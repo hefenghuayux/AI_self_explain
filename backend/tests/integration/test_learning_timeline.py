@@ -52,7 +52,7 @@ def create_started_session(client: TestClient) -> dict[str, object]:
 def test_timeline_persists_visible_feedback_and_hides_structured_details(
     settings, monkeypatch
 ) -> None:
-    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+    def fake_evaluate(self, request) -> AIModelResponse:
         return AIModelResponse(
             "{\"choices\": []}",
             json.dumps(

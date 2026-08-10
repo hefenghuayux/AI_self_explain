@@ -12,6 +12,30 @@ export interface TraceResult {
   }
 }
 
+export interface ModelRequestSnapshot {
+  schemaVersion: "1.0"
+  purpose: "AI_EVALUATION" | "AI_SUPPORT" | "GUIDED_ANSWER_ASSESSMENT"
+  promptVersion: string
+  blocks: {
+    systemInstructions: string
+    questionContext: Record<string, unknown>
+    sessionContext: Record<string, unknown>
+    memoryContext?: Record<string, unknown>
+    userInput: Record<string, unknown>
+    retryContext: Record<string, unknown>
+  }
+  transport: {
+    model: string
+    messages: Array<{ role: "user"; content: string }>
+    response_format: Record<string, unknown>
+  }
+  privacy: {
+    containsStudentContent: boolean
+    containsAnswerMaterial: boolean
+    containsMemory: boolean
+  }
+}
+
 export interface TraceEvent {
   eventId: string
   sequence: number

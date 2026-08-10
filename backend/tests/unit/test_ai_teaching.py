@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -91,7 +92,10 @@ def test_teaching_output_rejects_reveal_and_exact_repeat(
 def test_teaching_service_records_valid_call_without_state_changes(settings, monkeypatch) -> None:
     database_session = Mock()
     service = AITeachingService(database_session, settings)
-    service.repository.record_external_call = Mock()
+    service.repository.record_external_call = Mock(
+        return_value=SimpleNamespace(id=1, transport_status="SUCCESS")
+    )
+    service.repository.record_external_call_validation = Mock()
     content = json.dumps(
         {
             "content": "你已经说明相加过程，请补充最终结果。",
@@ -102,7 +106,7 @@ def test_teaching_service_records_valid_call_without_state_changes(settings, mon
     monkeypatch.setattr(
         service.client,
         "evaluate",
-        lambda prompt, schema: AIModelResponse("raw", content, 8),
+        lambda request: AIModelResponse("raw", content, 8),
     )
     current_session = Session(status="IN_PROGRESS", support_count_total=0)
 
@@ -113,7 +117,16 @@ def test_teaching_service_records_valid_call_without_state_changes(settings, mon
     assert current_session.support_count_total == 0
     service.repository.record_external_call.assert_called_once()
     assert service.repository.record_external_call.call_args.kwargs["call_type"] == "AI_TEACHING"
-    assert service.repository.record_external_call.call_args.kwargs["status"] == "SUCCESS"
+    assert (
+        service.repository.record_external_call.call_args.kwargs["transport_status"] == "SUCCESS"
+    )
+    request = service.repository.record_external_call.call_args.kwargs["request_snapshot"]
+    assert request.purpose == "AI_SUPPORT"
+    service.repository.record_external_call_validation.assert_called_once_with(
+        record=service.repository.record_external_call.return_value,
+        validation_status="VALID",
+        validation_errors=[],
+    )
 
 
 def test_teaching_service_does_not_retry_transport_failure(settings, monkeypatch) -> None:
@@ -122,7 +135,7 @@ def test_teaching_service_does_not_retry_transport_failure(settings, monkeypatch
     service.repository.record_external_call = Mock()
     calls = 0
 
-    def fail_once(prompt, schema):
+    def fail_once(request):
         nonlocal calls
         calls += 1
         raise AITransportError(error_type="AI_SERVICE_ERROR", message="服务不可用", duration_ms=5)
@@ -133,4 +146,7 @@ def test_teaching_service_does_not_retry_transport_failure(settings, monkeypatch
         service.generate(session=Session(id=1), context=teaching_context())
 
     assert calls == 1
-    assert service.repository.record_external_call.call_args.kwargs["status"] == "ERROR"
+    assert (
+        service.repository.record_external_call.call_args.kwargs["transport_status"] == "ERROR"
+    )
+    assert service.repository.record_external_call.call_args.kwargs["request_snapshot"] is not None

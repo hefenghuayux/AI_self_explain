@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, text
 
 from alembic import command
+from app.schemas.model_request_snapshot import ModelRequestSnapshot
 from app.services.ai_evaluation import AIModelClient, AIModelResponse, AITransportError
 
 
@@ -95,13 +96,45 @@ def submit_text(client: TestClient, session: dict[str, object]) -> TestClient:
     )
 
 
-def test_migration_creates_ai_evaluation_tables(settings, monkeypatch) -> None:
+def test_request_snapshot_migration_upgrade_and_downgrade(settings, monkeypatch) -> None:
     migrate_database(settings, monkeypatch)
     engine = create_engine(settings.database_url)
     try:
         inspector = inspect(engine)
         assert inspector.has_table("ai_evaluations")
         assert inspector.has_table("external_call_records")
+        external_call_columns = {
+            column["name"] for column in inspector.get_columns("external_call_records")
+        }
+        assert {
+            "transport_status",
+            "validation_status",
+            "validation_errors",
+            "request_snapshot",
+        } <= external_call_columns
+        assert "status" not in external_call_columns
+        evaluation_foreign_keys = inspector.get_foreign_keys("ai_evaluations")
+        assert any(
+            foreign_key["constrained_columns"] == ["external_call_record_id"]
+            and foreign_key["referred_table"] == "external_call_records"
+            for foreign_key in evaluation_foreign_keys
+        )
+    finally:
+        engine.dispose()
+
+    alembic_config = Config(str(Path(__file__).parents[2] / "alembic.ini"))
+    command.downgrade(alembic_config, "20260810_16")
+    engine = create_engine(settings.database_url)
+    try:
+        inspector = inspect(engine)
+        external_call_columns = {
+            column["name"] for column in inspector.get_columns("external_call_records")
+        }
+        assert "status" in external_call_columns
+        assert "transport_status" not in external_call_columns
+        assert "external_call_record_id" not in {
+            column["name"] for column in inspector.get_columns("ai_evaluations")
+        }
     finally:
         engine.dispose()
 
@@ -109,7 +142,9 @@ def test_migration_creates_ai_evaluation_tables(settings, monkeypatch) -> None:
 def test_valid_evaluation_is_saved_with_call_record_and_feedback(
     settings, monkeypatch
 ) -> None:
-    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+    def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
+        prompt = request.transport.messages[0].content
+        schema = request.blocks.question_context["outputSchema"]
         assert "正确计算加法" in schema["properties"]["coveredPoints"]["items"]["enum"]
         assert "我先计算 1 加 1。" in prompt
         assert "两个 1 合起来是多少？" in prompt
@@ -138,7 +173,10 @@ def test_valid_evaluation_is_saved_with_call_record_and_feedback(
                 )
             ).mappings().one()
             call = connection.execute(
-                text("SELECT provider, model, status, attempt_number FROM external_call_records")
+                text(
+                    "SELECT provider, model, transport_status, validation_status, "
+                    "attempt_number, request_snapshot FROM external_call_records"
+                )
             ).mappings().one()
     finally:
         engine.dispose()
@@ -148,9 +186,14 @@ def test_valid_evaluation_is_saved_with_call_record_and_feedback(
     assert dict(call) == {
         "provider": "test-ai",
         "model": "test-ai-model",
-        "status": "SUCCESS",
+        "transport_status": "SUCCESS",
+        "validation_status": "VALID",
         "attempt_number": 1,
+        "request_snapshot": call["request_snapshot"],
     }
+    snapshot = json.loads(call["request_snapshot"])
+    assert snapshot["purpose"] == "AI_EVALUATION"
+    assert snapshot["transport"]["messages"][0]["content"]
 
 
 def test_schema_retry_exhaustion_requests_human_review_without_support_count(
@@ -171,7 +214,7 @@ def test_schema_retry_exhaustion_requests_human_review_without_support_count(
         }
     )
 
-    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+    def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
         return AIModelResponse("{\"choices\": []}", invalid_content, 8)
 
     monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
@@ -218,7 +261,7 @@ def test_need_human_evaluation_requests_review_and_keeps_self_explanation_open(
         }
     )
 
-    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+    def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
         return AIModelResponse("{\"choices\": []}", need_human_content, 8)
 
     monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
@@ -290,11 +333,11 @@ def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
             ],
         }
     )
-    prompts: list[str] = []
+    requests: list[ModelRequestSnapshot] = []
 
-    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
-        prompts.append(prompt)
-        content = invalid_content if len(prompts) == 1 else corrected_content
+    def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
+        requests.append(request)
+        content = invalid_content if len(requests) == 1 else corrected_content
         return AIModelResponse("{\"choices\": []}", content, 8)
 
     monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
@@ -316,9 +359,13 @@ def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
     assert saved_session["status"] == "IN_PROGRESS"
     assert saved_session["flowStage"] == "WAIT_GUIDED_ANSWERS"
     assert saved_session["latestEvaluation"]["nextAction"] == "ASK_FOCUSED_QUESTION"
-    assert len(prompts) == 2
-    assert "CORRECT | INCOMPLETE | ASK_FOCUSED_QUESTION" in prompts[1]
-    assert "不能作为本次确认文本的直接评价动作" in prompts[1]
+    assert len(requests) == 2
+    assert (
+        "CORRECT | INCOMPLETE | ASK_FOCUSED_QUESTION"
+        in requests[1].transport.messages[0].content
+    )
+    assert "不能作为本次确认文本的直接评价动作" in requests[1].transport.messages[0].content
+    assert requests[1].blocks.retry_context["validationErrors"]
 
     engine = create_engine(settings.database_url)
     try:
@@ -355,7 +402,7 @@ def test_complete_evaluation_sets_completion_with_deterministic_label(
         }
     )
 
-    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+    def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
         return AIModelResponse("{\"choices\": []}", completed_content, 8)
 
     monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
@@ -375,7 +422,7 @@ def test_transport_retry_exhaustion_requests_review_and_allows_another_explanati
 ) -> None:
     calls = 0
 
-    def fake_evaluate(self, prompt: str, schema: dict[str, object]) -> AIModelResponse:
+    def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
         nonlocal calls
         calls += 1
         if calls <= settings.ai_transport_max_retries + 1:
@@ -419,7 +466,10 @@ def test_transport_retry_exhaustion_requests_review_and_allows_another_explanati
                 text("SELECT COUNT(*) FROM explanation_attempts")
             ).scalar_one()
             error_count = connection.execute(
-                text("SELECT COUNT(*) FROM external_call_records WHERE status = 'ERROR'")
+                text(
+                    "SELECT COUNT(*) FROM external_call_records "
+                    "WHERE transport_status = 'ERROR'"
+                )
             ).scalar_one()
     finally:
         engine.dispose()

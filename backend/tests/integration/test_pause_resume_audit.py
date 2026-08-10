@@ -114,7 +114,7 @@ def test_audit_state_events_include_request_id(settings, monkeypatch):
     monkeypatch.setattr(
         AIModelClient,
         "evaluate",
-        lambda self, prompt, schema: AIModelResponse(
+        lambda self, request: AIModelResponse(
             '{"choices": []}',
             '{"correctness":"CORRECT","completeness":"COMPLETE",'
             '"coveredPoints":["正确计算加法","得出结果 2"],"missingPoints":[],'
@@ -142,7 +142,7 @@ def test_external_call_audit_includes_request_id(settings, monkeypatch):
     monkeypatch.setattr(
         AIModelClient,
         "evaluate",
-        lambda self, prompt, schema: AIModelResponse(
+        lambda self, request: AIModelResponse(
             '{"choices": []}',
             '{"correctness":"CORRECT","completeness":"COMPLETE",'
             '"coveredPoints":["正确计算加法","得出结果 2"],"missingPoints":[],'
@@ -173,7 +173,7 @@ def test_text_submission_trace_uses_v3_merged_event(settings, monkeypatch):
     monkeypatch.setattr(
         AIModelClient,
         "evaluate",
-        lambda self, prompt, schema: AIModelResponse(
+        lambda self, request: AIModelResponse(
             '{"choices": []}',
             '{"correctness":"CORRECT","completeness":"COMPLETE",'
             '"coveredPoints":["正确计算加法","得出结果 2"],"missingPoints":[],'
@@ -224,7 +224,7 @@ def test_support_trace_persists_request_and_transition_correlation(settings, mon
     monkeypatch.setattr(
         AIModelClient,
         "evaluate",
-        lambda self, prompt, schema: AIModelResponse(
+        lambda self, request: AIModelResponse(
             '{"choices": []}',
             '{"correctness":"CORRECT","completeness":"INCOMPLETE",'
             '"coveredPoints":["正确计算加法"],"missingPoints":["得出结果 2"],'
