@@ -75,6 +75,15 @@ def test_realtime_voice_transcript_returns_to_editable_draft_without_confirmatio
         return FakeRecognition(kwargs["event_queue"])
 
     def fake_evaluate(self, request) -> AIModelResponse:
+        if request.purpose == "AI_SUPPORT":
+            return AIModelResponse(
+                raw_response='{"choices": []}',
+                content=(
+                    '{"content":"请补充最后的结果。","questions":'
+                    '[{"id":"teaching-q1","question":"最后的结果是什么？"}]}'
+                ),
+                duration_ms=1,
+            )
         prompt = request.transport.messages[0].content
         assert '"confirmedText": "学生修改后的最终文本"' in prompt
         return AIModelResponse(
@@ -82,9 +91,7 @@ def test_realtime_voice_transcript_returns_to_editable_draft_without_confirmatio
             content=(
                 '{"correctness":"CORRECT","completeness":"INCOMPLETE",'
                 '"coveredPoints":["正确计算加法"],"missingPoints":["得出结果 2"],'
-                '"errorEvidence":[],"feedback":"请补充结果。","confidence":1,'
-                '"nextAction":"ASK_FOCUSED_QUESTION","needHumanReason":null,'
-                '"guidedQuestions":[{"id":"evaluation-q1","question":"结果是多少？"}]}'
+                '"errorEvidence":[],"confidence":1,"needHumanReason":null}'
             ),
             duration_ms=1,
         )

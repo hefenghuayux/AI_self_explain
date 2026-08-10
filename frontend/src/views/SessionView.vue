@@ -8,6 +8,7 @@ import {
   fetchLearningTimeline,
   fetchSession,
   requestSupport,
+  SessionApiError,
   submitAppeal,
   submitGuidedAnswers,
   submitInitialChoice,
@@ -320,6 +321,13 @@ async function submitExplanation() {
     await refreshTimeline()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
+    if (error instanceof SessionApiError && error.code === "TEACHING_GENERATION_FAILED") {
+      try {
+        await loadSessionData()
+      } catch (refreshError) {
+        console.error("教学生成失败后刷新会话失败", refreshError)
+      }
+    }
   } finally {
     submitting.value = false
   }

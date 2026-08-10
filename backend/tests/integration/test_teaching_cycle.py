@@ -45,7 +45,25 @@ def _create_session(client: TestClient) -> dict[str, object]:
 def _stub_ai(monkeypatch, evaluation: dict[str, object]) -> None:
     def fake_evaluate(self, request) -> AIModelResponse:
         prompt = request.transport.messages[0].content
-        if "子问题作答评估器" in prompt:
+        if request.purpose == "AI_EVALUATION":
+            content = {
+                key: evaluation[key]
+                for key in (
+                    "correctness",
+                    "completeness",
+                    "coveredPoints",
+                    "missingPoints",
+                    "errorEvidence",
+                    "confidence",
+                    "needHumanReason",
+                )
+            }
+        elif "instructionFromRules" in request.blocks.session_context:
+            content = {
+                "content": evaluation["feedback"],
+                "questions": evaluation["guidedQuestions"],
+            }
+        elif "子问题作答评估器" in prompt:
             content = {
                 "results": [
                     {"questionId": "q1", "result": "CORRECT"},

@@ -10,6 +10,33 @@ from alembic import command
 from app.services.ai_evaluation import AIModelClient, AIModelResponse
 
 
+def complete_ai_response(request) -> AIModelResponse:
+    return AIModelResponse(
+        '{"choices": []}',
+        '{"correctness":"CORRECT","completeness":"COMPLETE",'
+        '"coveredPoints":["正确计算加法","得出结果 2"],"missingPoints":[],'
+        '"errorEvidence":[],"confidence":1,"needHumanReason":null}',
+        1,
+    )
+
+
+def focused_ai_response(request) -> AIModelResponse:
+    if request.purpose == "AI_SUPPORT":
+        return AIModelResponse(
+            '{"choices": []}',
+            '{"content":"请补充最终结果。","questions":'
+            '[{"id":"teaching-q1","question":"最终结果是什么？"}]}',
+            1,
+        )
+    return AIModelResponse(
+        '{"choices": []}',
+        '{"correctness":"CORRECT","completeness":"INCOMPLETE",'
+        '"coveredPoints":["正确计算加法"],"missingPoints":["得出结果 2"],'
+        '"errorEvidence":[],"confidence":1,"needHumanReason":null}',
+        1,
+    )
+
+
 def question_payload() -> dict[str, object]:
     return {
         "questionContent": "计算 1 + 1。",
@@ -114,14 +141,7 @@ def test_audit_state_events_include_request_id(settings, monkeypatch):
     monkeypatch.setattr(
         AIModelClient,
         "evaluate",
-        lambda self, request: AIModelResponse(
-            '{"choices": []}',
-            '{"correctness":"CORRECT","completeness":"COMPLETE",'
-            '"coveredPoints":["正确计算加法","得出结果 2"],"missingPoints":[],'
-            '"errorEvidence":[],"feedback":"完成。","confidence":1,'
-            '"nextAction":"COMPLETE","needHumanReason":null,"guidedQuestions":[]}',
-            1,
-        ),
+        lambda self, request: complete_ai_response(request),
     )
     with prepare_client(settings, monkeypatch) as client:
         session = create_session(client)
@@ -142,14 +162,7 @@ def test_external_call_audit_includes_request_id(settings, monkeypatch):
     monkeypatch.setattr(
         AIModelClient,
         "evaluate",
-        lambda self, request: AIModelResponse(
-            '{"choices": []}',
-            '{"correctness":"CORRECT","completeness":"COMPLETE",'
-            '"coveredPoints":["正确计算加法","得出结果 2"],"missingPoints":[],'
-            '"errorEvidence":[],"feedback":"完成。","confidence":1,'
-            '"nextAction":"COMPLETE","needHumanReason":null,"guidedQuestions":[]}',
-            1,
-        ),
+        lambda self, request: complete_ai_response(request),
     )
     with prepare_client(settings, monkeypatch) as client:
         session = create_session(client)
@@ -173,14 +186,7 @@ def test_text_submission_trace_uses_v3_merged_event(settings, monkeypatch):
     monkeypatch.setattr(
         AIModelClient,
         "evaluate",
-        lambda self, request: AIModelResponse(
-            '{"choices": []}',
-            '{"correctness":"CORRECT","completeness":"COMPLETE",'
-            '"coveredPoints":["正确计算加法","得出结果 2"],"missingPoints":[],'
-            '"errorEvidence":[],"feedback":"完成。","confidence":1,'
-            '"nextAction":"COMPLETE","needHumanReason":null,"guidedQuestions":[]}',
-            1,
-        ),
+        lambda self, request: complete_ai_response(request),
     )
     with prepare_client(settings, monkeypatch) as client:
         session = create_session(client)
@@ -224,15 +230,7 @@ def test_support_trace_persists_request_and_transition_correlation(settings, mon
     monkeypatch.setattr(
         AIModelClient,
         "evaluate",
-        lambda self, request: AIModelResponse(
-            '{"choices": []}',
-            '{"correctness":"CORRECT","completeness":"INCOMPLETE",'
-            '"coveredPoints":["正确计算加法"],"missingPoints":["得出结果 2"],'
-            '"errorEvidence":[],"feedback":"请补充最终结果。","confidence":1,'
-            '"nextAction":"ASK_FOCUSED_QUESTION","needHumanReason":null,'
-            '"guidedQuestions":[{"id":"evaluation-q1","question":"最终结果是多少？"}]}',
-            1,
-        ),
+        lambda self, request: focused_ai_response(request),
     )
     with prepare_client(settings, monkeypatch) as client:
         session = create_session(client)
@@ -303,3 +301,16 @@ def test_unified_trace_is_json_and_exported_to_files(settings, monkeypatch):
     assert all("schemaVersion" not in envelope["event"] for envelope in envelopes)
     assert all("source" not in envelope["event"] for envelope in envelopes)
     assert "# 会话审计报告" in markdown_path.read_text(encoding="utf-8")
+
+
+def test_business_trace_endpoint_returns_deterministic_steps(settings, monkeypatch):
+    with prepare_client(settings, monkeypatch) as client:
+        session = create_session(client)
+        response = client.get(f"/api/sessions/{session['id']}/audit/business-trace")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sessionId"] == session["id"]
+    assert payload["steps"]
+    assert all(step["eventIds"] for step in payload["steps"])
+    assert all(step["events"] for step in payload["steps"])

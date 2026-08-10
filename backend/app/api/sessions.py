@@ -18,7 +18,7 @@ from app.core.auth import DatabaseSession, get_current_user
 from app.core.logging import bind_trace_context, new_correlation_id, reset_trace_context
 from app.models.question import Question
 from app.models.session import Session
-from app.repositories.sessions import SessionRepository
+from app.repositories.sessions import SessionRepository, SessionVersionConflict
 from app.rules.session_lifecycle import (
     FLOW_STAGE_CAPTURING_INPUT,
     FLOW_STAGE_SHOWING_FULL_SOLUTION,
@@ -32,7 +32,8 @@ from app.rules.session_lifecycle import (
     can_pause,
     can_submit_student_interruption,
 )
-from app.schemas.ai_evaluation import AIEvaluationResponse
+from app.rules.teaching_decision import decide_teaching
+from app.schemas.ai_evaluation import AIEvaluationOutput, AIEvaluationResponse
 from app.schemas.session import (
     AppealInput,
     CreateSessionInput,
@@ -44,15 +45,20 @@ from app.schemas.session import (
     SessionResponse,
     SolutionUnderstandingInput,
     StudentActionInput,
+    TeachingGenerationResponse,
+    TeachingNotRequiredResponse,
+    TeachingSucceededResponse,
     TextAttemptInput,
     VoiceInputTarget,
 )
 from app.schemas.support import GuidedAnswer, SupportEventResponse
 from app.services.ai_evaluation import AIEvaluationService
 from app.services.ai_support import AISupportService
+from app.services.ai_teaching import AITeachingError, AITeachingService
 from app.services.audio_storage import AudioStorage, AudioStorageError
 from app.services.audit_trace import AuditTraceService
 from app.services.realtime_asr import ASRServiceError, ASRStreamEvent, RealtimeASRService
+from app.services.teaching_context import TeachingContextService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -95,7 +101,11 @@ def validate_pauseable(session: Session) -> None:
         reject_operation(f"当前流程阶段不能暂停：{session.flow_stage}")
 
 
-def to_session_response(repository: SessionRepository, session: Session) -> SessionResponse:
+def to_session_response(
+    repository: SessionRepository,
+    session: Session,
+    teaching_generation: TeachingGenerationResponse | None = None,
+) -> SessionResponse:
     latest_support = repository.get_latest_valid_support(session.id)
     latest_evaluation = repository.get_latest_valid_evaluation(session.id)
     return SessionResponse.model_validate(session).model_copy(
@@ -110,6 +120,7 @@ def to_session_response(repository: SessionRepository, session: Session) -> Sess
                 if latest_support is not None
                 else None
             ),
+            "teaching_generation": teaching_generation,
         }
     )
 
@@ -214,7 +225,6 @@ def submit_text_attempt(
     repository = SessionRepository(database_session)
     session = get_session_or_404(repository, session_id)
     validate_in_progress(session)
-    validate_version(session, attempt_input.version)
     if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT:
         reject_operation(f"当前流程阶段不能提交文本：{session.flow_stage}")
     voice_attempt = None
@@ -225,17 +235,97 @@ def submit_text_attempt(
             attempt_input.voice_attempt_id,
             "SELF_EXPLANATION",
         )
-    session, attempt = repository.submit_text(
-        session,
-        attempt_input.confirmed_text,
-        voice_attempt=voice_attempt,
-    )
-    evaluated_session = AIEvaluationService(database_session, request.app.state.settings).evaluate(
-        question=database_session.get(Question, session.question_id),
+    try:
+        session, attempt = repository.submit_text(
+            session,
+            attempt_input.confirmed_text,
+            expected_version=attempt_input.version,
+            voice_attempt=voice_attempt,
+        )
+    except SessionVersionConflict as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "SESSION_VERSION_CONFLICT",
+                "message": "会话版本已变化，请刷新后重试",
+                "sessionId": session_id,
+            },
+        ) from error
+    question = database_session.get(Question, session.question_id)
+    if question is None:
+        raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
+    evaluation_result = AIEvaluationService(
+        database_session, request.app.state.settings
+    ).evaluate(
+        question=question,
         session=session,
         attempt=attempt,
     )
-    return to_session_response(repository, evaluated_session)
+    if isinstance(evaluation_result, Session):
+        return to_session_response(repository, evaluation_result)
+
+    evaluation_output = AIEvaluationOutput.model_validate(evaluation_result)
+    decision = decide_teaching(
+        evaluation=evaluation_output,
+        session=session,
+        settings=request.app.state.settings,
+    )
+    if not decision.should_generate:
+        decided_session, _ = repository.apply_teaching_decision(
+            session=session,
+            evaluation_id=evaluation_result.id,
+            decision=decision,
+            teaching_output=None,
+        )
+        return to_session_response(
+            repository,
+            decided_session,
+            TeachingNotRequiredResponse(status="NOT_REQUIRED"),
+        )
+
+    context = TeachingContextService(database_session).build(
+        question=question,
+        session=session,
+        attempt=attempt,
+        evaluation=evaluation_output,
+        decision=decision,
+    )
+    try:
+        teaching_output = AITeachingService(
+            database_session, request.app.state.settings
+        ).generate(session=session, context=context)
+    except AITeachingError as error:
+        repository.record_teaching_generation_failure(
+            session=session,
+            evaluation_id=evaluation_result.id,
+            decision=decision,
+        )
+        logger.error(
+            "教学生成失败：%s",
+            error,
+            extra={"operation": "generate_teaching", "sessionId": session.id},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "TEACHING_GENERATION_FAILED",
+                "message": "教学生成失败，会话已进入人工处理",
+                "sessionId": session.id,
+            },
+        ) from error
+    decided_session, support_event = repository.apply_teaching_decision(
+        session=session,
+        evaluation_id=evaluation_result.id,
+        decision=decision,
+        teaching_output=teaching_output,
+    )
+    if support_event is None:
+        raise RuntimeError("教学输出校验成功后缺少支持事件")
+    return to_session_response(
+        repository,
+        decided_session,
+        TeachingSucceededResponse(status="SUCCEEDED", support_event_id=support_event.id),
+    )
 
 
 @router.post("/{session_id}/continue", response_model=SessionResponse)

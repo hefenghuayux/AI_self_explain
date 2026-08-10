@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from alembic.config import Config
 from conftest import authenticated_test_client
 from fastapi.testclient import TestClient
@@ -51,11 +52,17 @@ def valid_evaluation_content() -> str:
             "coveredPoints": ["正确计算加法"],
             "missingPoints": ["得出结果 2"],
             "errorEvidence": [],
-            "feedback": "计算过程正确，请补充最后的结果。",
             "confidence": 1,
-            "nextAction": "ASK_FOCUSED_QUESTION",
             "needHumanReason": None,
-            "guidedQuestions": [{"id": "evaluation-q1", "question": "最后的结果是多少？"}],
+        }
+    )
+
+
+def focused_teaching_content() -> str:
+    return json.dumps(
+        {
+            "content": "计算过程正确，请补充最后的结果。",
+            "questions": [{"id": "teaching-q1", "question": "最后的结果是多少？"}],
         }
     )
 
@@ -139,10 +146,12 @@ def test_request_snapshot_migration_upgrade_and_downgrade(settings, monkeypatch)
         engine.dispose()
 
 
-def test_valid_evaluation_is_saved_with_call_record_and_feedback(
+def test_valid_evaluation_and_generated_teaching_are_saved(
     settings, monkeypatch
 ) -> None:
     def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
+        if request.purpose == "AI_SUPPORT":
+            return AIModelResponse("{\"choices\": []}", focused_teaching_content(), 10)
         prompt = request.transport.messages[0].content
         schema = request.blocks.question_context["outputSchema"]
         assert "正确计算加法" in schema["properties"]["coveredPoints"]["items"]["enum"]
@@ -158,10 +167,14 @@ def test_valid_evaluation_is_saved_with_call_record_and_feedback(
     saved_session = response.json()
     assert saved_session["status"] == "IN_PROGRESS"
     assert saved_session["flowStage"] == "WAIT_GUIDED_ANSWERS"
-    assert saved_session["latestEvaluation"]["feedback"] == "计算过程正确，请补充最后的结果。"
+    assert saved_session["latestEvaluation"]["correctness"] == "CORRECT"
     assert saved_session["latestSupport"]["guidedQuestions"] == [
-        {"id": "evaluation-q1", "question": "最后的结果是多少？"}
+        {"id": "teaching-q1", "question": "最后的结果是多少？"}
     ]
+    assert saved_session["teachingGeneration"] == {
+        "status": "SUCCEEDED",
+        "supportEventId": saved_session["latestSupport"]["id"],
+    }
 
     engine = create_engine(settings.database_url)
     try:
@@ -175,7 +188,8 @@ def test_valid_evaluation_is_saved_with_call_record_and_feedback(
             call = connection.execute(
                 text(
                     "SELECT provider, model, transport_status, validation_status, "
-                    "attempt_number, request_snapshot FROM external_call_records"
+                    "attempt_number, request_snapshot FROM external_call_records "
+                    "WHERE call_type = 'AI_EVALUATION'"
                 )
             ).mappings().one()
     finally:
@@ -250,14 +264,8 @@ def test_need_human_evaluation_requests_review_and_keeps_self_explanation_open(
             "coveredPoints": ["正确计算加法"],
             "missingPoints": ["得出结果 2"],
             "errorEvidence": [],
-            "feedback": (
-                "已申请人工复核。原因是当前表达无法确认计算结果的依据。"
-                "我暂时认为你可能已经掌握了加法过程，请继续说明如何得到最终结果。"
-            ),
             "confidence": 1,
-            "nextAction": "NEED_HUMAN",
             "needHumanReason": "无法可靠确认学生的计算依据。",
-            "guidedQuestions": [],
         }
     )
 
@@ -280,8 +288,8 @@ def test_need_human_evaluation_requests_review_and_keeps_self_explanation_open(
     assert saved_session["supportCountTotal"] == 0
     assert saved_session["coveredPointsCurrentRound"] == []
     assert saved_session["needHumanReason"] == "无法可靠确认学生的计算依据。"
-    assert saved_session["latestEvaluation"]["nextAction"] == "NEED_HUMAN"
-    assert "已申请人工复核" in saved_session["latestEvaluation"]["feedback"]
+    assert saved_session["latestEvaluation"]["correctness"] == "UNCERTAIN"
+    assert saved_session["teachingGeneration"] == {"status": "NOT_REQUIRED"}
     assert continued.status_code == 200
     assert continued.json()["flowStage"] == "CAPTURING_INPUT"
 
@@ -324,20 +332,26 @@ def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
                 "得到 P(2, 0) 和 P(-2, 0) 两个坐标。",
             ],
             "errorEvidence": [],
-            "feedback": "第三问中，点 P 在 x 轴上时，P 到原点的距离应如何表示？",
             "confidence": 1,
-            "nextAction": "ASK_FOCUSED_QUESTION",
             "needHumanReason": None,
-            "guidedQuestions": [
-                {"id": "evaluation-q1", "question": "点 P 到原点的距离应如何表示？"}
-            ],
         }
     )
     requests: list[ModelRequestSnapshot] = []
 
     def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
         requests.append(request)
-        content = invalid_content if len(requests) == 1 else corrected_content
+        if request.purpose == "AI_SUPPORT":
+            content = json.dumps(
+                {
+                    "content": "请再检查点 P 到原点的距离表示。",
+                    "questions": [
+                        {"id": "teaching-q1", "question": "点 P 到原点的距离如何表示？"}
+                    ],
+                }
+            )
+        else:
+            evaluation_requests = [item for item in requests if item.purpose == "AI_EVALUATION"]
+            content = invalid_content if len(evaluation_requests) == 1 else corrected_content
         return AIModelResponse("{\"choices\": []}", content, 8)
 
     monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
@@ -358,29 +372,26 @@ def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
     saved_session = response.json()
     assert saved_session["status"] == "IN_PROGRESS"
     assert saved_session["flowStage"] == "WAIT_GUIDED_ANSWERS"
-    assert saved_session["latestEvaluation"]["nextAction"] == "ASK_FOCUSED_QUESTION"
-    assert len(requests) == 2
+    evaluation_requests = [item for item in requests if item.purpose == "AI_EVALUATION"]
+    assert len(evaluation_requests) == 2
     assert (
-        "CORRECT | INCOMPLETE | ASK_FOCUSED_QUESTION"
-        in requests[1].transport.messages[0].content
+        "Extra inputs are not permitted" in evaluation_requests[1].transport.messages[0].content
     )
-    assert "不能作为本次确认文本的直接评价动作" in requests[1].transport.messages[0].content
-    assert requests[1].blocks.retry_context["validationErrors"]
+    assert evaluation_requests[1].blocks.retry_context["validationErrors"]
 
     engine = create_engine(settings.database_url)
     try:
         with engine.connect() as connection:
             evaluations = connection.execute(
                 text(
-                    "SELECT validation_status, next_action FROM ai_evaluations "
-                    "ORDER BY id"
+                    "SELECT validation_status FROM ai_evaluations ORDER BY id"
                 )
             ).mappings().all()
     finally:
         engine.dispose()
     assert [dict(evaluation) for evaluation in evaluations] == [
-        {"validation_status": "INVALID", "next_action": "GIVE_HINT"},
-        {"validation_status": "VALID", "next_action": "ASK_FOCUSED_QUESTION"},
+        {"validation_status": "INVALID"},
+        {"validation_status": "VALID"},
     ]
 
 
@@ -394,11 +405,8 @@ def test_complete_evaluation_sets_completion_with_deterministic_label(
             "coveredPoints": ["正确计算加法", "得出结果 2"],
             "missingPoints": [],
             "errorEvidence": [],
-            "feedback": "你的讲解正确且完整。",
             "confidence": 1,
-            "nextAction": "COMPLETE",
             "needHumanReason": None,
-            "guidedQuestions": [],
         }
     )
 
@@ -415,6 +423,7 @@ def test_complete_evaluation_sets_completion_with_deterministic_label(
     assert saved_session["completionType"] == "INDEPENDENT"
     assert saved_session["supportCountRound"] == 0
     assert saved_session["supportCountTotal"] == 0
+    assert saved_session["teachingGeneration"] == {"status": "NOT_REQUIRED"}
 
 
 def test_transport_retry_exhaustion_requests_review_and_allows_another_explanation(
@@ -424,6 +433,8 @@ def test_transport_retry_exhaustion_requests_review_and_allows_another_explanati
 
     def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
         nonlocal calls
+        if request.purpose == "AI_SUPPORT":
+            return AIModelResponse("{\"choices\": []}", focused_teaching_content(), 9)
         calls += 1
         if calls <= settings.ai_transport_max_retries + 1:
             raise AITransportError(
@@ -475,3 +486,65 @@ def test_transport_retry_exhaustion_requests_review_and_allows_another_explanati
         engine.dispose()
     assert attempt_count == 2
     assert error_count == settings.ai_transport_max_retries + 1
+
+
+@pytest.mark.parametrize("failure_kind", ["transport", "validation"])
+def test_teaching_failure_keeps_evaluation_without_support_side_effects(
+    settings, monkeypatch, failure_kind: str
+) -> None:
+    def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
+        if request.purpose == "AI_EVALUATION":
+            return AIModelResponse("{\"choices\": []}", valid_evaluation_content(), 8)
+        if failure_kind == "transport":
+            raise AITransportError(
+                error_type="AI_SERVICE_ERROR",
+                message="供应商教学服务不可用",
+                duration_ms=5,
+            )
+        return AIModelResponse(
+            "{\"choices\": []}",
+            '{"content":"无效教学输出","questions":[],"action":"COMPLETE"}',
+            8,
+        )
+
+    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
+    with prepare_client(settings, monkeypatch) as client:
+        started = create_started_session(client)
+        response = submit_text(client, started)
+        current = client.get(f"/api/sessions/{started['id']}")
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": {
+            "code": "TEACHING_GENERATION_FAILED",
+            "message": "教学生成失败，会话已进入人工处理",
+            "sessionId": started["id"],
+        }
+    }
+    assert "供应商" not in response.text
+    assert current.status_code == 200
+    assert current.json()["status"] == "NEED_HUMAN"
+    assert current.json()["flowStage"] == "WAIT_STUDENT_ACTION"
+    assert current.json()["coveredPointsCurrentRound"] == ["正确计算加法"]
+    assert current.json()["supportCountRound"] == 0
+    assert current.json()["supportCountTotal"] == 0
+    assert current.json()["latestEvaluation"]["correctness"] == "CORRECT"
+    assert current.json()["latestSupport"] is None
+    assert current.json()["teachingGeneration"] is None
+
+    engine = create_engine(settings.database_url)
+    try:
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT COUNT(*) FROM ai_evaluations")).scalar_one() == 1
+            assert connection.execute(text("SELECT COUNT(*) FROM support_events")).scalar_one() == 0
+            failure_event = connection.execute(
+                text(
+                    "SELECT related_evaluation_id, related_support_event_id "
+                    "FROM state_transition_events "
+                    "WHERE trigger_type = 'TEACHING_GENERATION_FAILED'"
+                )
+            ).mappings().one()
+    finally:
+        engine.dispose()
+    assert failure_event["related_evaluation_id"] is not None
+    assert failure_event["related_support_event_id"] is None

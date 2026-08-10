@@ -53,20 +53,23 @@ def test_timeline_persists_visible_feedback_and_hides_structured_details(
     settings, monkeypatch
 ) -> None:
     def fake_evaluate(self, request) -> AIModelResponse:
+        if request.purpose == "AI_SUPPORT":
+            return AIModelResponse(
+                "{\"choices\": []}",
+                json.dumps({"content": "请重新检查你得出的结果。", "questions": []}),
+                8,
+            )
         return AIModelResponse(
             "{\"choices\": []}",
             json.dumps(
                 {
                     "correctness": "WRONG",
                         "completeness": "COMPLETE",
-                        "coveredPoints": ["正确计算加法", "得出结果 2"],
-                        "missingPoints": [],
+                    "coveredPoints": ["正确计算加法", "得出结果 2"],
+                    "missingPoints": [],
                     "errorEvidence": [],
-                    "feedback": "请重新检查你得出的结果。",
                     "confidence": 1,
-                        "nextAction": "GIVE_CORRECTION",
-                        "needHumanReason": None,
-                        "guidedQuestions": [],
+                    "needHumanReason": None,
                 }
             ),
             8,

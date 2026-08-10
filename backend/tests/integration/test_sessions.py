@@ -5,24 +5,35 @@ import pytest
 from alembic.config import Config
 from conftest import authenticated_test_client
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, func, inspect, select, text
+from sqlalchemy.orm import Session as OrmSession
 
 from alembic import command
 from app.core.config import Settings
+from app.models.explanation_attempt import ExplanationAttempt
+from app.models.session import Session
+from app.repositories.sessions import SessionRepository, SessionVersionConflict
 from app.services.ai_evaluation import AIModelClient, AIModelResponse
 
 
 @pytest.fixture(autouse=True)
 def stub_ai_evaluation(monkeypatch) -> None:
     def fake_evaluate(self, request) -> AIModelResponse:
+        if request.purpose == "AI_SUPPORT":
+            return AIModelResponse(
+                raw_response='{"choices": []}',
+                content=(
+                    '{"content":"请补充最后的结果。","questions":'
+                    '[{"id":"teaching-q1","question":"最后的结果是什么？"}]}'
+                ),
+                duration_ms=1,
+            )
         return AIModelResponse(
             raw_response='{"choices": []}',
             content=(
                 '{"correctness":"CORRECT","completeness":"INCOMPLETE",'
                 '"coveredPoints":["正确计算加法"],"missingPoints":["得出结果 2"],'
-                '"errorEvidence":[],"feedback":"请补充结果。","confidence":1,'
-                '"nextAction":"ASK_FOCUSED_QUESTION","needHumanReason":null,'
-                '"guidedQuestions":[{"id":"evaluation-q1","question":"结果是多少？"}]}'
+                '"errorEvidence":[],"confidence":1,"needHumanReason":null}'
             ),
             duration_ms=1,
         )
@@ -142,7 +153,12 @@ def test_know_choice_opens_text_input_and_text_is_saved(settings: Settings, monk
     submitted = submit_response.json()
     assert submitted["flowStage"] == "WAIT_GUIDED_ANSWERS"
     assert submitted["version"] == 3
-    assert submitted["latestEvaluation"]["feedback"] == "请补充结果。"
+    assert submitted["latestEvaluation"]["correctness"] == "CORRECT"
+    assert submitted["latestSupport"]["supportType"] == "ASK_FOCUSED_QUESTION"
+    assert submitted["teachingGeneration"] == {
+        "status": "SUCCEEDED",
+        "supportEventId": submitted["latestSupport"]["id"],
+    }
 
     engine = create_engine(settings.database_url)
     try:
@@ -214,6 +230,51 @@ def test_blank_text_does_not_create_attempt_or_change_stage(
     finally:
         engine.dispose()
     assert count == 0
+
+
+def test_text_submission_uses_atomic_version_compare_and_swap(
+    settings: Settings, monkeypatch
+) -> None:
+    with prepare_client(settings, monkeypatch) as client:
+        created = create_session(client, create_question(client))
+        chosen = client.post(
+            f"/api/sessions/{created['id']}/initial-choice",
+            json={"choice": "KNOW", "version": created["version"]},
+        ).json()
+
+    engine = create_engine(settings.database_url)
+    try:
+        with (
+            OrmSession(engine) as first_database_session,
+            OrmSession(engine) as stale_database_session,
+        ):
+            first_session = first_database_session.get(Session, created["id"])
+            stale_session = stale_database_session.get(Session, created["id"])
+            assert first_session is not None
+            assert stale_session is not None
+
+            SessionRepository(first_database_session).submit_text(
+                first_session,
+                "第一次确认文本",
+                expected_version=chosen["version"],
+            )
+            with pytest.raises(SessionVersionConflict):
+                SessionRepository(stale_database_session).submit_text(
+                    stale_session,
+                    "并发重复文本",
+                    expected_version=chosen["version"],
+                )
+
+        with OrmSession(engine) as database_session:
+            attempt_count = database_session.scalar(
+                select(func.count()).select_from(ExplanationAttempt)
+            )
+            saved_session = database_session.get(Session, created["id"])
+            assert attempt_count == 1
+            assert saved_session is not None
+            assert saved_session.current_draft == "第一次确认文本"
+    finally:
+        engine.dispose()
 
 
 def test_illegal_stage_and_duplicate_operation_are_rejected(

@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session as DatabaseSession
 
 from app.core.config import Settings
@@ -32,9 +32,11 @@ from app.rules.teaching_cycle import (
     support_limit_reached,
     update_coverage,
 )
+from app.rules.teaching_decision import TeachingDecision
 from app.schemas.ai_evaluation import AIEvaluationOutput
 from app.schemas.model_request_snapshot import ModelRequestSnapshot
 from app.schemas.support import GuidedAnswer, GuidedQuestion
+from app.schemas.teaching import TeachingOutput
 from app.services.audio_storage import AudioCapture, AudioStorage
 
 HUMAN_REVIEW_TRIGGER_TYPES = frozenset(
@@ -48,6 +50,10 @@ HUMAN_REVIEW_TRIGGER_TYPES = frozenset(
         "DID_NOT_UNDERSTAND_FIRST_SOLUTION",
     }
 )
+
+
+class SessionVersionConflict(RuntimeError):
+    pass
 
 
 def session_snapshot(session: Session) -> dict[str, object]:
@@ -259,18 +265,28 @@ class SessionRepository:
         )
         for evaluation in evaluations:
             support = supports_by_evaluation_id.get(evaluation.id)
+            if support is not None:
+                content = support.content
+                action = support.support_type
+            elif evaluation.correctness == "CORRECT" and evaluation.completeness == "COMPLETE":
+                content = "回答正确且完整。"
+                action = "COMPLETE"
+            elif evaluation.correctness == "UNCERTAIN":
+                content = "本次评价需要人工复核。"
+                action = "NEED_HUMAN"
+            else:
+                content = "本次自讲评价已完成。"
+                action = None
             timeline.append(
                 {
                     "id": f"evaluation-{evaluation.id}",
                     "event_type": "EVALUATION",
                     "speaker": "AI",
                     "submission_type": None,
-                    "content": evaluation.feedback,
+                    "content": content,
                     "correctness": evaluation.correctness,
                     "completeness": evaluation.completeness,
-                    "action": (
-                        support.support_type if support is not None else evaluation.next_action
-                    ),
+                    "action": action,
                     "created_at": evaluation.created_at,
                 }
             )
@@ -375,9 +391,30 @@ class SessionRepository:
         self,
         session: Session,
         confirmed_text: str,
+        expected_version: int,
         voice_attempt: ExplanationAttempt | None = None,
     ) -> tuple[Session, ExplanationAttempt]:
         before_snapshot = session_snapshot(session)
+        result = self.database_session.execute(
+            update(Session)
+            .where(
+                Session.id == session.id,
+                Session.version == expected_version,
+                Session.status == STATUS_IN_PROGRESS,
+                Session.flow_stage == FLOW_STAGE_CAPTURING_INPUT,
+            )
+            .values(
+                current_draft=confirmed_text,
+                last_support_draft=confirmed_text,
+                flow_stage=FLOW_STAGE_AI_EVALUATING,
+                version=Session.version + 1,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            self.database_session.rollback()
+            raise SessionVersionConflict(f"会话 {session.id} 版本已变化")
+        self.database_session.refresh(session)
         if voice_attempt is None:
             attempt = ExplanationAttempt(
                 session_id=session.id,
@@ -403,10 +440,6 @@ class SessionRepository:
                 "round": session.round,
             },
         )
-        session.current_draft = confirmed_text
-        session.last_support_draft = confirmed_text
-        session.flow_stage = FLOW_STAGE_AI_EVALUATING
-        session.version += 1
         self._record_transition(
             session=session,
             trigger_type=(
@@ -419,6 +452,111 @@ class SessionRepository:
         self.database_session.refresh(session)
         self.database_session.refresh(attempt)
         return session, attempt
+
+    def apply_teaching_decision(
+        self,
+        *,
+        session: Session,
+        evaluation_id: int,
+        decision: TeachingDecision,
+        teaching_output: TeachingOutput | None,
+    ) -> tuple[Session, SupportEvent | None]:
+        if decision.should_generate != (teaching_output is not None):
+            raise ValueError("教学决策与生成结果不一致")
+        before_snapshot = session_snapshot(session)
+        session.covered_points_current_round = decision.coverage.current_round
+        session.covered_points_all = decision.coverage.all_rounds
+        session.no_progress_count = decision.coverage.no_progress_count
+        if decision.coverage.reset_help_request_count:
+            session.no_progress_help_request_count = 0
+
+        support_event = None
+        if teaching_output is not None:
+            if decision.allowed_action is None:
+                raise ValueError("教学生成结果缺少后端允许动作")
+            questions = [GuidedQuestion.model_validate(item) for item in teaching_output.questions]
+            support_event = SupportEvent(
+                session_id=session.id,
+                request_id=current_request_id(),
+                evaluation_id=evaluation_id,
+                support_type=decision.allowed_action,
+                round=session.round,
+                status="VALID",
+                content=teaching_output.content,
+                support_kind="GUIDED_QUESTIONS" if questions else "EVALUATION",
+                main_draft=session.current_draft,
+                doubt_text=None,
+                guided_questions=[item.model_dump() for item in questions] or None,
+                guided_answers=None,
+                follow_up_content=None,
+            )
+            self.database_session.add(support_event)
+            self.database_session.flush()
+            if decision.allowed_action in COUNTED_SUPPORT_TYPES:
+                session.support_count_round += 1
+                session.support_count_total += 1
+            session.flow_stage = (
+                FLOW_STAGE_WAIT_GUIDED_ANSWERS if questions else FLOW_STAGE_WAIT_STUDENT_ACTION
+            )
+            session.need_human_reason = None
+        else:
+            if decision.next_status is not None:
+                session.status = decision.next_status
+            if decision.next_flow_stage is not None:
+                session.flow_stage = decision.next_flow_stage
+            session.completion_type = decision.completion_type
+            session.need_human_reason = decision.need_human_reason
+            if decision.expose_solution:
+                session.solution_exposed = True
+            if decision.support_count_round_override is not None:
+                session.support_count_round = decision.support_count_round_override
+            session.finished_at = (
+                datetime.now(UTC) if session.status in {"COMPLETED", "STOPPED_LIMIT"} else None
+            )
+
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="APPLY_AI_EVALUATION",
+            before_snapshot=before_snapshot,
+            related_evaluation_id=evaluation_id,
+            related_support_event_id=(support_event.id if support_event is not None else None),
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        if support_event is not None:
+            self.database_session.refresh(support_event)
+        return session, support_event
+
+    def record_teaching_generation_failure(
+        self,
+        *,
+        session: Session,
+        evaluation_id: int,
+        decision: TeachingDecision,
+    ) -> Session:
+        if not decision.should_generate:
+            raise ValueError("无需生成教学内容的决策不能记录生成失败")
+        before_snapshot = session_snapshot(session)
+        session.covered_points_current_round = decision.coverage.current_round
+        session.covered_points_all = decision.coverage.all_rounds
+        session.no_progress_count = decision.coverage.no_progress_count
+        if decision.coverage.reset_help_request_count:
+            session.no_progress_help_request_count = 0
+        session.status = STATUS_NEED_HUMAN
+        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+        session.need_human_reason = "教学生成失败，会话已进入人工处理"
+        session.finished_at = datetime.now(UTC)
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="TEACHING_GENERATION_FAILED",
+            before_snapshot=before_snapshot,
+            related_evaluation_id=evaluation_id,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
 
     def complete_voice_transcription(
         self,

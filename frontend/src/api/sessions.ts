@@ -1,6 +1,24 @@
 import type { GuidedAnswer, InitialChoice, LearningTimelineItem, Session } from "../types/session"
 import { getAuthToken } from "../stores/auth"
 
+interface SessionApiErrorDetail {
+  code?: string
+  message?: string
+  sessionId?: number
+}
+
+export class SessionApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+    readonly sessionId?: number,
+  ) {
+    super(message)
+    this.name = "SessionApiError"
+  }
+}
+
 export async function requestSessionApi<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: {
@@ -10,11 +28,29 @@ export async function requestSessionApi<T>(path: string, options?: RequestInit):
     ...options,
   })
   if (!response.ok) {
-    const responseBody = (await response.json()) as { detail?: string | Array<{ msg: string }> }
-    const detail = Array.isArray(responseBody.detail)
-      ? responseBody.detail.map((item) => item.msg).join("；")
-      : responseBody.detail
-    throw new Error(`会话操作失败：${detail ?? `HTTP ${response.status}`}`)
+    const responseBody = (await response.json()) as {
+      detail?: string | Array<{ msg: string }> | SessionApiErrorDetail
+    }
+    let detailMessage: string
+    let detailCode: string | undefined
+    let detailSessionId: number | undefined
+    if (Array.isArray(responseBody.detail)) {
+      detailMessage = responseBody.detail.map((item) => item.msg).join("；")
+    } else if (typeof responseBody.detail === "string") {
+      detailMessage = responseBody.detail
+    } else if (responseBody.detail && typeof responseBody.detail === "object") {
+      detailMessage = responseBody.detail.message ?? `HTTP ${response.status}`
+      detailCode = responseBody.detail.code
+      detailSessionId = responseBody.detail.sessionId
+    } else {
+      detailMessage = `HTTP ${response.status}`
+    }
+    throw new SessionApiError(
+      `会话操作失败：${detailMessage}`,
+      response.status,
+      detailCode,
+      detailSessionId,
+    )
   }
   return (await response.json()) as T
 }

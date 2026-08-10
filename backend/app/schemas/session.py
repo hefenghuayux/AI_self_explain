@@ -99,6 +99,18 @@ class LearningTimelineItemResponse(QuestionSchema):
     created_at: datetime
 
 
+class TeachingNotRequiredResponse(QuestionSchema):
+    status: Literal["NOT_REQUIRED"]
+
+
+class TeachingSucceededResponse(QuestionSchema):
+    status: Literal["SUCCEEDED"]
+    support_event_id: int
+
+
+TeachingGenerationResponse = TeachingNotRequiredResponse | TeachingSucceededResponse
+
+
 class SessionResponse(QuestionSchema):
     id: int
     question_id: int
@@ -123,3 +135,4 @@ class SessionResponse(QuestionSchema):
     finished_at: datetime | None
     latest_evaluation: AIEvaluationResponse | None = None
     latest_support: SupportEventResponse | None = None
+    teaching_generation: TeachingGenerationResponse | None = None

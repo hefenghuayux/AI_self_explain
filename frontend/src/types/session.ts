@@ -91,4 +91,8 @@ export interface Session {
   needHumanReason: string | null
   latestEvaluation: AIEvaluation | null
   latestSupport: SupportEvent | null
+  teachingGeneration:
+    | { status: "NOT_REQUIRED" }
+    | { status: "SUCCEEDED"; supportEventId: number }
+    | null
 }

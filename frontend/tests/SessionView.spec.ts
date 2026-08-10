@@ -11,6 +11,16 @@ import type { Session } from "../src/types/session"
 
 vi.mock("../src/api/questions", () => ({ fetchQuestion: vi.fn() }))
 vi.mock("../src/api/sessions", () => ({
+  SessionApiError: class SessionApiError extends Error {
+    constructor(
+      message: string,
+      readonly status: number,
+      readonly code?: string,
+      readonly sessionId?: number,
+    ) {
+      super(message)
+    }
+  },
   askDoubt: vi.fn(),
   continueExplaining: vi.fn(),
   fetchLearningTimeline: vi.fn(),
@@ -55,6 +65,7 @@ function createSession(overrides: Partial<Session> = {}): Session {
     needHumanReason: null,
     latestEvaluation: null,
     latestSupport: null,
+    teachingGeneration: null,
     ...overrides,
   }
 }
@@ -263,9 +274,7 @@ describe("SessionView", () => {
         coveredPoints: [],
         missingPoints: ["正确计算加法"],
         errorEvidence: [],
-        feedback: "请检查。",
         confidence: 1,
-        nextAction: "CORRECT_AND_ASK",
         needHumanReason: null,
         promptVersion: "v1",
         modelProvider: "test",
@@ -341,9 +350,7 @@ describe("SessionView", () => {
         coveredPoints: [],
         missingPoints: ["正确计算加法"],
         errorEvidence: [],
-        feedback: "请检查。",
         confidence: 1,
-        nextAction: "CORRECT_AND_ASK",
         needHumanReason: null,
         promptVersion: "v1",
         modelProvider: "test",
@@ -398,6 +405,34 @@ describe("SessionView", () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="question-content"]').text()).toBe("计算 1 + 1。")
+  })
+
+  it("reloads the persisted human-review state after teaching generation fails", async () => {
+    fetchSession
+      .mockResolvedValueOnce(createSession({ flowStage: "CAPTURING_INPUT", version: 2 }))
+      .mockResolvedValueOnce(createSession({
+        status: "NEED_HUMAN",
+        flowStage: "WAIT_STUDENT_ACTION",
+        version: 4,
+        needHumanReason: "教学生成失败，会话已进入人工处理",
+      }))
+    submitTextAttempt.mockRejectedValue(
+      new sessionApi.SessionApiError(
+        "会话操作失败：教学生成失败，会话已进入人工处理",
+        502,
+        "TEACHING_GENERATION_FAILED",
+        12,
+      ),
+    )
+    const wrapper = await mountSessionView()
+
+    await wrapper.get('[data-testid="main-draft"]').setValue("我先说明当前思路。")
+    await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
+    await flushPromises()
+
+    expect(fetchSession).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain("教学生成失败，会话已进入人工处理")
+    expect(wrapper.text()).toContain("需要人工处理")
   })
 
   it("renders student submissions and AI replies in the self-explanation record", async () => {
