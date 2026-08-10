@@ -15,7 +15,7 @@ describe("AuditTraceView", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          schemaVersion: "1.0",
+          schemaVersion: "2.0",
           sessionId: 42,
           generatedAt: "2026-08-10T10:00:00Z",
           summary: {
@@ -28,14 +28,14 @@ describe("AuditTraceView", () => {
           },
           events: [
             {
-              schemaVersion: "1.0",
+              schemaVersion: "2.0",
               eventId: "state-transition-1",
               sequence: 1,
               occurredAt: "2026-08-10T10:00:00Z",
               eventName: "session.created",
               severity: "INFO",
               source: {},
-              correlation: { sessionId: 42, requestId: null, traceId: "session-42", spanId: "state-transition-1", parentSpanId: null },
+              correlation: { sessionId: 42, requestId: null },
               operation: {},
               result: { status: "SUCCESS", durationMs: null, errorType: null, errorMessage: null },
               data: {},
@@ -43,14 +43,14 @@ describe("AuditTraceView", () => {
               privacy: { redactedFields: [] },
             },
             {
-              schemaVersion: "1.0",
+              schemaVersion: "2.0",
               eventId: "state-transition-2",
               sequence: 2,
               occurredAt: "2026-08-10T10:01:00Z",
               eventName: "state.transitioned",
               severity: "INFO",
               source: {},
-              correlation: { sessionId: 42, requestId: "request-1", traceId: "request-1", spanId: "state-transition-2", parentSpanId: null },
+              correlation: { sessionId: 42, requestId: "request-1" },
               operation: {},
               result: { status: "SUCCESS", durationMs: null, errorType: null, errorMessage: null },
               data: {},

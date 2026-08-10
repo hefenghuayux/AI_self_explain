@@ -36,9 +36,6 @@ class ExternalCallRecordResponse(QuestionSchema):
 class TraceCorrelationResponse(QuestionSchema):
     session_id: int
     request_id: str | None
-    trace_id: str
-    span_id: str
-    parent_span_id: str | None
 
 
 class TraceResultResponse(QuestionSchema):

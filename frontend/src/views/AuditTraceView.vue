@@ -105,10 +105,8 @@ onMounted(loadTrace)
             <span>#{{ event.sequence }} {{ event.eventName }}</span>
             <span>{{ event.result.status }} · {{ new Date(event.occurredAt).toLocaleString("zh-CN", { hour12: false }) }}</span>
           </summary>
-          <div class="event-meta">
-            <span>Trace: {{ event.correlation.traceId }}</span>
-            <span>Span: {{ event.correlation.spanId }}</span>
-            <span v-if="event.result.durationMs !== null">耗时: {{ event.result.durationMs }} ms</span>
+          <div v-if="event.result.durationMs !== null" class="event-meta">
+            <span>耗时: {{ event.result.durationMs }} ms</span>
           </div>
           <pre>{{ eventJson(event) }}</pre>
         </details>

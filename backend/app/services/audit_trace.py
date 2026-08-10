@@ -24,7 +24,7 @@ from app.schemas.audit import (
     TraceResultResponse,
 )
 
-TRACE_SCHEMA_VERSION = "1.0"
+TRACE_SCHEMA_VERSION = "2.0"
 _export_lock = threading.Lock()
 
 
@@ -374,7 +374,6 @@ class AuditTraceService:
         severity: str = "INFO",
         redacted_fields: list[str] | None = None,
     ) -> TraceEventResponse:
-        trace_id = request_id or f"session-{session_id}"
         # SQLite 返回的 DateTime 可能丢失时区信息；数据库默认时间按 UTC 保存，
         # 这里统一补齐并转换为 UTC，确保接口序列化后带有 `Z`，前端不会误当成本地时间。
         if occurred_at.tzinfo is None:
@@ -392,9 +391,6 @@ class AuditTraceService:
             correlation=TraceCorrelationResponse(
                 session_id=session_id,
                 request_id=request_id,
-                trace_id=trace_id,
-                span_id=event_id,
-                parent_span_id=None,
             ),
             operation=operation,
             result=result,
@@ -448,13 +444,13 @@ class AuditTraceService:
             "",
             "## 执行链路",
             "",
-            "| 序号 | 时间 | 事件 | 状态 | Trace ID |",
-            "| ---: | --- | --- | --- | --- |",
+            "| 序号 | 时间 | 事件 | 状态 |",
+            "| ---: | --- | --- | --- |",
         ]
         for event in trace.events:
             lines.append(
                 f"| {event.sequence} | {event.occurred_at.isoformat()} | "
-                f"{event.event_name} | {event.result.status} | {event.correlation.trace_id} |"
+                f"{event.event_name} | {event.result.status} |"
             )
         lines.extend(["", "## 事件明细", ""])
         for event in trace.events:

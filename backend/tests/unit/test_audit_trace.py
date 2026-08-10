@@ -25,5 +25,9 @@ def test_event_serializes_naive_database_timestamp_as_utc() -> None:
         references={},
     )
 
+    payload = event.model_dump(mode="json", by_alias=True)
+
     assert event.occurred_at == datetime(2026, 8, 10, 3, 12, 39, tzinfo=UTC)
-    assert event.model_dump(mode="json", by_alias=True)["occurredAt"] == "2026-08-10T03:12:39Z"
+    assert payload["schemaVersion"] == "2.0"
+    assert payload["occurredAt"] == "2026-08-10T03:12:39Z"
+    assert payload["correlation"] == {"sessionId": 15, "requestId": "request-1"}

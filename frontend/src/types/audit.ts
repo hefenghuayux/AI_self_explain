@@ -1,9 +1,6 @@
 export interface TraceCorrelation {
   sessionId: number
   requestId: string | null
-  traceId: string
-  spanId: string
-  parentSpanId: string | null
 }
 
 export interface TraceResult {
