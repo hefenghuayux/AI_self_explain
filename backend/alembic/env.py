@@ -1,6 +1,6 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import Connection, engine_from_config, pool
 
 from alembic import context
 from app.core.config import Settings
@@ -14,6 +14,21 @@ if config.config_file_name is not None:
 settings = Settings()
 config.set_main_option("sqlalchemy.url", settings.database_url)
 target_metadata = Base.metadata
+
+
+def prepare_sqlite_migration_connection(connection: Connection) -> None:
+    connection.exec_driver_sql("PRAGMA foreign_keys = ON")
+    foreign_keys_enabled = connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one()
+    if foreign_keys_enabled != 1:
+        raise RuntimeError("Alembic SQLite 连接未能启用外键约束")
+
+    violations = connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+    if violations:
+        details = "; ".join(str(tuple(row)) for row in violations)
+        raise RuntimeError(f"数据库存在外键违规，停止迁移：{details}")
+
+    # 结束 PRAGMA 查询触发的隐式事务，确保后续迁移从清晰事务边界开始。
+    connection.commit()
 
 
 def run_migrations_offline() -> None:
@@ -36,6 +51,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        prepare_sqlite_migration_connection(connection)
         context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():

@@ -1,15 +1,19 @@
+import sqlite3
 from pathlib import Path
+from typing import Any
 
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, event, text
 
 from app.core.config import Settings
 
 
 def create_database_engine(settings: Settings) -> Engine:
-    return create_engine(
+    engine = create_engine(
         settings.database_url,
         connect_args={"timeout": settings.database_busy_timeout_seconds},
     )
+    event.listen(engine, "connect", _enable_sqlite_foreign_keys)
+    return engine
 
 
 def prepare_runtime_directories(settings: Settings) -> None:
@@ -24,6 +28,17 @@ def prepare_runtime_directories(settings: Settings) -> None:
 def check_database_connection(engine: Engine) -> None:
     with engine.connect() as connection:
         connection.execute(text("SELECT 1"))
+
+
+def _enable_sqlite_foreign_keys(
+    dbapi_connection: sqlite3.Connection,
+    _connection_record: Any,
+) -> None:
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys = ON")
+    finally:
+        cursor.close()
 
 
 def _sqlite_database_path(database_url: str) -> Path | None:
