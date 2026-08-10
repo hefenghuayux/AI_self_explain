@@ -289,9 +289,7 @@ class AuditTraceService:
                 ("coveredPoints", record.covered_points),
                 ("missingPoints", record.missing_points),
                 ("errorEvidence", record.error_evidence),
-                ("feedback", record.feedback),
                 ("confidence", record.confidence),
-                ("nextAction", record.next_action),
                 ("needHumanReason", record.need_human_reason),
             ):
                 if value is not None:

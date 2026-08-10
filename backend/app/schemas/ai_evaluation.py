@@ -4,18 +4,9 @@ from typing import Literal
 from pydantic import ConfigDict, field_validator
 
 from app.schemas.question import QuestionSchema, RequiredText, to_camel_case
-from app.schemas.support import GuidedQuestion
 
 Correctness = Literal["CORRECT", "WRONG", "UNCERTAIN"]
 Completeness = Literal["COMPLETE", "INCOMPLETE"]
-NextAction = Literal[
-    "COMPLETE",
-    "ASK_FOCUSED_QUESTION",
-    "GIVE_CORRECTION",
-    "CORRECT_AND_ASK",
-    "GIVE_HINT",
-    "NEED_HUMAN",
-]
 
 
 class ErrorEvidence(QuestionSchema):
@@ -45,11 +36,8 @@ class AIEvaluationOutput(QuestionSchema):
     covered_points: list[RequiredText]
     missing_points: list[RequiredText]
     error_evidence: list[ErrorEvidence]
-    feedback: RequiredText
     confidence: Literal[1]
-    next_action: NextAction
     need_human_reason: RequiredText | None
-    guided_questions: list[GuidedQuestion]
 
 
 class AIEvaluationResponse(QuestionSchema):
@@ -59,9 +47,7 @@ class AIEvaluationResponse(QuestionSchema):
     covered_points: list[str]
     missing_points: list[str]
     error_evidence: list[ErrorEvidence]
-    feedback: str
     confidence: float
-    next_action: NextAction
     need_human_reason: str | None
     prompt_version: str
     model_provider: str
@@ -104,33 +90,11 @@ def validate_evaluation_relationships(
     if covered_points | missing_points != expected_points:
         errors.append("coveredPoints 与 missingPoints 必须完整覆盖题目评分点")
 
-    if evaluation.next_action == "NEED_HUMAN":
+    if evaluation.correctness == "UNCERTAIN":
         if evaluation.need_human_reason is None:
-            errors.append("nextAction 为 NEED_HUMAN 时 needHumanReason 必填")
+            errors.append("correctness 为 UNCERTAIN 时 needHumanReason 必填")
     elif evaluation.need_human_reason is not None:
-        errors.append("nextAction 不是 NEED_HUMAN 时 needHumanReason 必须为空")
-
-    required_actions = {
-        ("CORRECT", "COMPLETE"): "COMPLETE",
-        ("CORRECT", "INCOMPLETE"): "ASK_FOCUSED_QUESTION",
-        ("WRONG", "COMPLETE"): "GIVE_CORRECTION",
-        ("WRONG", "INCOMPLETE"): "CORRECT_AND_ASK",
-        ("UNCERTAIN", "COMPLETE"): "NEED_HUMAN",
-        ("UNCERTAIN", "INCOMPLETE"): "NEED_HUMAN",
-    }
-    required_action = required_actions[(evaluation.correctness, evaluation.completeness)]
-    if evaluation.next_action != "NEED_HUMAN" and evaluation.next_action != required_action:
-        errors.append(
-            "correctness、completeness 与 nextAction 组合不符合评价状态转换表"
-        )
-    if evaluation.correctness == "UNCERTAIN" and evaluation.next_action != "NEED_HUMAN":
-        errors.append("correctness 为 UNCERTAIN 时 nextAction 必须为 NEED_HUMAN")
-
-    if evaluation.next_action in {"ASK_FOCUSED_QUESTION", "CORRECT_AND_ASK"}:
-        if len(evaluation.guided_questions) != 1:
-            errors.append("聚焦追问和纠错后追问必须恰好包含一个 guidedQuestions 子问题")
-    elif evaluation.guided_questions:
-        errors.append("非追问动作的 guidedQuestions 必须为空列表")
+        errors.append("correctness 不是 UNCERTAIN 时 needHumanReason 必须为空")
 
     for evidence in evaluation.error_evidence:
         if evidence.quote not in confirmed_text:

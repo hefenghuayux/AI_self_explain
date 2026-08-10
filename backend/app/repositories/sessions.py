@@ -20,7 +20,6 @@ from app.rules.session_lifecycle import (
     FLOW_STAGE_WAIT_GUIDED_ANSWERS,
     FLOW_STAGE_WAIT_INITIAL_CHOICE,
     FLOW_STAGE_WAIT_STUDENT_ACTION,
-    STATUS_COMPLETED,
     STATUS_IN_PROGRESS,
     STATUS_NEED_HUMAN,
     STATUS_PAUSED,
@@ -29,7 +28,6 @@ from app.rules.session_lifecycle import (
 )
 from app.rules.teaching_cycle import (
     COUNTED_SUPPORT_TYPES,
-    decide_evaluation,
     support_limit_for,
     support_limit_reached,
     update_coverage,
@@ -573,7 +571,7 @@ class SessionRepository:
         self.database_session.refresh(saved_evaluation)
         return saved_evaluation
 
-    def apply_valid_evaluation(
+    def record_valid_evaluation(
         self,
         *,
         session: Session,
@@ -584,9 +582,7 @@ class SessionRepository:
         prompt_version: str,
         model_provider: str,
         model_name: str,
-        settings: Settings,
-    ) -> Session:
-        before_snapshot = session_snapshot(session)
+    ) -> AIEvaluation:
         saved_evaluation = self._create_evaluation(
             session=session,
             attempt=attempt,
@@ -599,80 +595,9 @@ class SessionRepository:
             model_provider=model_provider,
             model_name=model_name,
         )
-        self.database_session.flush()
-        if evaluation.next_action != "NEED_HUMAN":
-            new_points = set(evaluation.covered_points) - set(session.covered_points_current_round)
-            (
-                session.covered_points_current_round,
-                session.covered_points_all,
-                session.no_progress_count,
-            ) = update_coverage(
-                covered_points=evaluation.covered_points,
-                covered_points_current_round=session.covered_points_current_round,
-                covered_points_all=session.covered_points_all,
-                no_progress_count=session.no_progress_count,
-            )
-            if new_points:
-                session.no_progress_help_request_count = 0
-        decision = decide_evaluation(
-            next_action=evaluation.next_action,
-            no_progress_count=session.no_progress_count,
-            settings=settings,
-            solution_exposed=session.solution_exposed,
-            round_number=session.round,
-            support_count_total=session.support_count_total,
-            need_human_reason=evaluation.need_human_reason,
-        )
-        if decision.next_status is not None:
-            session.status = decision.next_status
-        if decision.next_flow_stage is not None:
-            session.flow_stage = decision.next_flow_stage
-        if decision.completion_type is not None:
-            session.completion_type = decision.completion_type
-        if decision.need_human_reason is not None:
-            session.need_human_reason = decision.need_human_reason
-        support_event: SupportEvent | None = None
-        if decision.action == "ASK_FOCUSED_QUESTION":
-            support_event = self._record_evaluation_guided_questions(
-                session=session,
-                support_type=decision.action,
-                content=evaluation.feedback,
-                evaluation_id=saved_evaluation.id,
-                guided_questions=evaluation.guided_questions,
-            )
-        elif decision.action in COUNTED_SUPPORT_TYPES:
-            support_event = self._apply_support(
-                session=session,
-                support_type=decision.action,
-                content=evaluation.feedback,
-                evaluation_id=saved_evaluation.id,
-                settings=settings,
-                guided_questions=(
-                    evaluation.guided_questions if decision.action == "CORRECT_AND_ASK" else None
-                ),
-            )
-        if support_event is not None:
-            self.database_session.flush()
-        if session.status in {STATUS_COMPLETED, STATUS_STOPPED_LIMIT}:
-            session.finished_at = datetime.now(UTC)
-        if session.flow_stage == FLOW_STAGE_AI_EVALUATING:
-            session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
-        session.version += 1
-        self._record_transition(
-            session=session,
-            trigger_type=(
-                "AI_REQUESTED_HUMAN_REVIEW"
-                if decision.action == "NEED_HUMAN"
-                else "APPLY_AI_EVALUATION"
-            ),
-            before_snapshot=before_snapshot,
-            related_attempt_id=attempt.id,
-            related_evaluation_id=saved_evaluation.id,
-            related_support_event_id=support_event.id if support_event is not None else None,
-        )
         self.database_session.commit()
-        self.database_session.refresh(session)
-        return session
+        self.database_session.refresh(saved_evaluation)
+        return saved_evaluation
 
     def begin_support_generation(self, session: Session, trigger_type: str) -> Session:
         before_snapshot = session_snapshot(session)
@@ -1161,9 +1086,7 @@ class SessionRepository:
             error_evidence=[item.model_dump() for item in evaluation.error_evidence]
             if evaluation is not None
             else None,
-            feedback=evaluation.feedback if evaluation is not None else None,
             confidence=float(evaluation.confidence) if evaluation is not None else None,
-            next_action=evaluation.next_action if evaluation is not None else None,
             need_human_reason=evaluation.need_human_reason if evaluation is not None else None,
             prompt_version=prompt_version,
             model_provider=model_provider,

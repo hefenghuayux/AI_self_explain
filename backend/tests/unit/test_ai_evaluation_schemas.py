@@ -17,11 +17,8 @@ def valid_payload() -> dict[str, object]:
         "coveredPoints": ["正确计算加法"],
         "missingPoints": ["得出结果 2"],
         "errorEvidence": [],
-        "feedback": "你已经说明了计算过程，请补充最后的结果。",
         "confidence": 1,
-        "nextAction": "ASK_FOCUSED_QUESTION",
         "needHumanReason": None,
-        "guidedQuestions": [{"id": "evaluation-q1", "question": "最后的结果是多少？"}],
     }
 
 
@@ -37,7 +34,7 @@ def test_evaluation_schema_uses_the_original_rubric_points_as_dynamic_enum() -> 
 def test_evaluation_schema_rejects_missing_fields_and_unknown_enum() -> None:
     payload = valid_payload()
     payload["correctness"] = "UNKNOWN"
-    del payload["feedback"]
+    del payload["confidence"]
 
     with pytest.raises(ValidationError):
         AIEvaluationOutput.model_validate_json(json.dumps(payload))
@@ -48,15 +45,12 @@ def test_evaluation_schema_rejects_missing_fields_and_unknown_enum() -> None:
     [
         ({"coveredPoints": ["未知评分点"], "missingPoints": ["得出结果 2"]}, "完整覆盖"),
         ({"coveredPoints": ["正确计算加法"], "missingPoints": ["正确计算加法"]}, "不能重叠"),
-        ({"nextAction": "GIVE_HINT"}, "组合不符合"),
-        ({"nextAction": "NEED_HUMAN", "needHumanReason": None}, "needHumanReason 必填"),
-        ({"guidedQuestions": []}, "必须恰好包含一个"),
+        ({"correctness": "UNCERTAIN", "needHumanReason": None}, "needHumanReason 必填"),
+        ({"needHumanReason": "不确定"}, "必须为空"),
         (
             {
                 "correctness": "WRONG",
                 "completeness": "COMPLETE",
-                "nextAction": "GIVE_CORRECTION",
-                "guidedQuestions": [],
                 "errorEvidence": [
                     {
                         "quote": "不存在的原文",
@@ -84,3 +78,12 @@ def test_evaluation_relationship_validation_rejects_invalid_output(
     )
 
     assert any(expected_error in error for error in errors)
+
+
+@pytest.mark.parametrize("field", ["feedback", "nextAction", "guidedQuestions"])
+def test_evaluation_schema_rejects_removed_teaching_fields(field: str) -> None:
+    payload = valid_payload()
+    payload[field] = "不应存在"
+
+    with pytest.raises(ValidationError):
+        AIEvaluationOutput.model_validate(payload)

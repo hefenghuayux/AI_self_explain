@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session as DatabaseSession
 
 from app.core.config import Settings
+from app.models.ai_evaluation import AIEvaluation
 from app.models.explanation_attempt import ExplanationAttempt
 from app.models.question import Question
 from app.models.session import Session
@@ -123,7 +124,7 @@ class AIEvaluationService:
         question: Question,
         session: Session,
         attempt: ExplanationAttempt,
-    ) -> Session:
+    ) -> AIEvaluation | None:
         schema = evaluation_json_schema(question.rubric_points)
         validation_errors: list[str] = []
         external_attempt_number = 0
@@ -182,7 +183,7 @@ class AIEvaluationService:
 
             if evaluation is None:
                 raise RuntimeError("AI 评价校验完成后缺少评价结果")
-            return self.repository.apply_valid_evaluation(
+            return self.repository.record_valid_evaluation(
                 session=session,
                 attempt=attempt,
                 evaluation=evaluation,
@@ -191,7 +192,6 @@ class AIEvaluationService:
                 prompt_version=self.settings.prompt_version,
                 model_provider=self.settings.ai_provider,
                 model_name=self.settings.ai_model,
-                settings=self.settings,
             )
         raise RuntimeError("AI 结构化评价循环未产生结果")
 
@@ -256,9 +256,6 @@ def _render_prompt(
         "layeredHints": question.layered_hints,
         "guidedQuestions": question.guided_questions,
         "fullSolution": question.full_solution,
-        "round": session.round,
-        "supportCountRound": session.support_count_round,
-        "coveredPointsCurrentRound": session.covered_points_current_round,
         "confirmedText": attempt.confirmed_text,
     }
     return (

@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from app.schemas.ai_evaluation import AIEvaluationResponse, Completeness, Correctness, NextAction
+from app.schemas.ai_evaluation import AIEvaluationResponse, Completeness, Correctness
 from app.schemas.question import QuestionSchema, RequiredText
 from app.schemas.support import GuidedAnswer, SupportEventResponse
 
@@ -84,6 +84,7 @@ TimelineSupportType = Literal[
     "GIVE_CORRECTION",
     "CORRECT_AND_ASK",
 ]
+TimelineAction = Literal["COMPLETE", "NEED_HUMAN"] | TimelineSupportType
 
 
 class LearningTimelineItemResponse(QuestionSchema):
@@ -94,7 +95,7 @@ class LearningTimelineItemResponse(QuestionSchema):
     content: str
     correctness: Correctness | None
     completeness: Completeness | None
-    action: NextAction | TimelineSupportType | None
+    action: TimelineAction | None
     created_at: datetime
 
 

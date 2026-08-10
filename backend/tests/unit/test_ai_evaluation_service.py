@@ -1,6 +1,9 @@
 import json
 
-from app.services.ai_evaluation import AIModelClient
+from app.models.explanation_attempt import ExplanationAttempt
+from app.models.question import Question
+from app.models.session import Session
+from app.services.ai_evaluation import AIModelClient, _render_prompt
 
 
 def test_ai_model_client_uses_configured_chat_completions_protocol(settings, monkeypatch) -> None:
@@ -43,3 +46,37 @@ def test_ai_model_client_uses_configured_chat_completions_protocol(settings, mon
     assert request_json["model"] == settings.ai_model
     assert request_json["response_format"] == {"type": "json_object"}
     assert json.loads(response.raw_response)["choices"]
+
+
+def test_evaluation_prompt_excludes_session_state_and_teaching_fields() -> None:
+    question = Question(
+        question_content="1+1 等于多少？",
+        standard_answer="2",
+        rubric_points=["正确计算加法"],
+        common_errors=[],
+        alternative_solutions=[],
+        layered_hints=[],
+        guided_questions=[],
+        full_solution="1+1=2",
+    )
+    session = Session(
+        round=2,
+        support_count_round=3,
+        covered_points_current_round=["不应进入评价上下文"],
+    )
+    attempt = ExplanationAttempt(confirmed_text="两个一相加等于二。")
+
+    prompt = _render_prompt(
+        question=question,
+        session=session,
+        attempt=attempt,
+        schema={"type": "object"},
+        validation_errors=[],
+    )
+
+    assert '"confirmedText": "两个一相加等于二。"' in prompt
+    assert '"round"' not in prompt
+    assert '"supportCountRound"' not in prompt
+    assert '"coveredPointsCurrentRound"' not in prompt
+    assert "nextAction" not in prompt
+    assert "guidedQuestions`" not in prompt

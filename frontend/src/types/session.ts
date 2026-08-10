@@ -26,15 +26,7 @@ export interface AIEvaluation {
   coveredPoints: string[]
   missingPoints: string[]
   errorEvidence: ErrorEvidence[]
-  feedback: string
   confidence: number
-  nextAction:
-    | "COMPLETE"
-    | "ASK_FOCUSED_QUESTION"
-    | "GIVE_CORRECTION"
-    | "CORRECT_AND_ASK"
-    | "GIVE_HINT"
-    | "NEED_HUMAN"
   needHumanReason: string | null
   promptVersion: string
   modelProvider: string
@@ -75,7 +67,7 @@ export interface LearningTimelineItem {
   content: string
   correctness: AIEvaluation["correctness"] | null
   completeness: AIEvaluation["completeness"] | null
-  action: AIEvaluation["nextAction"] | SupportEvent["supportType"] | null
+  action: "COMPLETE" | "NEED_HUMAN" | SupportEvent["supportType"] | null
   createdAt: string
 }
 
