@@ -74,7 +74,7 @@ class RequestContextFilter(logging.Filter):
 class CompactTextFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         timestamp = self.formatTime(record, "%Y-%m-%d %H:%M:%S")
-        event_name = getattr(record, "eventName", record.name)
+        event_name = getattr(record, "eventName", "runtime.log")
         fields = [timestamp, f"{record.levelname:<5}", str(event_name)]
         for field_name in (
             "method",
