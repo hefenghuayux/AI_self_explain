@@ -166,3 +166,33 @@ def test_external_call_audit_includes_request_id(settings, monkeypatch):
     assert response.status_code == 200
     assert audit.status_code == 200
     assert audit.json()[0]["requestId"] == "ai-request"
+
+
+def test_unified_trace_is_json_and_exported_to_files(settings, monkeypatch):
+    with prepare_client(settings, monkeypatch) as client:
+        session = create_session(client)
+        pause = client.post(
+            f"/api/sessions/{session['id']}/pause",
+            json={"version": session["version"]},
+            headers={"X-Request-ID": "trace-request"},
+        )
+        trace = client.get(f"/api/sessions/{session['id']}/audit/trace")
+        export = client.post(f"/api/sessions/{session['id']}/audit/export")
+
+    assert pause.status_code == 200
+    assert trace.status_code == 200
+    trace_body = trace.json()
+    assert trace_body["sessionId"] == session["id"]
+    assert trace_body["summary"]["eventCount"] >= 2
+    assert {item["eventName"] for item in trace_body["events"]} >= {
+        "session.created",
+        "state.transitioned",
+    }
+    assert export.status_code == 200
+    export_body = export.json()
+    jsonl_path = Path(export_body["jsonlPath"])
+    markdown_path = Path(export_body["markdownPath"])
+    assert jsonl_path.exists()
+    assert markdown_path.exists()
+    assert len(jsonl_path.read_text(encoding="utf-8").splitlines()) >= 2
+    assert "# 会话审计报告" in markdown_path.read_text(encoding="utf-8")

@@ -1,7 +1,7 @@
 import type { GuidedAnswer, InitialChoice, LearningTimelineItem, Session } from "../types/session"
 import { getAuthToken } from "../stores/auth"
 
-async function requestSessionApi<T>(path: string, options?: RequestInit): Promise<T> {
+export async function requestSessionApi<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: {
       "Content-Type": "application/json",

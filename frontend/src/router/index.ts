@@ -6,6 +6,7 @@ import QuestionDetailView from "../views/QuestionDetailView.vue"
 import QuestionFormView from "../views/QuestionFormView.vue"
 import QuestionListView from "../views/QuestionListView.vue"
 import RegisterView from "../views/RegisterView.vue"
+import AuditTraceView from "../views/AuditTraceView.vue"
 import SessionView from "../views/SessionView.vue"
 
 const router = createRouter({
@@ -24,6 +25,7 @@ const router = createRouter({
     },
     { path: "/questions/:questionId", name: "question-detail", component: QuestionDetailView, meta: { teacherOnly: true } },
     { path: "/sessions/:sessionId", name: "session", component: SessionView },
+    { path: "/sessions/:sessionId/audit", name: "session-audit", component: AuditTraceView, meta: { teacherOnly: true } },
   ],
 })
 

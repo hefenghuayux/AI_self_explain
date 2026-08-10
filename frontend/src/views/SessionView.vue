@@ -16,6 +16,7 @@ import {
 } from "../api/sessions"
 import VoiceRecorder from "../components/VoiceRecorder.vue"
 import { fetchQuestion } from "../api/questions"
+import { authUser } from "../stores/auth"
 import type {
   AIEvaluation,
   InitialChoice,
@@ -536,7 +537,10 @@ async function respondToSolution(understood: boolean) {
       <template #header>
         <div class="page-header">
           <div><p class="eyebrow">SELF EXPLANATION</p><h1>开始自讲</h1></div>
-          <RouterLink v-if="session" to="/"><el-button>返回题目列表</el-button></RouterLink>
+          <div class="page-actions">
+            <RouterLink v-if="session && authUser?.role === 'TEACHER'" :to="`/sessions/${session.id}/audit`"><el-button>查看全链路</el-button></RouterLink>
+            <RouterLink v-if="session" to="/"><el-button>返回题目列表</el-button></RouterLink>
+          </div>
         </div>
       </template>
       <div v-if="errorMessage" class="error-state">

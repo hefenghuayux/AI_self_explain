@@ -4,7 +4,7 @@ import logging
 import pytest
 
 from app.core.config import Settings
-from app.core.logging import configure_logging
+from app.core.logging import bind_trace_context, configure_logging, reset_trace_context
 
 
 def test_logging_outputs_json_without_api_keys(
@@ -31,3 +31,25 @@ def test_logging_writes_rotating_file(tmp_path) -> None:
     assert log_file.exists()
     record = json.loads(log_file.read_text(encoding="utf-8").splitlines()[-1])
     assert record["message"] == "轮转文件测试"
+
+
+def test_logging_includes_trace_context(capsys: pytest.CaptureFixture[str]) -> None:
+    configure_logging()
+    tokens = bind_trace_context(
+        request_id="request-1",
+        trace_id="trace-1",
+        span_id="span-1",
+        parent_span_id="span-parent",
+        session_id=42,
+    )
+    try:
+        logging.getLogger("test").info("链路上下文测试")
+    finally:
+        reset_trace_context(tokens)
+
+    record = json.loads(capsys.readouterr().out)
+    assert record["requestId"] == "request-1"
+    assert record["traceId"] == "trace-1"
+    assert record["spanId"] == "span-1"
+    assert record["parentSpanId"] == "span-parent"
+    assert record["sessionId"] == 42

@@ -15,6 +15,7 @@ from fastapi import (
 )
 
 from app.core.auth import DatabaseSession, get_current_user
+from app.core.logging import bind_trace_context, new_correlation_id, reset_trace_context
 from app.models.question import Question
 from app.models.session import Session
 from app.repositories.sessions import SessionRepository
@@ -50,6 +51,7 @@ from app.schemas.support import GuidedAnswer, SupportEventResponse
 from app.services.ai_evaluation import AIEvaluationService
 from app.services.ai_support import AISupportService
 from app.services.audio_storage import AudioStorage, AudioStorageError
+from app.services.audit_trace import AuditTraceService
 from app.services.realtime_asr import ASRServiceError, ASRStreamEvent, RealtimeASRService
 
 logger = logging.getLogger(__name__)
@@ -114,7 +116,7 @@ def to_session_response(repository: SessionRepository, session: Session) -> Sess
 
 @router.post("", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 def create_session(
-    session_input: CreateSessionInput, database_session: DatabaseSession
+    session_input: CreateSessionInput, request: Request, database_session: DatabaseSession
 ) -> SessionResponse:
     question = database_session.get(Question, session_input.question_id)
     if question is None:
@@ -125,7 +127,11 @@ def create_session(
     if question.archived_at is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已归档题目不能创建会话")
     repository = SessionRepository(database_session)
-    return to_session_response(repository, repository.create(session_input.question_id))
+    created_session = repository.create(session_input.question_id)
+    AuditTraceService(
+        database_session, request.app.state.settings.audit_export_dir
+    ).export_session(created_session.id)
+    return to_session_response(repository, created_session)
 
 
 def get_voice_attempt_for_submission(
@@ -552,6 +558,14 @@ async def stream_voice_input(
     requested_protocols = websocket.headers.get("Sec-WebSocket-Protocol", "")
     await websocket.accept(subprotocol="bearer" if requested_protocols else None)
     database_session = websocket.app.state.database_session_factory()
+    request_id = websocket.headers.get("X-Request-ID") or new_correlation_id()
+    trace_id = websocket.headers.get("X-Trace-ID") or request_id
+    trace_tokens = bind_trace_context(
+        request_id=request_id,
+        trace_id=trace_id,
+        span_id=new_correlation_id(),
+        session_id=session_id,
+    )
     capture = None
     service: RealtimeASRService | None = None
     try:
@@ -780,6 +794,16 @@ async def stream_voice_input(
                 await asyncio.to_thread(service.stop)
             except ASRServiceError:
                 logger.exception("关闭实时 ASR 失败", extra={"operation": "close_realtime_asr"})
+        try:
+            AuditTraceService(
+                database_session, websocket.app.state.settings.audit_export_dir
+            ).export_session(session_id)
+        except Exception:
+            logger.exception(
+                "会话审计导出失败",
+                extra={"eventName": "audit.export_failed", "operation": "audit_export"},
+            )
+        reset_trace_context(trace_tokens)
         database_session.close()
 
 

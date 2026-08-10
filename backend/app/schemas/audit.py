@@ -31,3 +31,58 @@ class ExternalCallRecordResponse(QuestionSchema):
     raw_response: str | None
     request_id: str | None
     created_at: datetime
+
+
+class TraceCorrelationResponse(QuestionSchema):
+    session_id: int
+    request_id: str | None
+    trace_id: str
+    span_id: str
+    parent_span_id: str | None
+
+
+class TraceResultResponse(QuestionSchema):
+    status: str
+    duration_ms: int | None
+    error_type: str | None
+    error_message: str | None
+
+
+class TraceEventResponse(QuestionSchema):
+    schema_version: str
+    event_id: str
+    sequence: int
+    occurred_at: datetime
+    event_name: str
+    severity: str
+    source: dict[str, object]
+    correlation: TraceCorrelationResponse
+    operation: dict[str, object]
+    result: TraceResultResponse
+    data: dict[str, object]
+    references: dict[str, object]
+    privacy: dict[str, object]
+
+
+class SessionTraceSummaryResponse(QuestionSchema):
+    status: str
+    flow_stage: str
+    round: int
+    event_count: int
+    error_count: int
+    external_call_count: int
+
+
+class SessionTraceResponse(QuestionSchema):
+    schema_version: str
+    session_id: int
+    generated_at: datetime
+    summary: SessionTraceSummaryResponse
+    events: list[TraceEventResponse]
+
+
+class AuditExportResponse(QuestionSchema):
+    session_id: int
+    jsonl_path: str
+    markdown_path: str
+    event_count: int

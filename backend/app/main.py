@@ -1,4 +1,6 @@
 import logging
+import re
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -13,8 +15,17 @@ from app.api.questions import router as questions_router
 from app.api.sessions import router as sessions_router
 from app.core.config import Settings
 from app.core.database import create_database_engine, prepare_runtime_directories
-from app.core.logging import configure_logging, new_request_id, request_id_context
+from app.core.logging import (
+    bind_trace_context,
+    configure_logging,
+    new_correlation_id,
+    reset_trace_context,
+)
+from app.services.audit_trace import AuditTraceService
 from app.services.realtime_asr import configure_dashscope
+
+SESSION_PATH_PATTERN = re.compile(r"^/api/sessions/(?P<session_id>\d+)(?:/|$)")
+MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -46,13 +57,58 @@ def create_app(settings: Settings) -> FastAPI:
 
     @application.middleware("http")
     async def request_context_middleware(request: Request, call_next) -> Response:
-        request_id = request.headers.get("X-Request-ID") or new_request_id()
-        token = request_id_context.set(request_id)
+        request_id = request.headers.get("X-Request-ID") or new_correlation_id()
+        trace_id = request.headers.get("X-Trace-ID") or request_id
+        session_match = SESSION_PATH_PATTERN.match(request.url.path)
+        session_id = int(session_match.group("session_id")) if session_match else None
+        tokens = bind_trace_context(
+            request_id=request_id,
+            trace_id=trace_id,
+            span_id=new_correlation_id(),
+            session_id=session_id,
+        )
+        started_at = time.perf_counter()
         try:
             response = await call_next(request)
+        except Exception:
+            logger.exception(
+                "请求处理失败",
+                extra={"eventName": "request.failed", "operation": "http_request"},
+            )
+            raise
         finally:
-            request_id_context.reset(token)
-        response.headers["X-Request-ID"] = request_id
+            if session_id is not None and request.method in MUTATING_METHODS:
+                try:
+                    database_session = application.state.database_session_factory()
+                    try:
+                        AuditTraceService(
+                            database_session,
+                            application.state.settings.audit_export_dir,
+                        ).export_session(session_id)
+                    finally:
+                        database_session.close()
+                except Exception:
+                    logger.exception(
+                        "会话审计导出失败",
+                        extra={
+                            "eventName": "audit.export_failed",
+                            "operation": "audit_export",
+                        },
+                    )
+            if "response" in locals():
+                elapsed_ms = round((time.perf_counter() - started_at) * 1000)
+                response.headers["X-Request-ID"] = request_id
+                response.headers["X-Trace-ID"] = trace_id
+                logger.info(
+                    "请求处理完成",
+                    extra={
+                        "eventName": "request.completed",
+                        "operation": "http_request",
+                        "durationMs": elapsed_ms,
+                        "statusCode": response.status_code,
+                    },
+                )
+            reset_trace_context(tokens)
         return response
 
     return application
