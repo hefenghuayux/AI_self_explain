@@ -41,15 +41,17 @@ def get_external_call_errors(session_id: int, database_session: DatabaseSession)
     return repository.get_external_call_errors(session_id)
 
 
-@router.get("/{session_id}/audit/trace", response_model=SessionTraceResponse)
+@router.get(
+    "/{session_id}/audit/trace",
+    response_model=SessionTraceResponse,
+    response_model_exclude_none=True,
+)
 def get_session_trace(
     session_id: int, request: Request, database_session: DatabaseSession
 ) -> SessionTraceResponse:
     require_session(SessionRepository(database_session), session_id)
     service = AuditTraceService(database_session, request.app.state.settings.audit_export_dir)
-    trace = service.build_session_trace(session_id)
-    service.export_session(session_id)
-    return trace
+    return service.build_session_trace(session_id)
 
 
 @router.post("/{session_id}/audit/export", response_model=AuditExportResponse)

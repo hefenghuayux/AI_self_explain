@@ -116,12 +116,14 @@ const businessGroups = computed<TraceGroup[]>(() => {
     const operation = operationName(event)
     if (event.eventName === "session.created" || operation === "SELECT_INITIAL_CHOICE") {
       groups[0].events.push(event)
-    } else if (event.eventName === "student.input.submitted") {
+    } else if (
+      event.eventName === "student.explanation.submitted" ||
+      event.eventName === "student.input.submitted"
+    ) {
       groups[1].events.push(event)
     } else if (
       [
-        "student.input.confirmed",
-        "voice.capture.completed",
+        "voice.transcription.completed",
         "audio.persisted",
       ].includes(event.eventName) ||
       event.eventName.startsWith("asr.call.") ||
@@ -260,7 +262,7 @@ onMounted(loadTrace)
               </summary>
               <div class="event-meta">
                 <span v-if="event.correlation.requestId">requestId: {{ event.correlation.requestId }}</span>
-                <span v-if="event.result.durationMs !== null">耗时: {{ event.result.durationMs }} ms</span>
+                <span v-if="typeof event.result.durationMs === 'number'">耗时: {{ event.result.durationMs }} ms</span>
               </div>
               <pre>{{ eventJson(event) }}</pre>
             </details>
@@ -273,7 +275,7 @@ onMounted(loadTrace)
                 </summary>
                 <div class="event-meta">
                   <span v-if="event.correlation.requestId">requestId: {{ event.correlation.requestId }}</span>
-                  <span v-if="event.result.durationMs !== null">耗时: {{ event.result.durationMs }} ms</span>
+                  <span v-if="typeof event.result.durationMs === 'number'">耗时: {{ event.result.durationMs }} ms</span>
                 </div>
                 <pre>{{ eventJson(event) }}</pre>
               </details>
@@ -304,7 +306,7 @@ onMounted(loadTrace)
                 <span>{{ event.result.status }} · {{ eventTime(event.occurredAt) }}</span>
               </summary>
               <div class="event-meta">
-                <span v-if="event.result.durationMs !== null">耗时: {{ event.result.durationMs }} ms</span>
+                <span v-if="typeof event.result.durationMs === 'number'">耗时: {{ event.result.durationMs }} ms</span>
               </div>
               <pre>{{ eventJson(event) }}</pre>
             </details>

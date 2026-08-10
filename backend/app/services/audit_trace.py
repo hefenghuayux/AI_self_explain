@@ -20,11 +20,15 @@ from app.schemas.audit import (
     SessionTraceResponse,
     SessionTraceSummaryResponse,
     TraceCorrelationResponse,
+    TraceErrorResponse,
     TraceEventResponse,
+    TraceExportEnvelope,
+    TraceProducerResponse,
     TraceResultResponse,
 )
 
-TRACE_SCHEMA_VERSION = "2.0"
+TRACE_SCHEMA_VERSION = "3.0"
+TRACE_PRODUCER = TraceProducerResponse(service="ai-self-explain-backend", version="0.1.0")
 _export_lock = threading.Lock()
 
 
@@ -61,13 +65,29 @@ class AuditTraceService:
             for attempt in attempts
             if attempt.audio_file_id is not None
         }
+        attempts_by_id = {attempt.id: attempt for attempt in attempts}
+        submitted_self_explanation_attempt_ids = {
+            attempt_id
+            for submission in submissions
+            if submission.submission_type == "SELF_EXPLANATION"
+            and isinstance((attempt_id := submission.context.get("attemptId")), int)
+        }
 
         events: list[TraceEventResponse] = []
         events.extend(self._state_events(session_id, state_events))
         events.extend(self._external_call_events(session_id, external_calls))
-        events.extend(self._attempt_events(session_id, attempts, attempt_request_ids))
+        events.extend(
+            self._attempt_events(
+                session_id,
+                attempts,
+                attempt_request_ids,
+                submitted_self_explanation_attempt_ids,
+            )
+        )
         events.extend(self._evaluation_events(session_id, evaluations, evaluation_request_ids))
-        events.extend(self._submission_events(session_id, submissions, attempt_request_ids))
+        events.extend(
+            self._submission_events(session_id, submissions, attempts_by_id, attempt_request_ids)
+        )
         events.extend(self._support_events(session_id, supports, evaluation_request_ids))
         events.extend(self._audio_events(session_id, audio_files, audio_request_ids))
         events.sort(key=lambda event: (event.occurred_at, event.event_id))
@@ -76,6 +96,7 @@ class AuditTraceService:
 
         return SessionTraceResponse(
             schema_version=TRACE_SCHEMA_VERSION,
+            producer=TRACE_PRODUCER,
             session_id=session.id,
             generated_at=datetime.now(UTC),
             summary=SessionTraceSummaryResponse(
@@ -96,19 +117,7 @@ class AuditTraceService:
         markdown_path = session_dir / "audit.md"
         with _export_lock:
             session_dir.mkdir(parents=True, exist_ok=True)
-            existing_event_ids = self._read_existing_event_ids(jsonl_path)
-            with jsonl_path.open("a", encoding="utf-8", newline="\n") as trace_file:
-                for event in trace.events:
-                    if event.event_id in existing_event_ids:
-                        continue
-                    trace_file.write(
-                        json.dumps(
-                            event.model_dump(mode="json", by_alias=True),
-                            ensure_ascii=False,
-                            separators=(",", ":"),
-                        )
-                        + "\n"
-                    )
+            self._write_jsonl(jsonl_path, trace)
             self._write_markdown(markdown_path, trace)
         return AuditExportResponse(
             session_id=session_id,
@@ -129,35 +138,42 @@ class AuditTraceService:
     def _state_events(
         self, session_id: int, records: list[StateTransitionEvent]
     ) -> list[TraceEventResponse]:
-        return [
-            self._event(
-                session_id=session_id,
-                event_id=f"state-transition-{record.id}",
-                occurred_at=record.created_at,
-                event_name=(
-                    "session.created"
-                    if record.trigger_type == "CREATE_SESSION"
-                    else "state.transitioned"
-                ),
-                request_id=record.request_id,
-                operation={"name": record.trigger_type, "kind": "STATE_TRANSITION"},
-                result=self._result("SUCCESS"),
-                data={
-                    "fromStatus": record.from_status,
-                    "toStatus": record.to_status,
-                    "fromFlowStage": record.from_flow_stage,
-                    "toFlowStage": record.to_flow_stage,
-                    "beforeSnapshot": record.before_snapshot,
-                    "afterSnapshot": record.after_snapshot,
-                },
-                references={
-                    "stateTransitionEventId": record.id,
-                    "attemptId": record.related_attempt_id,
-                    "evaluationId": record.related_evaluation_id,
-                },
+        events = []
+        for record in records:
+            data: dict[str, object] = {
+                "fromStatus": record.from_status,
+                "toStatus": record.to_status,
+                "toFlowStage": record.to_flow_stage,
+                "beforeSnapshot": record.before_snapshot,
+                "afterSnapshot": record.after_snapshot,
+            }
+            if record.from_flow_stage is not None:
+                data["fromFlowStage"] = record.from_flow_stage
+            references: dict[str, object] = {"stateTransitionEventId": record.id}
+            if record.related_attempt_id is not None:
+                references["attemptId"] = record.related_attempt_id
+            if record.related_evaluation_id is not None:
+                references["evaluationId"] = record.related_evaluation_id
+            if record.related_support_event_id is not None:
+                references["supportEventId"] = record.related_support_event_id
+            events.append(
+                self._event(
+                    session_id=session_id,
+                    event_id=f"state-transition-{record.id}",
+                    occurred_at=record.created_at,
+                    event_name=(
+                        "session.created"
+                        if record.trigger_type == "CREATE_SESSION"
+                        else "state.transitioned"
+                    ),
+                    request_id=record.request_id,
+                    operation={"name": record.trigger_type, "kind": "STATE_TRANSITION"},
+                    result=self._result("SUCCESS"),
+                    data=data,
+                    references=references,
+                )
             )
-            for record in records
-        ]
+        return events
 
     def _external_call_events(
         self, session_id: int, records: list[ExternalCallRecord]
@@ -166,6 +182,15 @@ class AuditTraceService:
         for record in records:
             target = "asr" if record.call_type == "ASR" else "ai"
             status = "ERROR" if record.status == "ERROR" else "SUCCESS"
+            data: dict[str, object] = {
+                "provider": record.provider,
+                "model": record.model,
+            }
+            raw_response = _text_fingerprint(record.raw_response)
+            redacted_fields = None
+            if raw_response is not None:
+                data["rawResponse"] = raw_response
+                redacted_fields = ["rawResponse"]
             events.append(
                 self._event(
                     session_id=session_id,
@@ -185,13 +210,9 @@ class AuditTraceService:
                         error_type=record.error_type,
                         error_message=record.error_message,
                     ),
-                    data={
-                        "provider": record.provider,
-                        "model": record.model,
-                        "rawResponse": _text_fingerprint(record.raw_response),
-                    },
+                    data=data,
                     references={"externalCallRecordId": record.id},
-                    redacted_fields=["rawResponse"],
+                    redacted_fields=redacted_fields,
                 )
             )
         return events
@@ -201,33 +222,51 @@ class AuditTraceService:
         session_id: int,
         records: list[ExplanationAttempt],
         request_ids: dict[int, str | None],
+        submitted_attempt_ids: set[int],
     ) -> list[TraceEventResponse]:
-        return [
-            self._event(
-                session_id=session_id,
-                event_id=f"attempt-{record.id}",
-                occurred_at=record.created_at,
-                event_name=(
-                    "voice.capture.completed"
-                    if record.input_mode == "VOICE"
-                    else "student.input.confirmed"
-                ),
-                request_id=request_ids.get(record.id),
-                operation={"name": "CAPTURE_INPUT", "kind": record.input_mode},
-                result=self._result("SUCCESS"),
-                data={
-                    "round": record.round,
-                    "voiceTarget": record.voice_target,
-                    "voiceTargetId": record.voice_target_id,
-                    "asrTranscript": _text_fingerprint(record.asr_transcript),
-                    "confirmedText": _text_fingerprint(record.confirmed_text),
-                    "confirmedAt": record.confirmed_at,
-                },
-                references={"attemptId": record.id, "audioFileId": record.audio_file_id},
-                redacted_fields=["asrTranscript", "confirmedText"],
+        events = []
+        for record in records:
+            if record.input_mode != "VOICE" or record.id in submitted_attempt_ids:
+                continue
+            data: dict[str, object] = {"round": record.round}
+            if record.voice_target is not None:
+                data["voiceTarget"] = record.voice_target
+            if record.voice_target_id is not None:
+                data["voiceTargetId"] = record.voice_target_id
+            asr_transcript = _text_fingerprint(record.asr_transcript)
+            if asr_transcript is not None:
+                data["asrTranscript"] = asr_transcript
+            confirmed_text = _text_fingerprint(record.confirmed_text)
+            if confirmed_text is not None:
+                data["confirmedText"] = confirmed_text
+            if record.confirmed_at is not None:
+                data["confirmedAt"] = record.confirmed_at
+            references: dict[str, object] = {"attemptId": record.id}
+            if record.audio_file_id is not None:
+                references["audioFileId"] = record.audio_file_id
+            redacted_fields = [
+                field_name
+                for field_name, value in (
+                    ("asrTranscript", asr_transcript),
+                    ("confirmedText", confirmed_text),
+                )
+                if value is not None
+            ]
+            events.append(
+                self._event(
+                    session_id=session_id,
+                    event_id=f"attempt-{record.id}",
+                    occurred_at=record.created_at,
+                    event_name="voice.transcription.completed",
+                    request_id=request_ids.get(record.id),
+                    operation={"name": "TRANSCRIBE_VOICE", "kind": "VOICE"},
+                    result=self._result("SUCCESS"),
+                    data=data,
+                    references=references,
+                    redacted_fields=redacted_fields or None,
+                )
             )
-            for record in records
-        ]
+        return events
 
     def _evaluation_events(
         self,
@@ -238,6 +277,28 @@ class AuditTraceService:
         events = []
         for record in records:
             valid = record.validation_status == "VALID"
+            data: dict[str, object] = {
+                "promptVersion": record.prompt_version,
+                "provider": record.model_provider,
+                "model": record.model_name,
+                "validationStatus": record.validation_status,
+            }
+            for field_name, value in (
+                ("correctness", record.correctness),
+                ("completeness", record.completeness),
+                ("coveredPoints", record.covered_points),
+                ("missingPoints", record.missing_points),
+                ("errorEvidence", record.error_evidence),
+                ("feedback", record.feedback),
+                ("confidence", record.confidence),
+                ("nextAction", record.next_action),
+                ("needHumanReason", record.need_human_reason),
+            ):
+                if value is not None:
+                    data[field_name] = value
+            raw_response = _text_fingerprint(record.raw_response)
+            if raw_response is not None:
+                data["rawResponse"] = raw_response
             events.append(
                 self._event(
                     session_id=session_id,
@@ -253,24 +314,9 @@ class AuditTraceService:
                         error_type=None if valid else "AI_SCHEMA_ERROR",
                         error_message=None if valid else "; ".join(record.validation_errors),
                     ),
-                    data={
-                        "correctness": record.correctness,
-                        "completeness": record.completeness,
-                        "coveredPoints": record.covered_points,
-                        "missingPoints": record.missing_points,
-                        "errorEvidence": record.error_evidence,
-                        "feedback": record.feedback,
-                        "confidence": record.confidence,
-                        "nextAction": record.next_action,
-                        "needHumanReason": record.need_human_reason,
-                        "promptVersion": record.prompt_version,
-                        "provider": record.model_provider,
-                        "model": record.model_name,
-                        "validationStatus": record.validation_status,
-                        "rawResponse": _text_fingerprint(record.raw_response),
-                    },
+                    data=data,
                     references={"evaluationId": record.id, "attemptId": record.attempt_id},
-                    redacted_fields=["rawResponse"],
+                    redacted_fields=["rawResponse"] if raw_response is not None else None,
                 )
             )
         return events
@@ -279,24 +325,55 @@ class AuditTraceService:
         self,
         session_id: int,
         records: list[StudentSubmission],
+        attempts_by_id: dict[int, ExplanationAttempt],
         request_ids: dict[int, str | None],
     ) -> list[TraceEventResponse]:
         events = []
         for record in records:
             attempt_id = record.context.get("attemptId")
+            attempt = attempts_by_id.get(attempt_id) if isinstance(attempt_id, int) else None
+            references: dict[str, object] = {"studentSubmissionId": record.id}
+            if attempt is not None:
+                references["attemptId"] = attempt.id
+                if attempt.audio_file_id is not None:
+                    references["audioFileId"] = attempt.audio_file_id
+            content = _text_fingerprint(record.content)
+            if content is None:
+                raise ValueError(f"学生提交 {record.id} 缺少内容")
+            if record.submission_type == "SELF_EXPLANATION":
+                data: dict[str, object] = {"content": content}
+                round_number = record.context.get(
+                    "round", attempt.round if attempt is not None else None
+                )
+                if round_number is not None:
+                    data["round"] = round_number
+                input_mode = (
+                    attempt.input_mode
+                    if attempt is not None
+                    else record.context.get("inputMode")
+                )
+                if input_mode is not None:
+                    data["inputMode"] = input_mode
+                if attempt is not None and attempt.confirmed_at is not None:
+                    data["confirmedAt"] = attempt.confirmed_at
+                event_name = "student.explanation.submitted"
+            else:
+                data = {"content": content, "context": record.context}
+                event_name = "student.input.submitted"
             events.append(
                 self._event(
                     session_id=session_id,
                     event_id=f"submission-{record.id}",
                     occurred_at=record.created_at,
-                    event_name="student.input.submitted",
+                    event_name=event_name,
                     request_id=(
-                        request_ids.get(attempt_id) if isinstance(attempt_id, int) else None
+                        record.request_id
+                        or (request_ids.get(attempt_id) if isinstance(attempt_id, int) else None)
                     ),
                     operation={"name": record.submission_type, "kind": "STUDENT_INPUT"},
                     result=self._result("SUCCESS"),
-                    data={"content": _text_fingerprint(record.content), "context": record.context},
-                    references={"studentSubmissionId": record.id, "attemptId": attempt_id},
+                    data=data,
+                    references=references,
                     redacted_fields=["content"],
                 )
             )
@@ -308,30 +385,52 @@ class AuditTraceService:
         records: list[SupportEvent],
         request_ids: dict[int, str | None],
     ) -> list[TraceEventResponse]:
-        return [
-            self._event(
-                session_id=session_id,
-                event_id=f"support-{record.id}",
-                occurred_at=record.created_at,
-                event_name="support.generated",
-                request_id=request_ids.get(record.evaluation_id),
-                operation={"name": record.support_type, "kind": record.support_kind},
-                result=self._result("SUCCESS" if record.status == "VALID" else "ERROR"),
-                data={
-                    "round": record.round,
-                    "status": record.status,
-                    "content": record.content,
-                    "guidedQuestions": record.guided_questions,
-                    "guidedAnswers": record.guided_answers,
-                    "followUpContent": record.follow_up_content,
-                    "mainDraft": _text_fingerprint(record.main_draft),
-                    "doubtText": _text_fingerprint(record.doubt_text),
-                },
-                references={"supportEventId": record.id, "evaluationId": record.evaluation_id},
-                redacted_fields=["mainDraft", "doubtText"],
+        events = []
+        for record in records:
+            data: dict[str, object] = {
+                "round": record.round,
+                "status": record.status,
+                "content": record.content,
+            }
+            for field_name, value in (
+                ("guidedQuestions", record.guided_questions),
+                ("guidedAnswers", record.guided_answers),
+                ("followUpContent", record.follow_up_content),
+            ):
+                if value is not None:
+                    data[field_name] = value
+            main_draft = _text_fingerprint(record.main_draft)
+            doubt_text = _text_fingerprint(record.doubt_text)
+            if main_draft is not None:
+                data["mainDraft"] = main_draft
+            if doubt_text is not None:
+                data["doubtText"] = doubt_text
+            references: dict[str, object] = {"supportEventId": record.id}
+            if record.evaluation_id is not None:
+                references["evaluationId"] = record.evaluation_id
+            redacted_fields = [
+                field_name
+                for field_name, value in (
+                    ("mainDraft", main_draft),
+                    ("doubtText", doubt_text),
+                )
+                if value is not None
+            ]
+            events.append(
+                self._event(
+                    session_id=session_id,
+                    event_id=f"support-{record.id}",
+                    occurred_at=record.created_at,
+                    event_name="support.generated",
+                    request_id=record.request_id or request_ids.get(record.evaluation_id),
+                    operation={"name": record.support_type, "kind": record.support_kind},
+                    result=self._result("SUCCESS"),
+                    data=data,
+                    references=references,
+                    redacted_fields=redacted_fields or None,
+                )
             )
-            for record in records
-        ]
+        return events
 
     def _audio_events(
         self,
@@ -381,13 +480,11 @@ class AuditTraceService:
         else:
             occurred_at = occurred_at.astimezone(UTC)
         return TraceEventResponse(
-            schema_version=TRACE_SCHEMA_VERSION,
             event_id=event_id,
             sequence=0,
             occurred_at=occurred_at,
             event_name=event_name,
             severity=severity,
-            source={"service": "ai-self-explain-backend", "module": "audit_trace"},
             correlation=TraceCorrelationResponse(
                 session_id=session_id,
                 request_id=request_id,
@@ -396,7 +493,7 @@ class AuditTraceService:
             result=result,
             data=data,
             references=references,
-            privacy={"redactedFields": redacted_fields or []},
+            privacy=({"redactedFields": redacted_fields} if redacted_fields else None),
         )
 
     def _result(
@@ -407,26 +504,43 @@ class AuditTraceService:
         error_type: str | None = None,
         error_message: str | None = None,
     ) -> TraceResultResponse:
-        return TraceResultResponse(
-            status=status,
-            duration_ms=duration_ms,
-            error_type=error_type,
-            error_message=error_message,
-        )
+        error = None
+        if status == "ERROR":
+            if error_type is None or error_message is None:
+                raise ValueError("失败结果必须提供 error_type 和 error_message")
+            error = TraceErrorResponse(type=error_type, message=error_message)
+        return TraceResultResponse(status=status, duration_ms=duration_ms, error=error)
 
-    def _read_existing_event_ids(self, jsonl_path: Path) -> set[str]:
-        if not jsonl_path.exists():
-            return set()
-        event_ids = set()
+    def _write_jsonl(self, jsonl_path: Path, trace: SessionTraceResponse) -> None:
+        temporary_path = jsonl_path.with_suffix(".jsonl.tmp")
+        with temporary_path.open("w", encoding="utf-8", newline="\n") as trace_file:
+            for event in trace.events:
+                envelope = TraceExportEnvelope(
+                    schema_version=trace.schema_version,
+                    producer=trace.producer,
+                    session_id=trace.session_id,
+                    event=event,
+                )
+                trace_file.write(
+                    json.dumps(
+                        envelope.model_dump(mode="json", by_alias=True, exclude_none=True),
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                    + "\n"
+                )
+            trace_file.flush()
+
         for line_number, line in enumerate(
-            jsonl_path.read_text(encoding="utf-8").splitlines(), start=1
+            temporary_path.read_text(encoding="utf-8").splitlines(), start=1
         ):
             try:
-                event_id = json.loads(line)["eventId"]
-            except (json.JSONDecodeError, KeyError, TypeError) as error:
-                raise ValueError(f"JSONL 第 {line_number} 行格式无效：{jsonl_path}") from error
-            event_ids.add(str(event_id))
-        return event_ids
+                TraceExportEnvelope.model_validate_json(line)
+            except ValueError as error:
+                raise ValueError(
+                    f"JSONL 临时文件第 {line_number} 行格式无效：{temporary_path}"
+                ) from error
+        temporary_path.replace(jsonl_path)
 
     def _write_markdown(self, markdown_path: Path, trace: SessionTraceResponse) -> None:
         lines = [
@@ -455,7 +569,7 @@ class AuditTraceService:
         lines.extend(["", "## 事件明细", ""])
         for event in trace.events:
             event_json = json.dumps(
-                event.model_dump(mode="json", by_alias=True),
+                event.model_dump(mode="json", by_alias=True, exclude_none=True),
                 ensure_ascii=False,
                 indent=2,
             )

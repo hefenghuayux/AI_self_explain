@@ -1,33 +1,37 @@
 export interface TraceCorrelation {
   sessionId: number
-  requestId: string | null
+  requestId?: string
 }
 
 export interface TraceResult {
   status: string
-  durationMs: number | null
-  errorType: string | null
-  errorMessage: string | null
+  durationMs?: number
+  error?: {
+    type: string
+    message: string
+  }
 }
 
 export interface TraceEvent {
-  schemaVersion: string
   eventId: string
   sequence: number
   occurredAt: string
   eventName: string
   severity: string
-  source: Record<string, unknown>
   correlation: TraceCorrelation
   operation: Record<string, unknown>
   result: TraceResult
   data: Record<string, unknown>
   references: Record<string, unknown>
-  privacy: Record<string, unknown>
+  privacy?: Record<string, unknown>
 }
 
 export interface SessionTrace {
   schemaVersion: string
+  producer: {
+    service: string
+    version: string
+  }
   sessionId: number
   generatedAt: string
   summary: {

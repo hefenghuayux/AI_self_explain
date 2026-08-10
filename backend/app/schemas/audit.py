@@ -14,6 +14,7 @@ class StateTransitionEventResponse(QuestionSchema):
     after_snapshot: dict[str, object]
     related_attempt_id: int | None
     related_evaluation_id: int | None
+    related_support_event_id: int | None
     request_id: str | None
     created_at: datetime
 
@@ -35,30 +36,37 @@ class ExternalCallRecordResponse(QuestionSchema):
 
 class TraceCorrelationResponse(QuestionSchema):
     session_id: int
-    request_id: str | None
+    request_id: str | None = None
+
+
+class TraceErrorResponse(QuestionSchema):
+    type: str
+    message: str
 
 
 class TraceResultResponse(QuestionSchema):
     status: str
-    duration_ms: int | None
-    error_type: str | None
-    error_message: str | None
+    duration_ms: int | None = None
+    error: TraceErrorResponse | None = None
+
+
+class TraceProducerResponse(QuestionSchema):
+    service: str
+    version: str
 
 
 class TraceEventResponse(QuestionSchema):
-    schema_version: str
     event_id: str
     sequence: int
     occurred_at: datetime
     event_name: str
     severity: str
-    source: dict[str, object]
     correlation: TraceCorrelationResponse
     operation: dict[str, object]
     result: TraceResultResponse
     data: dict[str, object]
     references: dict[str, object]
-    privacy: dict[str, object]
+    privacy: dict[str, object] | None = None
 
 
 class SessionTraceSummaryResponse(QuestionSchema):
@@ -72,10 +80,18 @@ class SessionTraceSummaryResponse(QuestionSchema):
 
 class SessionTraceResponse(QuestionSchema):
     schema_version: str
+    producer: TraceProducerResponse
     session_id: int
     generated_at: datetime
     summary: SessionTraceSummaryResponse
     events: list[TraceEventResponse]
+
+
+class TraceExportEnvelope(QuestionSchema):
+    schema_version: str
+    producer: TraceProducerResponse
+    session_id: int
+    event: TraceEventResponse
 
 
 class AuditExportResponse(QuestionSchema):

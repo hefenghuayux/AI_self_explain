@@ -11,6 +11,7 @@ class StudentSubmission(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"), index=True, nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String(100), index=True)
     submission_type: Mapped[str] = mapped_column(String(40), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     context: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)

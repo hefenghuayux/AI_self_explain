@@ -11,6 +11,7 @@ class SupportEvent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"), index=True, nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String(100), index=True)
     evaluation_id: Mapped[int | None] = mapped_column(ForeignKey("ai_evaluations.id"), index=True)
     support_type: Mapped[str] = mapped_column(String(40), nullable=False)
     round: Mapped[int] = mapped_column(Integer, nullable=False)
