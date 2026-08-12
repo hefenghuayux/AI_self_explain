@@ -205,21 +205,6 @@ function evaluationClass(value: string) {
   return "is-attention"
 }
 
-function currentTaskLabel() {
-  if (!session.value) return "正在读取学习进度"
-  const labels = {
-    WAIT_INITIAL_CHOICE: "先说说你会不会，再开始自讲",
-    CAPTURING_INPUT: "用文字或语音讲出你的解题过程",
-    CONFIRMING_TEXT: session.value.pendingVoiceAttempt ? "确认或修改语音转写" : "重新发起 AI 评价",
-    TRANSCRIBING: "语音正在转写，请稍候",
-    AI_EVALUATING: "AI 正在评价你的表达",
-    WAIT_STUDENT_ACTION: "根据反馈补充思路，继续自讲",
-    WAIT_GUIDED_ANSWERS: "回答提示子问题",
-    SHOWING_FULL_SOLUTION: "阅读完整解析并确认是否理解",
-  }
-  return labels[session.value.flowStage]
-}
-
 function syncActiveSegmentWithStage() {
   if (session.value?.flowStage === "WAIT_GUIDED_ANSWERS") {
     activeSegment.value = "guidedAnswers"
@@ -469,7 +454,6 @@ async function respondToSolution(understood: boolean) {
       <el-skeleton v-else-if="loading" :rows="5" animated />
       <template v-else-if="session">
         <section v-if="question" class="question-content"><h2>题目</h2><p data-testid="question-content">{{ question.questionContent }}</p></section>
-        <section class="current-task" aria-live="polite"><span>当前任务</span><strong>{{ currentTaskLabel() }}</strong></section>
         <div class="session-summary" aria-label="学习进度">
           <div class="summary-item status-item"><span>会话状态</span><el-tag :type="sessionStatusType(session.status)" effect="light">{{ sessionStatusLabels[session.status] }}</el-tag></div>
           <div class="summary-item"><span>当前轮次</span><strong>第 {{ session.round }} 轮</strong></div>
@@ -636,10 +620,7 @@ h1 { font-size: var(--font-size-2xl); }
 h2 { font-size: var(--font-size-lg); }
 .question-content { padding: var(--space-6) 0; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
 .question-content p { max-width: var(--reading-width); margin: var(--space-3) 0 0; color: var(--color-text-primary); font-size: var(--font-size-lg); font-weight: 600; line-height: 1.75; overflow-wrap: anywhere; }
-.current-task { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-6); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--color-action-100); color: var(--color-action-900); }
-.current-task span { flex: 0 0 auto; font-size: var(--font-size-sm); }
-.current-task strong { font-size: var(--font-size-base); }
-.session-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.session-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: var(--space-6); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
 .summary-item { display: flex; min-width: 0; flex-direction: column; padding: var(--space-4); gap: var(--space-1); }
 .summary-item + .summary-item { border-left: 1px solid var(--color-border); }
 .summary-item span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
@@ -730,7 +711,6 @@ h2 { font-size: var(--font-size-lg); }
   .session-page { padding: var(--space-6) var(--space-4) var(--space-8); }
   .page-header { align-items: flex-start; flex-direction: column; }
   .page-header a, .page-header .el-button { width: 100%; }
-  .current-task { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
   .dialog-panel { padding: var(--space-3); }
   .dialog-segmented :deep(.el-segmented__group) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .dialog-segmented :deep(.el-segmented__item) { min-width: 0; padding: var(--space-2); white-space: normal; }
