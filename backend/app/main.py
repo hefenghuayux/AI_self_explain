@@ -2,6 +2,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import sessionmaker
@@ -27,12 +28,15 @@ def create_app(settings: Settings) -> FastAPI:
         configure_logging(settings.log_dir, settings.log_max_size_mib, settings.log_backup_count)
         configure_dashscope(settings)
         database_engine = create_database_engine(settings)
+        ai_http_client = httpx.Client(timeout=settings.ai_request_timeout_seconds)
         application.state.database_engine = database_engine
         application.state.database_session_factory = sessionmaker(bind=database_engine)
+        application.state.ai_http_client = ai_http_client
         logger.info("应用启动完成", extra={"operation": "application_startup"})
         try:
             yield
         finally:
+            ai_http_client.close()
             database_engine.dispose()
             logger.info("应用已停止", extra={"operation": "application_shutdown"})
 

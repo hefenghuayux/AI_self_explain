@@ -192,7 +192,9 @@ def submit_text_attempt(
     if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT:
         reject_operation(f"当前流程阶段不能提交文本：{session.flow_stage}")
     session, attempt = repository.submit_text(session, attempt_input.confirmed_text)
-    evaluated_session = AIEvaluationService(database_session, request.app.state.settings).evaluate(
+    evaluated_session = AIEvaluationService(
+        database_session, request.app.state.settings, request.app.state.ai_http_client
+    ).evaluate(
         question=database_session.get(Question, session.question_id),
         session=session,
         attempt=attempt,
@@ -226,7 +228,9 @@ def confirm_voice_attempt(
         raise RuntimeError(
             f"会话 {confirmed_session.id} 关联题目不存在：{confirmed_session.question_id}"
         )
-    evaluated_session = AIEvaluationService(database_session, request.app.state.settings).evaluate(
+    evaluated_session = AIEvaluationService(
+        database_session, request.app.state.settings, request.app.state.ai_http_client
+    ).evaluate(
         question=question, session=confirmed_session, attempt=confirmed_attempt
     )
     return to_session_response(repository, evaluated_session)
@@ -275,7 +279,9 @@ def request_support(
     )
     if limited_session is not None:
         return to_session_response(repository, limited_session)
-    support_service = AISupportService(database_session, request.app.state.settings)
+    support_service = AISupportService(
+        database_session, request.app.state.settings, request.app.state.ai_http_client
+    )
     output = support_service.generate_request(
         question=question,
         session=session,
@@ -319,7 +325,9 @@ def ask_doubt(
         main_draft=action_input.main_draft,
         doubt_text=action_input.doubt_text,
     )
-    support_service = AISupportService(database_session, request.app.state.settings)
+    support_service = AISupportService(
+        database_session, request.app.state.settings, request.app.state.ai_http_client
+    )
     output = support_service.generate_request(
         question=question,
         session=session,
@@ -361,7 +369,9 @@ def submit_guided_answers(
     question = database_session.get(Question, session.question_id)
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
-    support_service = AISupportService(database_session, request.app.state.settings)
+    support_service = AISupportService(
+        database_session, request.app.state.settings, request.app.state.ai_http_client
+    )
     assessment = support_service.assess_guided_answers(
         question=question,
         session=session,
@@ -438,7 +448,9 @@ def retry_ai_evaluation(
     question = database_session.get(Question, session.question_id)
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
-    evaluated_session = AIEvaluationService(database_session, request.app.state.settings).evaluate(
+    evaluated_session = AIEvaluationService(
+        database_session, request.app.state.settings, request.app.state.ai_http_client
+    ).evaluate(
         question=question, session=session, attempt=attempt
     )
     return to_session_response(repository, evaluated_session)

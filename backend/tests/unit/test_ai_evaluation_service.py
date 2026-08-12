@@ -1,9 +1,12 @@
 import json
 
+from fastapi.testclient import TestClient
+
+from app.main import create_app
 from app.services.ai_evaluation import AIModelClient
 
 
-def test_ai_model_client_uses_configured_chat_completions_protocol(settings, monkeypatch) -> None:
+def test_ai_model_client_uses_configured_chat_completions_protocol(settings) -> None:
     captured: dict[str, object] = {}
 
     class FakeResponse:
@@ -14,15 +17,6 @@ def test_ai_model_client_uses_configured_chat_completions_protocol(settings, mon
             return {"choices": [{"message": {"content": '{"ok":true}'}}]}
 
     class FakeClient:
-        def __init__(self, *, timeout: float) -> None:
-            captured["timeout"] = timeout
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc_value, traceback) -> None:
-            return None
-
         def post(
             self, url: str, *, headers: dict[str, str], json: dict[str, object]
         ) -> FakeResponse:
@@ -31,15 +25,25 @@ def test_ai_model_client_uses_configured_chat_completions_protocol(settings, mon
             captured["json"] = json
             return FakeResponse()
 
-    monkeypatch.setattr("app.services.ai_evaluation.httpx.Client", FakeClient)
     schema = {"type": "object", "additionalProperties": False}
 
-    response = AIModelClient(settings).evaluate("评价提示词", schema)
+    http_client = FakeClient()
+    response = AIModelClient(settings, http_client).evaluate("评价提示词", schema)
 
     assert response.content == '{"ok":true}'
     assert captured["url"] == "https://ai.test/v1/chat/completions"
-    assert captured["timeout"] == settings.ai_request_timeout_seconds
     request_json = captured["json"]
     assert request_json["model"] == settings.ai_model
     assert request_json["response_format"] == {"type": "json_object"}
     assert json.loads(response.raw_response)["choices"]
+
+
+def test_app_reuses_and_closes_ai_http_client(settings) -> None:
+    application = create_app(settings)
+
+    with TestClient(application):
+        http_client = application.state.ai_http_client
+        assert not http_client.is_closed
+        assert http_client.timeout.connect == settings.ai_request_timeout_seconds
+
+    assert http_client.is_closed
