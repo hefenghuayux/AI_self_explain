@@ -192,6 +192,34 @@ function timelineItemClass(item: LearningTimelineItem) {
   }
 }
 
+function sessionStatusType(status: SessionStatus) {
+  if (status === "COMPLETED") return "success"
+  if (status === "NEED_HUMAN") return "danger"
+  if (status === "STOPPED_LIMIT" || status === "PAUSED") return "warning"
+  return "primary"
+}
+
+function evaluationClass(value: string) {
+  if (value === "CORRECT" || value === "COMPLETE") return "is-positive"
+  if (value === "WRONG") return "is-negative"
+  return "is-attention"
+}
+
+function currentTaskLabel() {
+  if (!session.value) return "正在读取学习进度"
+  const labels = {
+    WAIT_INITIAL_CHOICE: "先说说你会不会，再开始自讲",
+    CAPTURING_INPUT: "用文字或语音讲出你的解题过程",
+    CONFIRMING_TEXT: session.value.pendingVoiceAttempt ? "确认或修改语音转写" : "重新发起 AI 评价",
+    TRANSCRIBING: "语音正在转写，请稍候",
+    AI_EVALUATING: "AI 正在评价你的表达",
+    WAIT_STUDENT_ACTION: "根据反馈补充思路，继续自讲",
+    WAIT_GUIDED_ANSWERS: "回答提示子问题",
+    SHOWING_FULL_SOLUTION: "阅读完整解析并确认是否理解",
+  }
+  return labels[session.value.flowStage]
+}
+
 function syncActiveSegmentWithStage() {
   if (session.value?.flowStage === "WAIT_GUIDED_ANSWERS") {
     activeSegment.value = "guidedAnswers"
@@ -432,27 +460,34 @@ async function respondToSolution(understood: boolean) {
 
 <template>
   <main class="session-page">
-    <el-card shadow="never">
-      <template #header>
-        <div class="page-header">
-          <div><p class="eyebrow">SELF EXPLANATION</p><h1>开始自讲</h1></div>
-          <RouterLink v-if="session" to="/"><el-button>返回题目列表</el-button></RouterLink>
-        </div>
-      </template>
+    <div class="session-shell">
+      <div class="page-header">
+        <div><h1>自讲学习</h1><p>用自己的语言讲清思路，在反馈中逐步完善。</p></div>
+        <RouterLink v-if="session" to="/"><el-button>返回题目列表</el-button></RouterLink>
+      </div>
       <el-alert v-if="errorMessage" :title="errorMessage" type="error" :closable="false" show-icon />
       <el-skeleton v-else-if="loading" :rows="5" animated />
       <template v-else-if="session">
         <section v-if="question" class="question-content"><h2>题目</h2><p data-testid="question-content">{{ question.questionContent }}</p></section>
-        <el-descriptions :column="2" border class="session-summary">
-          <el-descriptions-item label="会话状态">{{ sessionStatusLabels[session.status] }}</el-descriptions-item>
-          <el-descriptions-item label="当前轮次">第 {{ session.round }} 轮</el-descriptions-item>
-          <el-descriptions-item label="本轮有效支持">{{ session.supportCountRound }}</el-descriptions-item>
-          <el-descriptions-item label="累计有效支持">{{ session.supportCountTotal }}</el-descriptions-item>
-        </el-descriptions>
-        <section v-if="session.latestEvaluation" class="session-section"><h2>本次自讲评价</h2><el-descriptions :column="2" border><el-descriptions-item label="正确性">{{ correctnessLabels[session.latestEvaluation.correctness] }}</el-descriptions-item><el-descriptions-item label="完整性">{{ completenessLabels[session.latestEvaluation.completeness] }}</el-descriptions-item></el-descriptions></section>
-        <section v-if="timeline.length" class="session-section">
+        <section class="current-task" aria-live="polite"><span>当前任务</span><strong>{{ currentTaskLabel() }}</strong></section>
+        <div class="session-summary" aria-label="学习进度">
+          <div class="summary-item status-item"><span>会话状态</span><el-tag :type="sessionStatusType(session.status)" effect="light">{{ sessionStatusLabels[session.status] }}</el-tag></div>
+          <div class="summary-item"><span>当前轮次</span><strong>第 {{ session.round }} 轮</strong></div>
+          <div class="summary-item"><span>本轮支持</span><strong>{{ session.supportCountRound }} 次</strong></div>
+          <div class="summary-item"><span>累计支持</span><strong>{{ session.supportCountTotal }} 次</strong></div>
+        </div>
+        <section v-if="session.latestEvaluation" class="session-section evaluation-section">
+          <div><h2>本次自讲评价</h2><p>AI 从表达是否正确、是否完整两个方面给出结果。</p></div>
+          <div class="evaluation-results">
+            <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.correctness)"><span>正确性</span><strong>{{ correctnessLabels[session.latestEvaluation.correctness] }}</strong></div>
+            <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.completeness)"><span>完整性</span><strong>{{ completenessLabels[session.latestEvaluation.completeness] }}</strong></div>
+          </div>
+        </section>
+        <section class="session-section timeline-section">
           <h2>自讲记录</h2>
-          <el-scrollbar class="conversation-scroll">
+          <p class="section-description">按时间查看你的表达、AI 评价、提示与系统反馈。</p>
+          <el-empty v-if="!timeline.length" description="提交自讲后，学习记录会显示在这里" :image-size="72" />
+          <el-scrollbar v-else class="conversation-scroll">
             <div class="conversation-list">
               <article
                 v-for="item in timeline"
@@ -472,12 +507,12 @@ async function respondToSolution(understood: boolean) {
             </div>
           </el-scrollbar>
         </section>
-        <section v-if="session.status === 'NEED_HUMAN'" class="session-section"><h2>需要人工处理</h2><el-alert title="暂无法可靠判断，已转人工帮助。" type="warning" :closable="false" show-icon /></section>
-        <section v-else-if="session.status === 'COMPLETED'" class="session-section"><h2>本轮自讲已完成</h2></section>
-        <section v-else-if="session.status === 'STOPPED_LIMIT'" class="session-section"><h2>已达到本轮支持上限</h2><p v-if="question">{{ question.fullSolution }}</p></section>
+        <section v-if="session.status === 'NEED_HUMAN'" class="session-section"><h2>需要人工处理</h2><el-alert title="自动学习流程已停止" :description="session.needHumanReason || '暂无法可靠判断，已转人工帮助。'" type="error" :closable="false" show-icon /></section>
+        <section v-else-if="session.status === 'COMPLETED'" class="session-section completion-state"><h2>本轮自讲已完成</h2><p>你已经正确、完整地讲清了这道题。</p></section>
+        <section v-else-if="session.status === 'STOPPED_LIMIT'" class="session-section solution-state"><h2>已达到本轮支持上限</h2><p v-if="question">{{ question.fullSolution }}</p></section>
         <template v-else>
           <section class="session-section">
-            <h2>当前解题过程</h2>
+            <div class="section-heading"><div><h2>开始表达</h2><p>内容会自动保存在当前浏览器中。</p></div></div>
             <el-segmented
               v-model="activeSegment"
               data-testid="dialog-segmented"
@@ -512,7 +547,7 @@ async function respondToSolution(understood: boolean) {
                     && session.flowStage !== 'SHOWING_FULL_SOLUTION'"
                   class="actions"
                 >
-                  <el-button data-testid="submit-explanation" type="primary" :loading="submitting" @click="submitExplanation">提交自讲</el-button>
+                  <el-button data-testid="submit-explanation" type="primary" :loading="submitting" :disabled="voiceRecording" @click="submitExplanation">提交自讲</el-button>
                   <el-button data-testid="prepare-voice" :loading="submitting" @click="prepareVoiceInput">使用语音自讲</el-button>
                   <el-button data-testid="request-support" :loading="submitting" @click="requestGuidedSupport">我不会，给我一点提示</el-button>
                 </div>
@@ -585,78 +620,124 @@ async function respondToSolution(understood: boolean) {
           <section v-else-if="session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2>完整解析</h2><p v-if="question">{{ question.fullSolution }}</p><p>请确认你是否已经理解解析；确认后需要从头完成第二轮自讲。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，开始第二轮自讲</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
         </template>
       </template>
-    </el-card>
+    </div>
   </main>
 </template>
 
 <style scoped>
-.session-page { max-width: 920px; margin: 0 auto; padding: 24px; }
-.page-header, .actions { display: flex; align-items: center; gap: 8px; }
-.page-header { justify-content: space-between; }
-.actions { flex-wrap: wrap; margin-top: 16px; }
-.eyebrow { margin: 0 0 8px; color: #2563eb; font-size: 12px; font-weight: 700; letter-spacing: 0.14em; }
-h1, h2 { margin: 0; }
-.session-summary, .question-content, .session-section { margin-top: 20px; }
-.question-content p, .session-section p { color: #606266; }
-.dialog-segmented { margin-top: 16px; }
+.session-page { max-width: 1040px; margin: 0 auto; padding: var(--space-8) var(--space-6) var(--space-12); }
+.session-shell { min-width: 0; }
+.page-header, .actions { display: flex; align-items: center; gap: var(--space-2); }
+.page-header { justify-content: space-between; margin-bottom: var(--space-6); }
+.page-header p { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
+.actions { flex-wrap: wrap; margin-top: var(--space-4); }
+h1, h2, h3 { margin: 0; line-height: 1.4; }
+h1 { font-size: var(--font-size-2xl); }
+h2 { font-size: var(--font-size-lg); }
+.question-content { padding: var(--space-6) 0; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
+.question-content p { max-width: var(--reading-width); margin: var(--space-3) 0 0; color: var(--color-text-primary); font-size: var(--font-size-lg); font-weight: 600; line-height: 1.75; overflow-wrap: anywhere; }
+.current-task { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-6); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--color-action-100); color: var(--color-action-900); }
+.current-task span { flex: 0 0 auto; font-size: var(--font-size-sm); }
+.current-task strong { font-size: var(--font-size-base); }
+.session-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.summary-item { display: flex; min-width: 0; flex-direction: column; padding: var(--space-4); gap: var(--space-1); }
+.summary-item + .summary-item { border-left: 1px solid var(--color-border); }
+.summary-item span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.summary-item strong { font-size: var(--font-size-lg); }
+.status-item { align-items: flex-start; }
+.session-section { margin-top: var(--space-8); padding-top: var(--space-6); border-top: 1px solid var(--color-border); }
+.session-section p { color: var(--color-text-secondary); }
+.section-description, .section-heading p, .evaluation-section > div > p { margin: var(--space-1) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.evaluation-section { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(300px, 1fr); align-items: center; gap: var(--space-6); }
+.evaluation-results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.evaluation-result { padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-muted); }
+.evaluation-result span { display: block; color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.evaluation-result strong { display: block; margin-top: var(--space-1); font-size: var(--font-size-lg); }
+.evaluation-result.is-positive { color: var(--color-success-700); background: var(--color-success-100); }
+.evaluation-result.is-negative { color: var(--color-error-700); background: var(--color-error-100); }
+.evaluation-result.is-attention { color: var(--color-action-700); background: var(--color-action-100); }
+.dialog-segmented { width: 100%; margin-top: var(--space-4); overflow-x: auto; }
 .dialog-panel {
-  margin-top: 16px;
-  border: 1px solid #dcdfe6;
-  border-radius: 8px;
-  padding: 16px;
-  background: #ffffff;
+  margin-top: var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 .dialog-pane { min-height: 190px; }
-.guided-question + .guided-question { margin-top: 14px; }
-.guided-question p { margin: 0 0 8px; color: #303133; font-weight: 600; }
+.guided-question + .guided-question { margin-top: var(--space-4); }
+.guided-question p { margin: 0 0 var(--space-2); color: var(--color-text-primary); font-weight: 600; }
 .conversation-scroll {
-  height: 360px;
-  margin-top: 12px;
-  border: 1px solid #dcdfe6;
-  border-radius: 8px;
-  background: #f8fafc;
+  height: 420px;
+  margin-top: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-muted);
 }
 .conversation-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
+  gap: var(--space-3);
+  padding: var(--space-4);
 }
 .conversation-message {
   max-width: min(680px, 88%);
-  border-radius: 8px;
-  padding: 12px 14px;
-  border: 1px solid #dcdfe6;
-  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
 }
 .conversation-message.is-student {
   align-self: flex-end;
-  border-color: #bfdbfe;
-  background: #eff6ff;
+  border-color: var(--color-student-border);
+  background: var(--color-brand-50);
 }
 .conversation-message.is-ai {
   align-self: flex-start;
-  border-color: #bbf7d0;
-  background: #f0fdf4;
+  border-color: var(--color-ai-border);
+  background: var(--color-ai-surface);
 }
 .conversation-message.is-system {
   align-self: center;
-  border-color: #fde68a;
-  background: #fffbeb;
+  border-color: var(--color-system-border);
+  background: var(--color-system-surface);
 }
 .conversation-meta {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  color: #606266;
+  gap: var(--space-3);
+  color: var(--color-text-muted);
   font-size: 12px;
 }
-.conversation-meta span { color: #303133; font-weight: 700; }
+.conversation-meta span { color: var(--color-text-primary); font-weight: 700; }
 .conversation-content {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   white-space: pre-wrap;
   word-break: break-word;
-  color: #303133;
+  color: var(--color-text-primary);
 }
-.timeline-evaluation { margin: 8px 0; color: #606266; }
+.timeline-evaluation { margin: var(--space-2) 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.completion-state { color: var(--color-success-700); }
+.solution-state p { max-width: var(--reading-width); white-space: pre-wrap; color: var(--color-text-primary); }
+@media (max-width: 768px) {
+  .session-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .summary-item:nth-child(3) { border-top: 1px solid var(--color-border); border-left: 0; }
+  .summary-item:nth-child(4) { border-top: 1px solid var(--color-border); }
+  .evaluation-section { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .session-page { padding: var(--space-6) var(--space-4) var(--space-8); }
+  .page-header { align-items: flex-start; flex-direction: column; }
+  .page-header a, .page-header .el-button { width: 100%; }
+  .current-task { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
+  .dialog-panel { padding: var(--space-3); }
+  .dialog-segmented :deep(.el-segmented__group) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .dialog-segmented :deep(.el-segmented__item) { min-width: 0; padding: var(--space-2); white-space: normal; }
+  .actions .el-button { flex: 1 1 100%; }
+  .conversation-scroll { height: 480px; }
+  .conversation-list { padding: var(--space-3); }
+  .conversation-message { max-width: 94%; }
+  .conversation-meta { flex-direction: column; gap: 0; }
+}
 </style>

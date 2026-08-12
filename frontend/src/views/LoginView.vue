@@ -33,8 +33,14 @@ async function submit() {
 
 <template>
   <main class="auth-page">
-    <el-card class="auth-card" shadow="never">
-      <template #header><h1>登录 AI 自讲 Demo</h1></template>
+    <section class="auth-panel" aria-labelledby="login-title">
+      <div class="auth-heading">
+        <span class="brand-mark" aria-hidden="true">讲</span>
+        <div>
+          <h1 id="login-title">登录 AI 自讲</h1>
+          <p>继续你的自讲学习进度</p>
+        </div>
+      </div>
       <el-alert v-if="route.query.registered === '1'" title="注册成功，请登录" type="success" :closable="false" show-icon />
       <el-alert v-if="errorMessage" :title="errorMessage" type="error" :closable="false" show-icon />
       <el-form label-position="top" @submit.prevent="submit">
@@ -43,14 +49,21 @@ async function submit() {
         <el-checkbox v-model="rememberLogin">记住登录状态</el-checkbox>
         <el-button class="submit-button" type="primary" :loading="submitting" @click="submit">登录</el-button>
       </el-form>
-      <RouterLink to="/register">注册学生账号</RouterLink>
-    </el-card>
+      <p class="auth-switch">还没有账号？<RouterLink to="/register">注册学生账号</RouterLink></p>
+    </section>
   </main>
 </template>
 
 <style scoped>
-.auth-page { display: grid; min-height: 100vh; padding: 24px; place-items: center; }
-.auth-card { width: min(100%, 420px); }
-h1 { margin: 0; font-size: 24px; }
-.submit-button { width: 100%; margin: 20px 0 16px; }
+.auth-page { display: grid; min-height: 100vh; padding: var(--space-6); background: var(--color-page); place-items: center; }
+.auth-panel { width: min(100%, 440px); min-width: 0; padding: var(--space-8); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-md); }
+.auth-panel .el-form, .auth-panel .el-input { width: 100%; min-width: 0; }
+.auth-heading { display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-6); }
+.brand-mark { display: grid; width: 48px; height: 48px; flex: 0 0 auto; border-radius: var(--radius-md); color: var(--color-on-brand); background: var(--color-brand-700); font-size: 22px; font-weight: 700; place-items: center; }
+h1 { margin: 0; font-size: var(--font-size-xl); line-height: 1.35; }
+.auth-heading p, .auth-switch { margin: var(--space-1) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.el-alert { margin-bottom: var(--space-4); }
+.submit-button { width: 100%; margin: var(--space-6) 0 var(--space-4); }
+.auth-switch { text-align: center; }
+@media (max-width: 640px) { .auth-page { padding: var(--space-4); background: var(--color-page); } .auth-panel { padding: var(--space-6) var(--space-4); box-shadow: none; } }
 </style>

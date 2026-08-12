@@ -141,9 +141,11 @@ defineExpose({ start })
 
 <template>
   <section class="voice-recorder">
-    <h3>实时语音输入</h3>
-    <p>录音时仍可编辑上方文本；句末转写会追加到输入框，未确认前不会进入 AI 评价。</p>
-    <p v-if="previewText" class="transcript-preview">正在转写：{{ previewText }}</p>
+    <div class="voice-heading">
+      <span class="recording-indicator" :class="{ 'is-recording': recording }" aria-hidden="true"></span>
+      <div><h3>{{ recording ? "正在录音" : "实时语音输入" }}</h3><p>句末转写会追加到输入框，确认前不会进入 AI 评价。</p></div>
+    </div>
+    <p v-if="previewText" class="transcript-preview" aria-live="polite">正在转写：{{ previewText }}</p>
     <div class="actions">
       <el-button v-if="!recording" data-testid="start-voice" :disabled="disabled" @click="start">开始录音</el-button>
       <el-button v-else data-testid="stop-voice" type="danger" @click="stop">停止录音</el-button>
@@ -152,8 +154,13 @@ defineExpose({ start })
 </template>
 
 <style scoped>
-.voice-recorder { margin-top: 16px; }
-.voice-recorder h3 { margin: 0; }
-.transcript-preview { color: #606266; }
-.actions { display: flex; gap: 8px; margin-top: 12px; }
+.voice-recorder { margin-top: var(--space-4); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-muted); }
+.voice-heading { display: flex; align-items: flex-start; gap: var(--space-3); }
+.recording-indicator { width: 12px; height: 12px; flex: 0 0 auto; margin-top: 7px; border: 2px solid var(--color-brand-600); border-radius: 50%; background: var(--color-surface); }
+.recording-indicator.is-recording { border-color: var(--color-error-700); background: var(--color-error-700); }
+.voice-recorder h3 { margin: 0; font-size: var(--font-size-base); }
+.voice-recorder p { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.transcript-preview { padding: var(--space-3); border-radius: var(--radius-sm); background: var(--color-surface); }
+.actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
+@media (max-width: 640px) { .actions .el-button { width: 100%; } }
 </style>

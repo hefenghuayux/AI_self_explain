@@ -60,13 +60,11 @@ async function startSession() {
 
 <template>
   <main class="question-page">
-    <el-card shadow="never">
-      <template #header>
-        <div class="page-header">
-          <div>
-            <p class="eyebrow">QUESTION DETAIL</p>
-            <h1>题目详情</h1>
-          </div>
+    <div class="page-header">
+      <div>
+        <h1>题目详情</h1>
+        <p>查看题目与 AI 评价所需的完整材料。</p>
+      </div>
           <div class="actions">
             <RouterLink to="/questions"><el-button>返回列表</el-button></RouterLink>
             <RouterLink v-if="question && !question.archivedAt" :to="`/questions/${question.id}/edit`">
@@ -89,8 +87,8 @@ async function startSession() {
               {{ question.archivedAt ? "恢复题目" : "归档题目" }}
             </el-button>
           </div>
-        </div>
-      </template>
+    </div>
+    <section class="detail-surface">
 
       <el-alert
         v-if="errorMessage"
@@ -128,7 +126,7 @@ async function startSession() {
         </el-descriptions-item>
         <el-descriptions-item label="完整解析">{{ question.fullSolution }}</el-descriptions-item>
       </el-descriptions>
-    </el-card>
+    </section>
   </main>
 </template>
 
@@ -136,7 +134,7 @@ async function startSession() {
 .question-page {
   max-width: 960px;
   margin: 0 auto;
-  padding: 24px;
+  padding: var(--space-8) var(--space-6) var(--space-12);
 }
 
 .page-header,
@@ -150,17 +148,15 @@ async function startSession() {
   justify-content: space-between;
 }
 
-.eyebrow {
-  margin: 0 0 8px;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-}
-
 h1 {
   margin: 0;
+  font-size: var(--font-size-2xl);
+  line-height: 1.35;
 }
+.page-header > div:first-child > p { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
+.detail-surface { margin-top: var(--space-8); padding-top: var(--space-6); border-top: 1px solid var(--color-border); }
+.detail-surface :deep(.el-descriptions__content) { line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.detail-surface :deep(.el-descriptions__label) { width: 160px; color: var(--color-text-primary); font-weight: 600; }
 
 ul {
   margin: 0;
@@ -168,6 +164,7 @@ ul {
 }
 
 .empty-value {
-  color: #6b7280;
+  color: var(--color-text-muted);
 }
+@media (max-width: 640px) { .question-page { padding: var(--space-6) var(--space-4) var(--space-8); } .page-header { align-items: flex-start; flex-direction: column; } .actions { width: 100%; flex-wrap: wrap; } .actions a, .actions .el-button { flex: 1 1 auto; } .detail-surface :deep(.el-descriptions__label) { width: 112px; } }
 </style>

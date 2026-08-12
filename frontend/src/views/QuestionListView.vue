@@ -61,8 +61,8 @@ onMounted(loadQuestions)
   <main class="question-page">
     <div class="page-header">
       <div>
-        <p class="eyebrow">QUESTIONS</p>
         <h1>题目列表</h1>
+        <p>选择一道题目，开始用自己的语言讲清解题过程。</p>
       </div>
       <RouterLink v-if="authUser?.role === 'TEACHER'" to="/questions/new">
         <el-button type="primary">录入题目</el-button>
@@ -91,9 +91,9 @@ onMounted(loadQuestions)
       v-else-if="questions.length === 0"
       :description="authUser?.role === 'TEACHER' ? '暂未录入题目' : '暂无可自讲题目'"
     />
-    <el-table v-else :data="questions" class="question-table">
+    <el-table v-else :data="questions" class="question-table" table-layout="fixed">
       <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="questionContent" label="题目内容" min-width="360" />
+      <el-table-column prop="questionContent" label="题目内容" min-width="360" class-name="question-content-cell" />
       <el-table-column
         v-if="authUser?.role === 'TEACHER'"
         label="评分点数"
@@ -143,6 +143,25 @@ onMounted(loadQuestions)
         </template>
       </el-table-column>
     </el-table>
+    <div v-if="!loading && questions.length" class="question-list-mobile">
+      <article v-for="question in questions" :key="question.id" class="question-item">
+        <div class="question-item-head">
+          <span class="question-id">题目 {{ question.id }}</span>
+          <el-tag v-if="authUser?.role === 'TEACHER'" :type="question.archivedAt ? 'warning' : 'success'">
+            {{ question.archivedAt ? "已归档" : "可用" }}
+          </el-tag>
+        </div>
+        <p>{{ question.questionContent }}</p>
+        <div class="row-actions">
+          <el-button v-if="!question.archivedAt" type="success" :loading="actingQuestionId === question.id" @click="startSelfExplanation(question)">开始自讲</el-button>
+          <template v-if="authUser?.role === 'TEACHER'">
+            <RouterLink :to="`/questions/${question.id}`"><el-button>查看详情</el-button></RouterLink>
+            <RouterLink v-if="!question.archivedAt" :to="`/questions/${question.id}/edit`"><el-button>编辑</el-button></RouterLink>
+            <el-button :type="question.archivedAt ? 'success' : 'warning'" :loading="actingQuestionId === question.id" @click="changeArchiveState(question)">{{ question.archivedAt ? "恢复" : "归档" }}</el-button>
+          </template>
+        </div>
+      </article>
+    </div>
   </main>
 </template>
 
@@ -150,7 +169,7 @@ onMounted(loadQuestions)
 .question-page {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 32px 24px;
+  padding: var(--space-8) var(--space-6) var(--space-12);
 }
 
 .page-header,
@@ -164,38 +183,44 @@ onMounted(loadQuestions)
   justify-content: space-between;
   gap: 16px;
 }
-
-.eyebrow {
-  margin: 0 0 8px;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
 h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: var(--font-size-2xl);
+  line-height: 1.35;
 }
+.page-header p { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
 
 .page-alert,
 .list-toolbar,
 .question-table {
-  margin-top: 20px;
+  margin-top: var(--space-6);
 }
+.list-toolbar { display: flex; justify-content: flex-end; padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); }
+.question-table { border-top: 1px solid var(--color-border); }
+.question-table :deep(.question-content-cell .cell) { overflow: hidden; display: -webkit-box; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 
 .row-actions {
   min-height: 32px;
   flex-wrap: nowrap;
 }
+.question-list-mobile { display: none; }
 
 @media (max-width: 640px) {
   .question-page {
-    padding: 24px 16px;
+    padding: var(--space-6) var(--space-4) var(--space-8);
   }
 
   .page-header {
     align-items: flex-start;
+    flex-direction: column;
   }
+  .page-header a, .page-header .el-button { width: 100%; }
+  .question-table { display: none; }
+  .question-list-mobile { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
+  .question-item { padding: var(--space-4) 0 var(--space-6); border-bottom: 1px solid var(--color-border); }
+  .question-item-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .question-id { color: var(--color-text-muted); font-size: var(--font-size-sm); font-weight: 600; }
+  .question-item p { margin: var(--space-3) 0 var(--space-4); overflow-wrap: anywhere; }
+  .row-actions { flex-wrap: wrap; }
 }
 </style>
