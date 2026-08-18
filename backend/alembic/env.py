@@ -27,7 +27,28 @@ def prepare_sqlite_migration_connection(connection: Connection) -> None:
         details = "; ".join(str(tuple(row)) for row in violations)
         raise RuntimeError(f"数据库存在外键违规，停止迁移：{details}")
 
-    # 结束 PRAGMA 查询触发的隐式事务，确保后续迁移从清晰事务边界开始。
+    # SQLite 批量改表会重建并替换原表；被其他表引用时必须在迁移窗口关闭外键约束。
+    connection.commit()
+    connection.exec_driver_sql("PRAGMA foreign_keys = OFF")
+    foreign_keys_enabled = connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one()
+    if foreign_keys_enabled != 0:
+        raise RuntimeError("Alembic SQLite 连接未能临时关闭外键约束")
+    connection.commit()
+
+
+def restore_sqlite_foreign_keys(connection: Connection) -> None:
+    if connection.in_transaction():
+        connection.rollback()
+
+    connection.exec_driver_sql("PRAGMA foreign_keys = ON")
+    foreign_keys_enabled = connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one()
+    if foreign_keys_enabled != 1:
+        raise RuntimeError("Alembic SQLite 连接未能恢复外键约束")
+
+    violations = connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+    if violations:
+        details = "; ".join(str(tuple(row)) for row in violations)
+        raise RuntimeError(f"数据库迁移后存在外键违规：{details}")
     connection.commit()
 
 
@@ -54,8 +75,11 @@ def run_migrations_online() -> None:
         prepare_sqlite_migration_connection(connection)
         context.configure(connection=connection, target_metadata=target_metadata)
 
-        with context.begin_transaction():
-            context.run_migrations()
+        try:
+            with context.begin_transaction():
+                context.run_migrations()
+        finally:
+            restore_sqlite_foreign_keys(connection)
 
 
 if context.is_offline_mode():
