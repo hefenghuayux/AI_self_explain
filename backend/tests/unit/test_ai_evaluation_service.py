@@ -1,12 +1,15 @@
 import json
 
+from fastapi.testclient import TestClient
+
+from app.main import create_app
 from app.models.explanation_attempt import ExplanationAttempt
 from app.models.question import Question
 from app.models.session import Session
 from app.services.ai_evaluation import AIModelClient, _render_prompt
 
 
-def test_ai_model_client_uses_configured_chat_completions_protocol(settings, monkeypatch) -> None:
+def test_ai_model_client_uses_configured_chat_completions_protocol(settings) -> None:
     captured: dict[str, object] = {}
 
     class FakeResponse:
@@ -17,15 +20,6 @@ def test_ai_model_client_uses_configured_chat_completions_protocol(settings, mon
             return {"choices": [{"message": {"content": '{"ok":true}'}}]}
 
     class FakeClient:
-        def __init__(self, *, timeout: float) -> None:
-            captured["timeout"] = timeout
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc_value, traceback) -> None:
-            return None
-
         def post(
             self, url: str, *, headers: dict[str, str], json: dict[str, object]
         ) -> FakeResponse:
@@ -34,7 +28,6 @@ def test_ai_model_client_uses_configured_chat_completions_protocol(settings, mon
             captured["json"] = json
             return FakeResponse()
 
-    monkeypatch.setattr("app.services.ai_evaluation.httpx.Client", FakeClient)
     request = _render_prompt(
         question=Question(
             question_content="1+1 等于多少？",
@@ -54,11 +47,10 @@ def test_ai_model_client_uses_configured_chat_completions_protocol(settings, mon
         prompt_version=settings.prompt_version,
     )
 
-    response = AIModelClient(settings).evaluate(request)
+    response = AIModelClient(settings, FakeClient()).evaluate(request)
 
     assert response.content == '{"ok":true}'
     assert captured["url"] == "https://ai.test/v1/chat/completions"
-    assert captured["timeout"] == settings.ai_request_timeout_seconds
     request_json = captured["json"]
     assert request_json == request.transport_payload()
     assert request_json["model"] == settings.ai_model
@@ -109,3 +101,14 @@ def test_evaluation_snapshot_separates_session_state_from_transport_prompt() -> 
     }
     assert request.blocks.user_input == {"confirmedText": "两个一相加等于二。"}
     assert request.blocks.memory_context is None
+
+
+def test_app_reuses_and_closes_ai_http_client(settings) -> None:
+    application = create_app(settings)
+
+    with TestClient(application):
+        http_client = application.state.ai_http_client
+        assert not http_client.is_closed
+        assert http_client.timeout.connect == settings.ai_request_timeout_seconds
+
+    assert http_client.is_closed

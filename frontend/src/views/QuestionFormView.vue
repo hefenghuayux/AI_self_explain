@@ -45,17 +45,14 @@ async function submitQuestion(question: QuestionInput) {
 
 <template>
   <main class="question-page">
-    <el-card shadow="never">
-      <template #header>
-        <div class="page-header">
-          <div>
-            <p class="eyebrow">QUESTION ENTRY</p>
-            <h1>{{ questionId ? "编辑题目" : "录入题目" }}</h1>
-          </div>
-          <RouterLink to="/questions"><el-button>取消</el-button></RouterLink>
-        </div>
-      </template>
-
+    <div class="page-header">
+      <div>
+        <h1>{{ questionId ? "编辑题目" : "录入题目" }}</h1>
+        <p>完整填写题目材料，供后续 AI 评价与引导使用。</p>
+      </div>
+      <RouterLink to="/questions"><el-button>取消</el-button></RouterLink>
+    </div>
+    <section class="form-surface">
       <el-alert
         v-if="errorMessage && !loading"
         :title="errorMessage"
@@ -71,7 +68,7 @@ async function submitQuestion(question: QuestionInput) {
         :server-error="errorMessage"
         @submit="submitQuestion"
       />
-    </el-card>
+    </section>
   </main>
 </template>
 
@@ -79,7 +76,7 @@ async function submitQuestion(question: QuestionInput) {
 .question-page {
   max-width: 960px;
   margin: 0 auto;
-  padding: 24px;
+  padding: var(--space-8) var(--space-6) var(--space-12);
 }
 
 .page-header {
@@ -89,15 +86,12 @@ async function submitQuestion(question: QuestionInput) {
   gap: 16px;
 }
 
-.eyebrow {
-  margin: 0 0 8px;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-}
-
 h1 {
   margin: 0;
+  font-size: var(--font-size-2xl);
+  line-height: 1.35;
 }
+.page-header p { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
+.form-surface { margin-top: var(--space-8); padding-top: var(--space-6); border-top: 1px solid var(--color-border); }
+@media (max-width: 640px) { .question-page { padding: var(--space-6) var(--space-4) var(--space-8); } .page-header { align-items: flex-start; flex-direction: column; } .page-header a, .page-header .el-button { width: 100%; } }
 </style>

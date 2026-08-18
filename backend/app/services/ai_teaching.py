@@ -2,6 +2,7 @@ import json
 import logging
 from pathlib import Path
 
+import httpx
 from pydantic import ValidationError
 from sqlalchemy.orm import Session as DatabaseSession
 
@@ -29,10 +30,12 @@ class AITeachingError(RuntimeError):
 
 
 class AITeachingService:
-    def __init__(self, database_session: DatabaseSession, settings: Settings) -> None:
+    def __init__(
+        self, database_session: DatabaseSession, settings: Settings, http_client: httpx.Client
+    ) -> None:
         self.repository = SessionRepository(database_session)
         self.settings = settings
-        self.client = AIModelClient(settings)
+        self.client = AIModelClient(settings, http_client)
 
     def generate(self, *, session: Session, context: TeachingContext) -> TeachingOutput:
         request = _render_prompt(

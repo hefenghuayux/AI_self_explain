@@ -5,19 +5,14 @@ import { authUser } from "../stores/auth"
 
 <template>
   <main class="health-page">
-    <el-card class="health-card" shadow="never">
-      <template #header>
-        <div>
-          <p class="eyebrow">AI SELF-EXPLANATION</p>
-          <h1>AI 自讲 Demo</h1>
-        </div>
-      </template>
-      <p class="intro">阶段 01：项目骨架与配置</p>
+    <section class="health-card">
+      <h1>AI 自讲 Demo</h1>
+      <p class="intro">服务状态检查</p>
       <HealthStatus />
       <RouterLink v-if="authUser?.role === 'TEACHER'" class="question-link" to="/questions">
         <el-button type="primary">进入题目管理</el-button>
       </RouterLink>
-    </el-card>
+    </section>
   </main>
 </template>
 
@@ -25,35 +20,32 @@ import { authUser } from "../stores/auth"
 .health-page {
   display: grid;
   min-height: 100vh;
-  padding: 24px;
+  padding: var(--space-6);
   place-items: center;
 }
 
 .health-card {
   width: min(100%, 640px);
-  border: 1px solid #e5e7eb;
-}
-
-.eyebrow {
-  margin: 0 0 8px;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 h1 {
   margin: 0;
-  font-size: clamp(28px, 5vw, 40px);
+  font-size: var(--font-size-2xl);
 }
 
 .intro {
-  margin: 0 0 24px;
-  color: #6b7280;
+  margin: var(--space-2) 0 var(--space-6);
+  color: var(--color-text-muted);
 }
 
 .question-link {
   display: inline-block;
-  margin-top: 20px;
+  margin-top: var(--space-6);
 }
+@media (max-width: 640px) { .health-page { padding: var(--space-4); } .health-card { padding: var(--space-6) var(--space-4); } .question-link, .question-link .el-button { width: 100%; } }
 </style>

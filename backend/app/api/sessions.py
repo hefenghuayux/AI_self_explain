@@ -255,7 +255,7 @@ def submit_text_attempt(
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
     evaluation_result = AIEvaluationService(
-        database_session, request.app.state.settings
+        database_session, request.app.state.settings, request.app.state.ai_http_client
     ).evaluate(
         question=question,
         session=session,
@@ -292,7 +292,7 @@ def submit_text_attempt(
     )
     try:
         teaching_output = AITeachingService(
-            database_session, request.app.state.settings
+            database_session, request.app.state.settings, request.app.state.ai_http_client
         ).generate(session=session, context=context)
     except AITeachingError as error:
         repository.record_teaching_generation_failure(
@@ -371,7 +371,9 @@ def request_support(
     )
     if limited_session is not None:
         return to_session_response(repository, limited_session)
-    support_service = AISupportService(database_session, request.app.state.settings)
+    support_service = AISupportService(
+        database_session, request.app.state.settings, request.app.state.ai_http_client
+    )
     output = support_service.generate_request(
         question=question,
         session=session,
@@ -425,7 +427,9 @@ def ask_doubt(
         main_draft=action_input.main_draft,
         doubt_text=action_input.doubt_text,
     )
-    support_service = AISupportService(database_session, request.app.state.settings)
+    support_service = AISupportService(
+        database_session, request.app.state.settings, request.app.state.ai_http_client
+    )
     output = support_service.generate_request(
         question=question,
         session=session,
@@ -527,7 +531,9 @@ def submit_guided_answers(
         repository.mark_voice_attempt_submitted(
             attempt=voice_attempt, confirmed_text=answer.answer
         )
-    support_service = AISupportService(database_session, request.app.state.settings)
+    support_service = AISupportService(
+        database_session, request.app.state.settings, request.app.state.ai_http_client
+    )
     assessment = support_service.assess_guided_answers(
         question=question,
         session=session,

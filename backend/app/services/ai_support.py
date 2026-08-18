@@ -5,6 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
 
+import httpx
 from pydantic import ValidationError
 from sqlalchemy.orm import Session as DatabaseSession
 
@@ -37,10 +38,12 @@ logger = logging.getLogger(__name__)
 
 
 class AISupportService:
-    def __init__(self, database_session: DatabaseSession, settings: Settings) -> None:
+    def __init__(
+        self, database_session: DatabaseSession, settings: Settings, http_client: httpx.Client
+    ) -> None:
         self.repository = SessionRepository(database_session)
         self.settings = settings
-        self.client = AIModelClient(settings)
+        self.client = AIModelClient(settings, http_client)
 
     def generate_request(
         self,

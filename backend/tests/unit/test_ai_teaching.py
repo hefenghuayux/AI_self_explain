@@ -91,7 +91,7 @@ def test_teaching_output_rejects_reveal_and_exact_repeat(
 
 def test_teaching_service_records_valid_call_without_state_changes(settings, monkeypatch) -> None:
     database_session = Mock()
-    service = AITeachingService(database_session, settings)
+    service = AITeachingService(database_session, settings, Mock())
     service.repository.record_external_call = Mock(
         return_value=SimpleNamespace(id=1, transport_status="SUCCESS")
     )
@@ -131,7 +131,7 @@ def test_teaching_service_records_valid_call_without_state_changes(settings, mon
 
 def test_teaching_service_does_not_retry_transport_failure(settings, monkeypatch) -> None:
     database_session = Mock()
-    service = AITeachingService(database_session, settings)
+    service = AITeachingService(database_session, settings, Mock())
     service.repository.record_external_call = Mock()
     calls = 0
 

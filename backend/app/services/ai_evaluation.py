@@ -55,24 +55,24 @@ class AITransportError(RuntimeError):
 
 
 class AIModelClient:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, http_client: httpx.Client) -> None:
         self.settings = settings
+        self.http_client = http_client
 
     def evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
         started_at = time.perf_counter()
         endpoint = f"{str(self.settings.ai_base_url).rstrip('/')}/chat/completions"
         try:
-            with httpx.Client(timeout=self.settings.ai_request_timeout_seconds) as client:
-                response = client.post(
-                    endpoint,
-                    headers={
-                        "Authorization": f"Bearer {self.settings.ai_api_key.get_secret_value()}",
-                        "Content-Type": "application/json",
-                    },
-                    # DeepSeek 当前只支持 JSON object 模式。动态 Schema 仍在提示词和
-                    # 本地校验中严格执行；这里直接发送审计快照中的真实 transport。
-                    json=request.transport_payload(),
-                )
+            response = self.http_client.post(
+                endpoint,
+                headers={
+                    "Authorization": f"Bearer {self.settings.ai_api_key.get_secret_value()}",
+                    "Content-Type": "application/json",
+                },
+                # DeepSeek 当前只支持 JSON object 模式。动态 Schema 仍在提示词和
+                # 本地校验中严格执行；这里直接发送审计快照中的真实 transport。
+                json=request.transport_payload(),
+            )
         except httpx.TimeoutException as error:
             raise AITransportError(
                 error_type="AI_TIMEOUT",
@@ -119,10 +119,12 @@ class AIModelClient:
 
 
 class AIEvaluationService:
-    def __init__(self, database_session: DatabaseSession, settings: Settings) -> None:
+    def __init__(
+        self, database_session: DatabaseSession, settings: Settings, http_client: httpx.Client
+    ) -> None:
         self.repository = SessionRepository(database_session)
         self.settings = settings
-        self.client = AIModelClient(settings)
+        self.client = AIModelClient(settings, http_client)
 
     def evaluate(
         self,
