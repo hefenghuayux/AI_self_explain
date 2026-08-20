@@ -12,6 +12,7 @@ from alembic import command
 from app.core.config import Settings
 from app.models.explanation_attempt import ExplanationAttempt
 from app.models.session import Session
+from app.models.session_event import SessionEvent
 from app.repositories.sessions import SessionRepository, SessionVersionConflict
 from app.services.ai_evaluation import AIModelClient, AIModelResponse
 
@@ -119,6 +120,12 @@ def test_new_session_has_initial_state_and_audit_event(settings: Settings, monke
         "to_status": "IN_PROGRESS",
         "to_flow_stage": "WAIT_INITIAL_CHOICE",
     }
+    with OrmSession(engine) as database_session:
+        session_event = database_session.scalar(select(SessionEvent))
+    assert session_event is not None
+    assert session_event.seq == 0
+    assert session_event.event_type == "session.started"
+    assert session_event.data == {}
 
 
 def test_archived_question_cannot_create_session(settings: Settings, monkeypatch) -> None:

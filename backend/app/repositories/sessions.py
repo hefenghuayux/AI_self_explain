@@ -38,6 +38,7 @@ from app.schemas.model_request_snapshot import ModelRequestSnapshot
 from app.schemas.support import GuidedAnswer, GuidedQuestion
 from app.schemas.teaching import TeachingOutput
 from app.services.audio_storage import AudioCapture, AudioStorage
+from app.services.event_store import EventStore
 
 HUMAN_REVIEW_TRIGGER_TYPES = frozenset(
     {
@@ -99,6 +100,7 @@ class SessionRepository:
         )
         self.database_session.add(session)
         self.database_session.flush()
+        EventStore(self.database_session).create_session(session)
         self.database_session.add(
             StateTransitionEvent(
                 session_id=session.id,
