@@ -4,7 +4,7 @@ from threading import Barrier
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, select
+from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import Session as DatabaseSession
 
 from alembic import command
@@ -70,6 +70,63 @@ def test_migration_creates_event_constraints_and_indexes(
         "ix_session_events_session_type_seq",
     }
     assert {"parent_id", "lifecycle_status"} <= session_columns
+
+
+def test_migration_backfills_started_event_for_existing_session(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", settings.database_url)
+    alembic_config = Config(str(Path(__file__).parents[2] / "alembic.ini"))
+    command.upgrade(alembic_config, "20260810_17")
+
+    engine = create_engine(settings.database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO questions ("
+                    "id, question_content, standard_answer, rubric_points, common_errors, "
+                    "alternative_solutions, layered_hints, full_solution, guided_questions"
+                    ") VALUES (1, '题目', '答案', '[]', '[]', '[]', '[]', '解析', '[]')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO sessions ("
+                    "id, question_id, status, flow_stage, round, support_count_round, "
+                    "support_count_total, no_progress_count, solution_exposed, "
+                    "covered_points_current_round, covered_points_all, version"
+                    ") VALUES (1, 1, 'COMPLETED', 'WAIT_STUDENT_ACTION', 1, 0, 0, 0, 0, "
+                    "'[]', '[]', 1)"
+                )
+            )
+            created_at = connection.execute(
+                text("SELECT created_at FROM sessions WHERE id = 1")
+            ).scalar_one()
+
+        command.upgrade(alembic_config, "head")
+
+        with engine.connect() as connection:
+            event = connection.execute(
+                text(
+                    "SELECT seq, event_id, event_type, occurred_at, data "
+                    "FROM session_events WHERE session_id = 1"
+                )
+            ).one()
+            lifecycle_status = connection.execute(
+                text("SELECT lifecycle_status FROM sessions WHERE id = 1")
+            ).scalar_one()
+    finally:
+        engine.dispose()
+
+    assert tuple(event) == (
+        0,
+        "evt_migrated_session_1_started",
+        "session.started",
+        created_at,
+        "{}",
+    )
+    assert lifecycle_status == "completed"
 
 
 def test_create_session_appends_started_as_seq_zero(

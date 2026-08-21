@@ -72,31 +72,16 @@ def upgrade() -> None:
         ["session_id", "event_type", "seq"],
     )
 
-    sessions = connection.execute(sa.text("SELECT id, created_at FROM sessions")).mappings()
-    event_table = sa.table(
-        "session_events",
-        sa.column("session_id", sa.Integer()),
-        sa.column("seq", sa.Integer()),
-        sa.column("event_id", sa.String()),
-        sa.column("run_id", sa.String()),
-        sa.column("parent_event_id", sa.String()),
-        sa.column("event_type", sa.String()),
-        sa.column("occurred_at", sa.DateTime(timezone=True)),
-        sa.column("data", sa.JSON()),
-    )
-    for session in sessions:
-        connection.execute(
-            event_table.insert().values(
-                session_id=session["id"],
-                seq=0,
-                event_id=f"evt_migrated_session_{session['id']}_started",
-                run_id=None,
-                parent_event_id=None,
-                event_type="session.started",
-                occurred_at=session["created_at"],
-                data={},
-            )
+    # 在 SQLite 内直接复制时间字段，避免文本结果再次经过 DateTime 参数类型转换。
+    connection.execute(
+        sa.text(
+            "INSERT INTO session_events ("
+            "session_id, seq, event_id, run_id, parent_event_id, event_type, occurred_at, data"
+            ") "
+            "SELECT id, 0, 'evt_migrated_session_' || id || '_started', "
+            "NULL, NULL, 'session.started', created_at, '{}' FROM sessions"
         )
+    )
 
 
 def downgrade() -> None:
