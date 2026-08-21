@@ -39,6 +39,7 @@ from app.schemas.support import GuidedAnswer, GuidedQuestion
 from app.schemas.teaching import TeachingOutput
 from app.services.audio_storage import AudioCapture, AudioStorage
 from app.services.event_store import EventStore
+from app.services.session_event_log import SessionEventLog
 
 HUMAN_REVIEW_TRIGGER_TYPES = frozenset(
     {
@@ -55,6 +56,10 @@ HUMAN_REVIEW_TRIGGER_TYPES = frozenset(
 
 class SessionVersionConflict(RuntimeError):
     pass
+
+
+def session_run_id(session_id: int, attempt_id: int) -> str:
+    return f"run_session_{session_id}_attempt_{attempt_id}"
 
 
 def session_snapshot(session: Session) -> dict[str, object]:
@@ -432,6 +437,16 @@ class SessionRepository:
                 attempt=voice_attempt, confirmed_text=confirmed_text
             )
             attempt = voice_attempt
+        run_id = session_run_id(session.id, attempt.id)
+        user_event = EventStore(self.database_session).append(
+            session_id=session.id,
+            event_type="user.message",
+            run_id=run_id,
+            data={
+                "text": confirmed_text,
+                "inputType": "voice" if attempt.input_mode == "VOICE" else "text",
+            },
+        )
         self._record_student_submission(
             session=session,
             submission_type="SELF_EXPLANATION",
@@ -449,6 +464,8 @@ class SessionRepository:
             ),
             before_snapshot=before_snapshot,
             related_attempt_id=attempt.id,
+            run_id=run_id,
+            parent_event_id=user_event.event_id,
         )
         self.database_session.commit()
         self.database_session.refresh(session)
@@ -462,6 +479,7 @@ class SessionRepository:
         evaluation_id: int,
         decision: TeachingDecision,
         teaching_output: TeachingOutput | None,
+        run_id: str | None = None,
     ) -> tuple[Session, SupportEvent | None]:
         if decision.should_generate != (teaching_output is not None):
             raise ValueError("教学决策与生成结果不一致")
@@ -523,6 +541,7 @@ class SessionRepository:
             before_snapshot=before_snapshot,
             related_evaluation_id=evaluation_id,
             related_support_event_id=(support_event.id if support_event is not None else None),
+            run_id=run_id,
         )
         self.database_session.commit()
         self.database_session.refresh(session)
@@ -536,6 +555,7 @@ class SessionRepository:
         session: Session,
         evaluation_id: int,
         decision: TeachingDecision,
+        run_id: str | None = None,
     ) -> Session:
         if not decision.should_generate:
             raise ValueError("无需生成教学内容的决策不能记录生成失败")
@@ -555,6 +575,7 @@ class SessionRepository:
             trigger_type="TEACHING_GENERATION_FAILED",
             before_snapshot=before_snapshot,
             related_evaluation_id=evaluation_id,
+            run_id=run_id,
         )
         self.database_session.commit()
         self.database_session.refresh(session)
@@ -1120,6 +1141,7 @@ class SessionRepository:
         trigger_type: str,
         related_attempt_id: int | None = None,
         related_evaluation_id: int | None = None,
+        run_id: str | None = None,
     ) -> Session:
         before_snapshot = session_snapshot(session)
         session.status = STATUS_IN_PROGRESS
@@ -1133,6 +1155,7 @@ class SessionRepository:
             before_snapshot=before_snapshot,
             related_attempt_id=related_attempt_id,
             related_evaluation_id=related_evaluation_id,
+            run_id=run_id,
         )
         self.database_session.commit()
         self.database_session.refresh(session)
@@ -1279,6 +1302,8 @@ class SessionRepository:
         related_attempt_id: int | None = None,
         related_evaluation_id: int | None = None,
         related_support_event_id: int | None = None,
+        run_id: str | None = None,
+        parent_event_id: str | None = None,
     ) -> None:
         self.database_session.add(
             StateTransitionEvent(
@@ -1298,6 +1323,22 @@ class SessionRepository:
                 request_id=current_request_id(),
             )
         )
+        if run_id is not None and (
+            before_snapshot["status"] != session.status
+            or before_snapshot["flowStage"] != session.flow_stage
+        ):
+            SessionEventLog(self.database_session).event_store.append(
+                session_id=session.id,
+                event_type="state.changed",
+                run_id=run_id,
+                parent_event_id=parent_event_id
+                or SessionEventLog(self.database_session).latest_event_id(session.id, run_id),
+                data={
+                    "from": str(before_snapshot["flowStage"]),
+                    "to": session.flow_stage,
+                    "reason": trigger_type,
+                },
+            )
 
     def _apply_support(
         self,

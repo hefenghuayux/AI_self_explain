@@ -18,7 +18,7 @@ from app.core.auth import DatabaseSession, get_current_user
 from app.core.logging import bind_trace_context, new_correlation_id, reset_trace_context
 from app.models.question import Question
 from app.models.session import Session
-from app.repositories.sessions import SessionRepository, SessionVersionConflict
+from app.repositories.sessions import SessionRepository, SessionVersionConflict, session_run_id
 from app.rules.session_lifecycle import (
     FLOW_STAGE_CAPTURING_INPUT,
     FLOW_STAGE_SHOWING_FULL_SOLUTION,
@@ -276,6 +276,7 @@ def submit_text_attempt(
             evaluation_id=evaluation_result.id,
             decision=decision,
             teaching_output=None,
+            run_id=session_run_id(session.id, attempt.id),
         )
         return to_session_response(
             repository,
@@ -299,6 +300,7 @@ def submit_text_attempt(
             session=session,
             evaluation_id=evaluation_result.id,
             decision=decision,
+            run_id=session_run_id(session.id, attempt.id),
         )
         logger.error(
             "教学生成失败：%s",
@@ -318,6 +320,7 @@ def submit_text_attempt(
         evaluation_id=evaluation_result.id,
         decision=decision,
         teaching_output=teaching_output,
+        run_id=session_run_id(session.id, attempt.id),
     )
     if support_event is None:
         raise RuntimeError("教学输出校验成功后缺少支持事件")

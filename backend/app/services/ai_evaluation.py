@@ -14,7 +14,7 @@ from app.models.explanation_attempt import ExplanationAttempt
 from app.models.external_call_record import ExternalCallRecord
 from app.models.question import Question
 from app.models.session import Session
-from app.repositories.sessions import SessionRepository
+from app.repositories.sessions import SessionRepository, session_run_id
 from app.schemas.ai_evaluation import (
     AIEvaluationOutput,
     evaluation_json_schema,
@@ -27,6 +27,7 @@ from app.schemas.model_request_snapshot import (
     ModelRequestSnapshot,
     ModelTransportSnapshot,
 )
+from app.services.session_event_log import SessionEventLog
 
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "evaluate_explanation.md"
 logger = logging.getLogger(__name__)
@@ -136,6 +137,8 @@ class AIEvaluationService:
         schema = evaluation_json_schema(question.rubric_points)
         validation_errors: list[str] = []
         external_attempt_number = 0
+        run_id = session_run_id(session.id, attempt.id)
+        event_log = SessionEventLog(self.repository.database_session)
 
         for schema_attempt in range(self.settings.ai_schema_max_retries + 1):
             request = _render_prompt(
@@ -147,11 +150,20 @@ class AIEvaluationService:
                 model=self.settings.ai_model,
                 prompt_version=self.settings.prompt_version,
             )
-            model_response, external_call, external_attempt_number = (
+            if schema_attempt == 0:
+                event_log.append_contexts(
+                    session_id=session.id,
+                    run_id=run_id,
+                    request=request,
+                    question_source=f"question:{question.id}",
+                    parent_event_id=event_log.latest_event_id(session.id, run_id),
+                )
+            model_response, external_call, external_attempt_number, requested_event_id = (
                 self._call_with_transport_retries(
                     session=session,
                     request=request,
                     external_attempt_number=external_attempt_number,
+                    run_id=run_id,
                 )
             )
             if model_response is None:
@@ -160,6 +172,7 @@ class AIEvaluationService:
                     need_human_reason="AI 评价服务在配置的重试次数内未成功响应",
                     trigger_type="AI_EVALUATION_TRANSPORT_RETRY_EXHAUSTED",
                     related_attempt_id=attempt.id,
+                    run_id=run_id,
                 )
 
             if external_call is None:
@@ -170,6 +183,14 @@ class AIEvaluationService:
                 attempt.confirmed_text,
             )
             if validation_errors:
+                event_log.append_model_responded(
+                    session_id=session.id,
+                    run_id=run_id,
+                    response_content=model_response.content,
+                    validation="invalid",
+                    duration_ms=model_response.duration_ms,
+                    parent_event_id=requested_event_id,
+                )
                 self.repository.record_external_call_validation(
                     record=external_call,
                     validation_status="INVALID",
@@ -220,6 +241,14 @@ class AIEvaluationService:
                 validation_status="VALID",
                 validation_errors=[],
             )
+            event_log.append_model_responded(
+                session_id=session.id,
+                run_id=run_id,
+                response_content=model_response.content,
+                validation="valid",
+                duration_ms=model_response.duration_ms,
+                parent_event_id=requested_event_id,
+            )
             logger.info(
                 "AI 评价输出校验通过",
                 extra={
@@ -248,9 +277,18 @@ class AIEvaluationService:
         session: Session,
         request: ModelRequestSnapshot,
         external_attempt_number: int,
-    ) -> tuple[AIModelResponse | None, ExternalCallRecord | None, int]:
+        run_id: str,
+    ) -> tuple[AIModelResponse | None, ExternalCallRecord | None, int, str | None]:
+        event_log = SessionEventLog(self.repository.database_session)
         for transport_attempt in range(self.settings.ai_transport_max_retries + 1):
             current_attempt_number = external_attempt_number + 1
+            requested_event = event_log.append_model_requested(
+                session_id=session.id,
+                run_id=run_id,
+                request=request,
+                provider=self.settings.ai_provider,
+                parent_event_id=event_log.latest_event_id(session.id, run_id),
+            )
             try:
                 model_response = self.client.evaluate(request)
             except AITransportError as error:
@@ -266,6 +304,14 @@ class AIEvaluationService:
                     raw_response=error.raw_response,
                     request_snapshot=request,
                 )
+                event_log.append_model_failed(
+                    session_id=session.id,
+                    run_id=run_id,
+                    error_type=error.error_type,
+                    message=str(error),
+                    duration_ms=error.duration_ms,
+                    parent_event_id=requested_event.event_id,
+                )
                 logger.log(
                     logging.ERROR
                     if transport_attempt == self.settings.ai_transport_max_retries
@@ -280,7 +326,7 @@ class AIEvaluationService:
                     },
                 )
                 if transport_attempt == self.settings.ai_transport_max_retries:
-                    return None, None, current_attempt_number
+                    return None, None, current_attempt_number, requested_event.event_id
                 time.sleep(self.settings.ai_retry_backoff_seconds[transport_attempt])
                 external_attempt_number = current_attempt_number
                 continue
@@ -304,7 +350,7 @@ class AIEvaluationService:
                     "durationMs": model_response.duration_ms,
                 },
             )
-            return model_response, external_call, current_attempt_number
+            return model_response, external_call, current_attempt_number, requested_event.event_id
         raise RuntimeError("AI 传输重试循环未产生结果")
 
 

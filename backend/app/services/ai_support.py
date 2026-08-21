@@ -28,6 +28,7 @@ from app.schemas.support import (
     SupportRequestOutput,
 )
 from app.services.ai_evaluation import AIModelClient, AIModelResponse, AITransportError
+from app.services.session_event_log import SessionEventLog
 
 SUPPORT_PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "generate_support.md"
 ASSESSMENT_PROMPT_PATH = (
@@ -105,20 +106,32 @@ class AISupportService:
     ) -> OutputType | None:
         validation_errors: list[str] = []
         external_attempt_number = 0
+        run_id = self._run_id(session)
+        event_log = SessionEventLog(self.repository.database_session)
         for schema_attempt in range(self.settings.ai_schema_max_retries + 1):
             request = request_builder(validation_errors)
-            model_response, external_call, external_attempt_number = (
+            if schema_attempt == 0:
+                event_log.append_contexts(
+                    session_id=session.id,
+                    run_id=run_id,
+                    request=request,
+                    question_source="question",
+                    parent_event_id=event_log.latest_event_id(session.id, run_id),
+                )
+            model_response, external_call, external_attempt_number, requested_event_id = (
                 self._call_with_transport_retries(
-                session=session,
-                request=request,
-                external_attempt_number=external_attempt_number,
-            )
+                    session=session,
+                    request=request,
+                    external_attempt_number=external_attempt_number,
+                    run_id=run_id,
+                )
             )
             if model_response is None:
                 self.repository.request_human_review(
                     session=session,
                     need_human_reason="AI 教学支持服务在配置的重试次数内未成功响应",
                     trigger_type="AI_SUPPORT_TRANSPORT_RETRY_EXHAUSTED",
+                    run_id=run_id,
                 )
                 return None
             if external_call is None:
@@ -139,6 +152,14 @@ class AISupportService:
                     validation_status="INVALID",
                     validation_errors=validation_errors,
                 )
+                event_log.append_model_responded(
+                    session_id=session.id,
+                    run_id=run_id,
+                    response_content=model_response.content,
+                    validation="invalid",
+                    duration_ms=model_response.duration_ms,
+                    parent_event_id=requested_event_id,
+                )
                 logger.log(
                     logging.ERROR
                     if schema_attempt == self.settings.ai_schema_max_retries
@@ -158,6 +179,7 @@ class AISupportService:
                         need_human_reason="AI 教学支持在配置的重试次数内仍不合法："
                         + "；".join(validation_errors),
                         trigger_type="AI_SUPPORT_SCHEMA_RETRY_EXHAUSTED",
+                        run_id=run_id,
                     )
                     return None
                 continue
@@ -165,6 +187,14 @@ class AISupportService:
                 record=external_call,
                 validation_status="VALID",
                 validation_errors=[],
+            )
+            event_log.append_model_responded(
+                session_id=session.id,
+                run_id=run_id,
+                response_content=model_response.content,
+                validation="valid",
+                duration_ms=model_response.duration_ms,
+                parent_event_id=requested_event_id,
             )
             logger.info(
                 "AI 教学支持输出校验通过",
@@ -184,9 +214,18 @@ class AISupportService:
         session: Session,
         request: ModelRequestSnapshot,
         external_attempt_number: int,
-    ) -> tuple[AIModelResponse | None, ExternalCallRecord | None, int]:
+        run_id: str,
+    ) -> tuple[AIModelResponse | None, ExternalCallRecord | None, int, str | None]:
+        event_log = SessionEventLog(self.repository.database_session)
         for transport_attempt in range(self.settings.ai_transport_max_retries + 1):
             current_attempt_number = external_attempt_number + 1
+            requested_event = event_log.append_model_requested(
+                session_id=session.id,
+                run_id=run_id,
+                request=request,
+                provider=self.settings.ai_provider,
+                parent_event_id=event_log.latest_event_id(session.id, run_id),
+            )
             try:
                 model_response = self.client.evaluate(request)
             except AITransportError as error:
@@ -203,6 +242,14 @@ class AISupportService:
                     raw_response=error.raw_response,
                     request_snapshot=request,
                 )
+                event_log.append_model_failed(
+                    session_id=session.id,
+                    run_id=run_id,
+                    error_type=error.error_type,
+                    message=str(error),
+                    duration_ms=error.duration_ms,
+                    parent_event_id=requested_event.event_id,
+                )
                 logger.log(
                     logging.ERROR
                     if transport_attempt == self.settings.ai_transport_max_retries
@@ -217,7 +264,7 @@ class AISupportService:
                     },
                 )
                 if transport_attempt == self.settings.ai_transport_max_retries:
-                    return None, None, current_attempt_number
+                    return None, None, current_attempt_number, requested_event.event_id
                 time.sleep(self.settings.ai_retry_backoff_seconds[transport_attempt])
                 external_attempt_number = current_attempt_number
                 continue
@@ -241,8 +288,12 @@ class AISupportService:
                     "durationMs": model_response.duration_ms,
                 },
             )
-            return model_response, external_call, current_attempt_number
+            return model_response, external_call, current_attempt_number, requested_event.event_id
         raise RuntimeError("AI 教学支持传输重试循环未产生结果")
+
+    @staticmethod
+    def _run_id(session: Session) -> str:
+        return f"run_session_{session.id}_support_{session.version}"
 
 
 def _render_support_prompt(
