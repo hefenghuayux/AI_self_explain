@@ -56,7 +56,6 @@ from app.services.ai_evaluation import AIEvaluationService
 from app.services.ai_support import AISupportService
 from app.services.ai_teaching import AITeachingError, AITeachingService
 from app.services.audio_storage import AudioStorage, AudioStorageError
-from app.services.audit_trace import AuditTraceService
 from app.services.realtime_asr import ASRServiceError, ASRStreamEvent, RealtimeASRService
 from app.services.teaching_context import TeachingContextService
 
@@ -127,7 +126,7 @@ def to_session_response(
 
 @router.post("", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 def create_session(
-    session_input: CreateSessionInput, request: Request, database_session: DatabaseSession
+    session_input: CreateSessionInput, database_session: DatabaseSession
 ) -> SessionResponse:
     question = database_session.get(Question, session_input.question_id)
     if question is None:
@@ -139,9 +138,6 @@ def create_session(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已归档题目不能创建会话")
     repository = SessionRepository(database_session)
     created_session = repository.create(session_input.question_id)
-    AuditTraceService(
-        database_session, request.app.state.settings.audit_export_dir
-    ).export_session(created_session.id)
     return to_session_response(repository, created_session)
 
 
@@ -893,15 +889,6 @@ async def stream_voice_input(
                 await asyncio.to_thread(service.stop)
             except ASRServiceError:
                 logger.exception("关闭实时 ASR 失败", extra={"operation": "close_realtime_asr"})
-        try:
-            AuditTraceService(
-                database_session, websocket.app.state.settings.audit_export_dir
-            ).export_session(session_id)
-        except Exception:
-            logger.exception(
-                "会话审计导出失败",
-                extra={"eventName": "audit.export_failed", "operation": "audit_export"},
-            )
         reset_trace_context(trace_tokens)
         database_session.close()
 

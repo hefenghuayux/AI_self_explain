@@ -558,7 +558,7 @@ async function respondToSolution(understood: boolean) {
       <div class="page-header">
         <div><h1>自讲学习</h1><p>用自己的语言讲清思路，在反馈中逐步完善。</p></div>
         <div class="page-actions">
-          <RouterLink v-if="session && authUser?.role === 'TEACHER'" :to="`/sessions/${session.id}/audit`"><el-button>查看全链路</el-button></RouterLink>
+          <RouterLink v-if="session && authUser?.role === 'TEACHER'" :to="`/sessions/${session.id}/logs`"><el-button>查看运行日志</el-button></RouterLink>
           <RouterLink v-if="session" to="/"><el-button>返回题目列表</el-button></RouterLink>
         </div>
       </div>

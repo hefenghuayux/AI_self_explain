@@ -9,11 +9,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import sessionmaker
 
-from app.api.audit import router as audit_router
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.questions import router as questions_router
 from app.api.sessions import router as sessions_router
+from app.api.session_events import router as session_events_router
 from app.core.config import Settings
 from app.core.database import create_database_engine, prepare_runtime_directories
 from app.core.logging import (
@@ -22,12 +22,9 @@ from app.core.logging import (
     new_correlation_id,
     reset_trace_context,
 )
-from app.services.audit_trace import AuditTraceService
 from app.services.realtime_asr import configure_dashscope
 
 SESSION_PATH_PATTERN = re.compile(r"^/api/sessions/(?P<session_id>\d+)(?:/|$)")
-MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-
 configure_logging()
 logger = logging.getLogger(__name__)
 
@@ -63,7 +60,7 @@ def create_app(settings: Settings) -> FastAPI:
     application.include_router(auth_router, prefix="/api")
     application.include_router(questions_router, prefix="/api")
     application.include_router(sessions_router, prefix="/api")
-    application.include_router(audit_router, prefix="/api")
+    application.include_router(session_events_router, prefix="/api")
 
     @application.middleware("http")
     async def request_context_middleware(request: Request, call_next) -> Response:
@@ -87,24 +84,6 @@ def create_app(settings: Settings) -> FastAPI:
             )
             raise
         finally:
-            if session_id is not None and request.method in MUTATING_METHODS:
-                try:
-                    database_session = application.state.database_session_factory()
-                    try:
-                        AuditTraceService(
-                            database_session,
-                            application.state.settings.audit_export_dir,
-                        ).export_session(session_id)
-                    finally:
-                        database_session.close()
-                except Exception:
-                    logger.exception(
-                        "会话审计导出失败",
-                        extra={
-                            "eventName": "audit.export_failed",
-                            "operation": "audit_export",
-                        },
-                    )
             if "response" in locals():
                 elapsed_ms = round((time.perf_counter() - started_at) * 1000)
                 response.headers["X-Request-ID"] = request_id

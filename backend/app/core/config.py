@@ -67,7 +67,6 @@ class Settings(BaseSettings):
     database_url: NonEmptyString
     audio_storage_dir: Path
     log_dir: Path
-    audit_export_dir: Path
 
     @field_validator("ai_retry_backoff_seconds", "asr_retry_backoff_seconds", mode="before")
     @classmethod
@@ -102,14 +101,14 @@ class Settings(BaseSettings):
             raise ValueError("ASR_BASE_URL 必须使用 WebSocket URL")
         return value
 
-    @field_validator("audio_storage_dir", "log_dir", "audit_export_dir", mode="before")
+    @field_validator("audio_storage_dir", "log_dir", mode="before")
     @classmethod
     def validate_directory_value(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():
             raise ValueError("目录路径不能为空")
         return value
 
-    @field_validator("audio_storage_dir", "log_dir", "audit_export_dir")
+    @field_validator("audio_storage_dir", "log_dir")
     @classmethod
     def validate_directory_path(cls, value: Path) -> Path:
         if value.exists() and not value.is_dir():

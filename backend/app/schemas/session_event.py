@@ -91,3 +91,9 @@ class SessionEventResponse(QuestionSchema):
     event_type: EventType
     occurred_at: datetime
     data: dict[str, JsonValue]
+
+
+class SessionEventListResponse(QuestionSchema):
+    session_id: int
+    events: list[SessionEventResponse]
+    next_after_seq: int

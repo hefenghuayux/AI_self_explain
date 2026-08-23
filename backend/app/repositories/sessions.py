@@ -125,36 +125,6 @@ class SessionRepository:
     def get(self, session_id: int) -> Session | None:
         return self.database_session.get(Session, session_id)
 
-    def get_state_events(self, session_id: int) -> list[StateTransitionEvent]:
-        return list(
-            self.database_session.scalars(
-                select(StateTransitionEvent)
-                .where(StateTransitionEvent.session_id == session_id)
-                .order_by(StateTransitionEvent.created_at, StateTransitionEvent.id)
-            )
-        )
-
-    def get_external_calls(self, session_id: int) -> list[ExternalCallRecord]:
-        return list(
-            self.database_session.scalars(
-                select(ExternalCallRecord)
-                .where(ExternalCallRecord.session_id == session_id)
-                .order_by(ExternalCallRecord.created_at, ExternalCallRecord.id)
-            )
-        )
-
-    def get_external_call_errors(self, session_id: int) -> list[ExternalCallRecord]:
-        return list(
-            self.database_session.scalars(
-                select(ExternalCallRecord)
-                .where(
-                    ExternalCallRecord.session_id == session_id,
-                    ExternalCallRecord.error_type.is_not(None),
-                )
-                .order_by(ExternalCallRecord.created_at, ExternalCallRecord.id)
-            )
-        )
-
     def pause(self, session: Session) -> Session:
         before_snapshot = session_snapshot(session)
         session.paused_from_stage = session.flow_stage

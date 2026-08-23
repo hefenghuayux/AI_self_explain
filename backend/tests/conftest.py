@@ -41,7 +41,6 @@ TEST_ENV = {
     "DATABASE_URL": "sqlite:///:memory:",
     "AUDIO_STORAGE_DIR": "test-audio",
     "LOG_DIR": "test-logs",
-    "AUDIT_EXPORT_DIR": "test-audit-exports",
 }
 
 for key, value in TEST_ENV.items():
@@ -60,7 +59,6 @@ def settings_values(tmp_path: Path) -> dict[str, str]:
         "database_url": f"sqlite:///{tmp_path / 'test.db'}",
         "audio_storage_dir": str(tmp_path / "audio"),
         "log_dir": str(tmp_path / "logs"),
-        "audit_export_dir": str(tmp_path / "audit-exports"),
     }
 
 
