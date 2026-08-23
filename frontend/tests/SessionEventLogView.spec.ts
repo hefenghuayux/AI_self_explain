@@ -78,11 +78,43 @@ describe("SessionEventLogView", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     const wrapper = await mountView()
-    await wrapper.findAll(".view-switch button")[1].trigger("click")
+    await wrapper.get(".view-switch button:nth-child(3)").trigger("click")
     await flushPromises()
 
     expect(fetchMock).toHaveBeenLastCalledWith("/api/sessions/42/trace?run_id=run-1", expect.any(Object))
     expect(wrapper.text()).toContain("#1 user.message")
     expect(wrapper.text()).toContain("#3 model.requested")
+  })
+
+  it("切换 Surface 时读取模型可见消息和上下文", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({
+        sessionId: 42,
+        runs: [{ runId: "run-1", startedAt: "2026-08-20T10:00:00Z", steps: [] }],
+      }))
+      .mockResolvedValueOnce(response({
+        sessionId: 42,
+        asOfSeq: 5,
+        messages: [{ seq: 1, role: "user", content: "学生的完整回答" }],
+        contexts: [{
+          seq: 3,
+          kind: "question",
+          source: "question:7",
+          content: { questionContent: "计算 1 + 1。" },
+        }],
+      }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const wrapper = await mountView()
+    await wrapper.findAll(".view-switch button")[0].trigger("click")
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/sessions/42/surface",
+      expect.any(Object),
+    )
+    expect(wrapper.text()).toContain("学生的完整回答")
+    expect(wrapper.text()).toContain("question")
+    expect(wrapper.text()).toContain("#5")
   })
 })

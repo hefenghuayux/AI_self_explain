@@ -4,11 +4,13 @@ import { useRoute } from "vue-router"
 
 import {
   fetchSessionEvent,
+  fetchSessionSurface,
   fetchSessionTrace,
   fetchSessionTrajectory,
 } from "../api/session-events"
 import type {
   SessionEvent,
+  Surface,
   Trace,
   TraceNode,
   Trajectory,
@@ -16,17 +18,19 @@ import type {
   TrajectoryStep,
 } from "../types/session-event"
 
-type ViewMode = "trajectory" | "trace"
+type ViewMode = "surface" | "trajectory" | "trace"
 
 const route = useRoute()
 const sessionId = String(route.params.sessionId)
 const viewMode = ref<ViewMode>("trajectory")
 const trajectory = ref<Trajectory>()
 const trace = ref<Trace>()
+const surface = ref<Surface>()
 const selectedRunId = ref("")
 const events = ref<Record<number, SessionEvent>>({})
 const loading = ref(true)
 const traceLoading = ref(false)
+const surfaceLoading = ref(false)
 const errorMessage = ref("")
 const detailErrors = ref<Record<number, string>>({})
 
@@ -75,6 +79,18 @@ async function loadTrace() {
   }
 }
 
+async function loadSurface() {
+  surfaceLoading.value = true
+  errorMessage.value = ""
+  try {
+    surface.value = await fetchSessionSurface(sessionId)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    surfaceLoading.value = false
+  }
+}
+
 async function showEvent(seq: number) {
   if (events.value[seq]) return
   detailErrors.value[seq] = ""
@@ -95,6 +111,7 @@ function traceLabel(node: TraceNode): string {
 
 onMounted(loadTrajectory)
 watch(viewMode, (mode) => {
+  if (mode === "surface" && !surface.value) void loadSurface()
   if (mode === "trace") void loadTrace()
 })
 watch(selectedRunId, () => {
@@ -122,6 +139,7 @@ watch(selectedRunId, () => {
     <template v-else>
       <section class="view-panel" aria-label="日志视图">
         <div class="view-switch" role="tablist" aria-label="日志投影">
+          <button type="button" :class="{ active: viewMode === 'surface' }" :aria-pressed="viewMode === 'surface'" @click="viewMode = 'surface'">Surface 模型上下文</button>
           <button type="button" :class="{ active: viewMode === 'trajectory' }" :aria-pressed="viewMode === 'trajectory'" @click="viewMode = 'trajectory'">Trajectory 运行步骤</button>
           <button type="button" :class="{ active: viewMode === 'trace' }" :aria-pressed="viewMode === 'trace'" @click="viewMode = 'trace'">Trace 因果关系</button>
         </div>
@@ -133,7 +151,42 @@ watch(selectedRunId, () => {
         </label>
       </section>
 
-      <section v-if="viewMode === 'trajectory'" class="content-section">
+      <section v-if="viewMode === 'surface'" class="content-section">
+        <p v-if="surfaceLoading" class="loading-state">正在读取模型上下文……</p>
+        <template v-else-if="surface">
+          <div class="surface-summary">
+            <span>投影截止序号</span>
+            <strong>#{{ surface.asOfSeq }}</strong>
+            <span>该视图只包含模型可见的学生消息和上下文，不包含模型请求结果或状态变化。</span>
+          </div>
+          <div class="surface-grid">
+            <section class="surface-panel">
+              <header class="surface-panel-header">
+                <h2>学生消息</h2>
+                <span>{{ surface.messages.length }} 条</span>
+              </header>
+              <p v-if="!surface.messages.length" class="empty-state">当前没有学生消息。</p>
+              <article v-for="message in surface.messages" :key="message.seq" class="surface-message">
+                <div class="surface-item-meta"><strong>{{ message.role }}</strong><span>#{{ message.seq }}</span></div>
+                <p>{{ message.content }}</p>
+              </article>
+            </section>
+            <section class="surface-panel">
+              <header class="surface-panel-header">
+                <h2>上下文</h2>
+                <span>{{ surface.contexts.length }} 条</span>
+              </header>
+              <p v-if="!surface.contexts.length" class="empty-state">当前没有附加上下文。</p>
+              <details v-for="context in surface.contexts" :key="context.seq" class="surface-context" open>
+                <summary><span>{{ context.kind }}</span><small>#{{ context.seq }} · {{ context.source }}</small></summary>
+                <pre>{{ JSON.stringify(context.content, null, 2) }}</pre>
+              </details>
+            </section>
+          </div>
+        </template>
+      </section>
+
+      <section v-else-if="viewMode === 'trajectory'" class="content-section">
         <p v-if="!trajectory?.runs.length" class="empty-state">当前会话没有可展示的运行步骤。</p>
         <template v-else-if="selectedRun">
           <p class="section-note">开始时间：{{ displayTime(selectedRun.startedAt) }}</p>
@@ -226,6 +279,21 @@ export default defineComponent({
 .run-picker select { min-width: 220px; min-height: 40px; padding: 0 var(--space-2); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface); }
 .content-section { margin-top: var(--space-6); }
 .section-note, .loading-state, .empty-state { color: var(--color-text-muted); }
+.surface-summary { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text-muted); background: var(--color-surface-muted); }
+.surface-summary strong { color: var(--color-brand-700); font-size: var(--font-size-xl); }
+.surface-summary span:last-child { justify-self: end; text-align: right; }
+.surface-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: var(--space-4); margin-top: var(--space-4); }
+.surface-panel { min-width: 0; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.surface-panel-header, .surface-item-meta { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.surface-panel-header { padding-bottom: var(--space-3); border-bottom: 1px solid var(--color-border); }
+.surface-panel-header h2 { margin: 0; font-size: var(--font-size-lg); }
+.surface-panel-header span, .surface-item-meta span, .surface-context small { color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.surface-message { margin-top: var(--space-3); padding: var(--space-3); border-left: 3px solid var(--color-brand-600); border-radius: var(--radius-sm); background: var(--color-brand-50); }
+.surface-message p { margin: var(--space-2) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.surface-context { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+.surface-context summary { display: flex; justify-content: space-between; gap: var(--space-3); cursor: pointer; color: var(--color-brand-700); }
+.surface-context summary span { font-weight: 650; }
+.surface-context pre { margin-top: var(--space-3); }
 .step-list { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
 .step-item { padding: var(--space-4); border: 1px solid var(--color-border); border-left: 4px solid var(--color-brand-600); border-radius: var(--radius-md); background: var(--color-surface); }
 .step-heading { align-items: flex-start; }
@@ -251,6 +319,10 @@ pre { max-height: 480px; overflow: auto; margin: 0; padding: var(--space-3); bor
   .view-switch, .view-switch button, .run-picker, .run-picker select { width: 100%; }
   .view-switch button { text-align: left; }
   .step-heading { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
+  .surface-summary { grid-template-columns: 1fr auto; }
+  .surface-summary span:last-child { grid-column: span 2; justify-self: start; text-align: left; }
+  .surface-grid { grid-template-columns: 1fr; }
+  .surface-context summary { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
   .trace-node .trace-node { margin-left: var(--space-2); }
 }
 </style>
