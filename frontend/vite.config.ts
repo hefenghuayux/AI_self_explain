@@ -21,6 +21,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      allowedHosts: ["ai-self-explain.xyz"],
       proxy: {
         "/api": {
           target: backendProxyTarget,
