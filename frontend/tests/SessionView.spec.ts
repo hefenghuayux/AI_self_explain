@@ -38,7 +38,6 @@ const continueExplaining = vi.mocked(sessionApi.continueExplaining)
 const fetchLearningTimeline = vi.mocked(sessionApi.fetchLearningTimeline)
 const fetchSession = vi.mocked(sessionApi.fetchSession)
 const fetchQuestion = vi.mocked(questionApi.fetchQuestion)
-const requestSupport = vi.mocked(sessionApi.requestSupport)
 const submitAppeal = vi.mocked(sessionApi.submitAppeal)
 const submitGuidedAnswers = vi.mocked(sessionApi.submitGuidedAnswers)
 const submitInitialChoice = vi.mocked(sessionApi.submitInitialChoice)
@@ -162,28 +161,6 @@ describe("SessionView", () => {
     resolveTextAttempt(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 3 }))
     await submitPromise
     await flushPromises()
-  })
-
-  it("reminds once before allowing an empty draft to request support", async () => {
-    fetchSession.mockResolvedValue(createSession())
-    const wrapper = await mountSessionView()
-
-    await wrapper.get('[data-testid="request-support"]').trigger("click")
-    await flushPromises()
-    expect(submitInitialChoice).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain("请先输入当前的题干理解")
-  })
-
-  it("sends the retained main draft when requesting guided support", async () => {
-    fetchSession.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 4, currentDraft: "我知道有两个 1。" }))
-    requestSupport.mockResolvedValue(createSession({ flowStage: "WAIT_GUIDED_ANSWERS", version: 5, currentDraft: "我知道有两个 1。" }))
-    const wrapper = await mountSessionView()
-
-    await wrapper.get('[data-testid="main-draft"]').setValue("我知道有两个 1，并想继续计算。")
-    await wrapper.get('[data-testid="request-support"]').trigger("click")
-    await flushPromises()
-
-    expect(requestSupport).toHaveBeenCalledWith("12", "我知道有两个 1，并想继续计算。", 4)
   })
 
   it("shows only the direct start-recording entry without voice guidance text", async () => {
@@ -493,7 +470,7 @@ describe("SessionView", () => {
     expect(contents).toEqual(["1 加 1 等于 2。", "还需要说明为什么是 2。"])
   })
 
-  it("keeps feedback evidence collapsed until the student requests it", async () => {
+  it("shows compact progress and feedback before the self-explanation actions", async () => {
     fetchSession.mockResolvedValue(createSession({
       flowStage: "WAIT_STUDENT_ACTION",
       latestEvaluation: {
@@ -532,9 +509,21 @@ describe("SessionView", () => {
     }))
     const wrapper = await mountSessionView()
 
+    expect(wrapper.text()).toContain("本轮支持")
+    expect(wrapper.text()).not.toContain("当前学习状态")
+    expect(wrapper.text()).not.toContain("进度由系统规则计算")
+    expect(wrapper.text()).not.toContain("当前输入与主操作")
+    expect(wrapper.text()).not.toContain("内容会自动保存在当前浏览器中")
+    expect(wrapper.text()).not.toContain("当前可使用")
     expect(wrapper.text()).toContain("最新反馈")
     expect(wrapper.text()).toContain("下一步：请重新检查两个数相加的结果。")
     expect(wrapper.text()).not.toContain("两个 1 相加的结果应为 2。")
+    expect(wrapper.find('[data-testid="request-support"]').exists()).toBe(false)
+    expect(wrapper.get(".self-explain-actions").get('[data-testid="submit-explanation"]')).toBeTruthy()
+    expect(wrapper.get(".self-explain-actions").get('[data-testid="start-voice"]')).toBeTruthy()
+    expect(wrapper.html().indexOf("最新反馈")).toBeLessThan(
+      wrapper.html().indexOf('data-testid="dialog-segmented"'),
+    )
 
     const toggle = wrapper.get('[aria-controls="feedback-details"]')
     expect(toggle.attributes("aria-expanded")).toBe("false")

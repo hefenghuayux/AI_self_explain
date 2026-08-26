@@ -7,7 +7,6 @@ import {
   continueExplaining,
   fetchLearningTimeline,
   fetchSession,
-  requestSupport,
   SessionApiError,
   submitAppeal,
   submitGuidedAnswers,
@@ -23,7 +22,6 @@ import type {
   InitialChoice,
   LearningTimelineItem,
   Session,
-  SessionStatus,
   VoiceInputTarget,
 } from "../types/session"
 import type { Question } from "../types/question"
@@ -46,8 +44,6 @@ const selfExplainDraft = ref("")
 const guidedAnswerText = ref<Record<string, string>>({})
 const doubtDraft = ref("")
 const appealDraft = ref("")
-const emptyDraftReminderShown = ref(false)
-const unchangedDraftReminderShown = ref(false)
 const loading = ref(true)
 const submitting = ref(false)
 const errorMessage = ref("")
@@ -75,14 +71,6 @@ const studentInterruptionFlowStages = new Set<Session["flowStage"]>([
   "WAIT_GUIDED_ANSWERS",
   "SHOWING_FULL_SOLUTION",
 ])
-
-const sessionStatusLabels: Record<SessionStatus, string> = {
-  IN_PROGRESS: "进行中",
-  COMPLETED: "已完成",
-  STOPPED_LIMIT: "已达到支持上限",
-  NEED_HUMAN: "已申请人工复核",
-  PAUSED: "已暂停",
-}
 
 const correctnessLabels: Record<AIEvaluation["correctness"], string> = {
   CORRECT: "正确",
@@ -243,34 +231,13 @@ function canUseSegment(segment: SegmentKey) {
   return hasAppealableAiResponse() && canSubmitStudentInterruption()
 }
 
-function segmentUnavailableReason(segment: SegmentKey) {
-  if (submitting.value) return "正在提交，请等待当前操作完成。"
-  if (segment === "guidedAnswers") return "收到 AI 子问题后，可在这里回答。"
-  if (segment === "appeal") return "收到 AI 评价或学习支持后，可在这里提出异议。"
-  if (segment === "doubt") return "当前流程暂不能提交疑问，请等待系统进入下一步。"
-  return "当前流程暂不能继续自讲，请等待系统进入下一步。"
-}
-
 const segmentOptions = computed(() => segmentEntries.map((segment) => ({
   ...segment,
   disabled: !canUseSegment(segment.value),
 })))
 
-const activeSegmentHint = computed(() => (
-  canUseSegment(activeSegment.value)
-    ? `当前可使用“${segmentEntries.find((segment) => segment.value === activeSegment.value)?.label}”操作。`
-    : segmentUnavailableReason(activeSegment.value)
-))
-
 const selfExplainCharacterCount = computed(() => selfExplainDraft.value.length)
 const feedbackDetailsOpen = ref(false)
-
-function sessionStatusType(status: SessionStatus) {
-  if (status === "COMPLETED") return "success"
-  if (status === "NEED_HUMAN") return "danger"
-  if (status === "STOPPED_LIMIT" || status === "PAUSED") return "warning"
-  return "primary"
-}
 
 function evaluationClass(value: string) {
   if (value === "CORRECT" || value === "COMPLETE") return "is-positive"
@@ -305,31 +272,6 @@ async function continueAfterError() {
   } finally {
     loading.value = false
   }
-}
-
-function resetDraftReminderIfChanged() {
-  if (session.value && selfExplainDraft.value !== session.value.currentDraft) {
-    unchangedDraftReminderShown.value = false
-  }
-}
-
-function canRequestSupport() {
-  resetDraftReminderIfChanged()
-  if (!selfExplainDraft.value.trim() && !emptyDraftReminderShown.value) {
-    emptyDraftReminderShown.value = true
-    errorMessage.value = "请先输入当前的题干理解或者解题、分析过程；再次点击可继续。"
-    return false
-  }
-  if (
-    session.value?.flowStage === "WAIT_STUDENT_ACTION"
-    && selfExplainDraft.value === session.value.currentDraft
-    && !unchangedDraftReminderShown.value
-  ) {
-    unchangedDraftReminderShown.value = true
-    errorMessage.value = "请先将刚才的思路补充到主输入框后再提交；再次点击可继续。"
-    return false
-  }
-  return true
 }
 
 async function chooseInitialChoice(choice: InitialChoice) {
@@ -472,24 +414,6 @@ async function handleVoiceCompleted(
   }
 }
 
-async function requestGuidedSupport() {
-  if (!session.value || !canRequestSupport()) return
-  submitting.value = true
-  errorMessage.value = ""
-  try {
-    if (session.value.flowStage === "WAIT_INITIAL_CHOICE") {
-      session.value = await submitInitialChoice(sessionId, "NOT_KNOW", session.value.version)
-    }
-    session.value = await requestSupport(sessionId, selfExplainDraft.value, session.value.version)
-    syncActiveSegmentWithStage()
-    await refreshTimeline()
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
-  } finally {
-    submitting.value = false
-  }
-}
-
 async function submitDoubt() {
   if (!session.value) return
   if (!doubtDraft.value.trim()) {
@@ -614,18 +538,40 @@ async function respondToSolution(understood: boolean) {
           <h2 id="question-title">题目</h2>
           <p data-testid="question-content">{{ question.questionContent }}</p>
         </section>
-        <section class="session-section progress-section" aria-labelledby="progress-title">
-          <div class="section-heading"><div><h2 id="progress-title">当前学习状态</h2><p>进度由系统规则计算，帮助你了解当前学习位置。</p></div></div>
-          <div class="session-summary" aria-label="学习进度">
-            <div class="summary-item status-item"><span>会话状态</span><el-tag :type="sessionStatusType(session.status)" effect="light">{{ sessionStatusLabels[session.status] }}</el-tag></div>
-            <div class="summary-item"><span>当前轮次</span><strong>第 {{ session.round }} 轮</strong></div>
-            <div class="summary-item"><span>本轮支持</span><strong>{{ session.supportCountRound }} 次</strong></div>
-            <div class="summary-item"><span>累计支持</span><strong>{{ session.supportCountTotal }} 次</strong></div>
+        <section class="session-section progress-section" aria-label="本轮学习进度">
+          <div class="session-summary">
+            <div class="summary-item support-count-item"><span>本轮支持</span><strong>{{ session.supportCountRound }} 次</strong></div>
+          </div>
+        </section>
+        <section v-if="session.latestEvaluation" class="session-section feedback-section" aria-labelledby="feedback-title" aria-live="polite">
+          <div class="section-heading feedback-heading"><div><h2 id="feedback-title">最新反馈</h2><p>先看结论，再按需查看评价依据。</p></div></div>
+          <div class="feedback-card">
+            <div class="evaluation-results">
+              <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.correctness)"><span>正确性</span><strong>{{ correctnessLabels[session.latestEvaluation.correctness] }}</strong></div>
+              <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.completeness)"><span>完整性</span><strong>{{ completenessLabels[session.latestEvaluation.completeness] }}</strong></div>
+            </div>
+            <p v-if="session.latestSupport?.content" class="feedback-next-step"><strong>下一步：</strong>{{ session.latestSupport.content }}</p>
+            <el-button
+              v-if="session.latestEvaluation.errorEvidence.length"
+              class="feedback-toggle"
+              text
+              type="primary"
+              :aria-expanded="feedbackDetailsOpen"
+              aria-controls="feedback-details"
+              @click="feedbackDetailsOpen = !feedbackDetailsOpen"
+            >{{ feedbackDetailsOpen ? '收起评价依据' : '查看评价依据' }}</el-button>
+            <div v-if="feedbackDetailsOpen && session.latestEvaluation.errorEvidence.length" id="feedback-details" class="feedback-details">
+              <article v-for="(evidence, index) in session.latestEvaluation.errorEvidence" :key="`${evidence.locationDescription}-${index}`" class="feedback-evidence">
+                <h3>需要调整的地方</h3>
+                <p><strong>你的表达：</strong>{{ evidence.quote }}</p>
+                <p><strong>原因：</strong>{{ evidence.reason }}</p>
+                <p><strong>思考方向：</strong>{{ evidence.thinkingDirection }}</p>
+              </article>
+            </div>
           </div>
         </section>
         <template v-if="session.status !== 'NEED_HUMAN' && session.status !== 'COMPLETED' && session.status !== 'STOPPED_LIMIT'">
-          <section class="session-section input-section" aria-labelledby="input-title">
-            <div class="section-heading"><div><h2 id="input-title">当前输入与主操作</h2><p>内容会自动保存在当前浏览器中。</p></div></div>
+          <section class="session-section input-section" aria-label="当前输入与主操作">
             <el-segmented
               v-model="activeSegment"
               data-testid="dialog-segmented"
@@ -633,9 +579,7 @@ async function respondToSolution(understood: boolean) {
               block
               class="dialog-segmented"
               aria-label="选择学习操作"
-              aria-describedby="segment-operation-hint"
             />
-            <p id="segment-operation-hint" class="segment-operation-hint" aria-live="polite">{{ activeSegmentHint }}</p>
             <div class="dialog-panel">
               <div v-show="activeSegment === 'selfExplain'" class="dialog-pane">
                 <el-input
@@ -665,16 +609,9 @@ async function respondToSolution(understood: boolean) {
                   v-if="session.flowStage !== 'WAIT_GUIDED_ANSWERS'
                     && session.flowStage !== 'AI_EVALUATING'
                     && session.flowStage !== 'SHOWING_FULL_SOLUTION'"
-                  class="primary-submit-action"
+                  class="actions self-explain-actions"
                 >
                   <el-button data-testid="submit-explanation" type="primary" :loading="submitting" :aria-busy="submitting" @click="submitExplanation">{{ submitting ? '正在提交自讲' : '提交自讲' }}</el-button>
-                </div>
-                <div
-                  v-if="session.flowStage !== 'WAIT_GUIDED_ANSWERS'
-                    && session.flowStage !== 'AI_EVALUATING'
-                    && session.flowStage !== 'SHOWING_FULL_SOLUTION'"
-                  class="actions secondary-actions"
-                >
                   <el-button
                     v-if="session.flowStage === 'WAIT_INITIAL_CHOICE'
                       || session.flowStage === 'WAIT_STUDENT_ACTION'"
@@ -683,7 +620,6 @@ async function respondToSolution(understood: boolean) {
                     :loading="submitting"
                     @click="startVoiceRecording"
                   >开始录音</el-button>
-                  <el-button data-testid="request-support" :loading="submitting" @click="requestGuidedSupport">我不会，给我一点提示</el-button>
                 </div>
               </div>
               <div v-show="activeSegment === 'guidedAnswers'" class="dialog-pane">
@@ -816,33 +752,6 @@ async function respondToSolution(understood: boolean) {
           <section v-if="session.flowStage === 'AI_EVALUATING'" class="session-section"><h2>AI 正在评价</h2><p>请等待评价结果返回。</p></section>
           <section v-else-if="session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2>完整解析</h2><p v-if="question">{{ question.fullSolution }}</p><p>请确认你是否已经理解解析；确认后需要从头完成第二轮自讲。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，开始第二轮自讲</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
         </template>
-        <section v-if="session.latestEvaluation" class="session-section feedback-section" aria-labelledby="feedback-title" aria-live="polite">
-          <div class="section-heading feedback-heading"><div><h2 id="feedback-title">最新反馈</h2><p>先看结论，再按需查看评价依据。</p></div></div>
-          <div class="feedback-card">
-            <div class="evaluation-results">
-              <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.correctness)"><span>正确性</span><strong>{{ correctnessLabels[session.latestEvaluation.correctness] }}</strong></div>
-              <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.completeness)"><span>完整性</span><strong>{{ completenessLabels[session.latestEvaluation.completeness] }}</strong></div>
-            </div>
-            <p v-if="session.latestSupport?.content" class="feedback-next-step"><strong>下一步：</strong>{{ session.latestSupport.content }}</p>
-            <el-button
-              v-if="session.latestEvaluation.errorEvidence.length"
-              class="feedback-toggle"
-              text
-              type="primary"
-              :aria-expanded="feedbackDetailsOpen"
-              aria-controls="feedback-details"
-              @click="feedbackDetailsOpen = !feedbackDetailsOpen"
-            >{{ feedbackDetailsOpen ? '收起评价依据' : '查看评价依据' }}</el-button>
-            <div v-if="feedbackDetailsOpen && session.latestEvaluation.errorEvidence.length" id="feedback-details" class="feedback-details">
-              <article v-for="(evidence, index) in session.latestEvaluation.errorEvidence" :key="`${evidence.locationDescription}-${index}`" class="feedback-evidence">
-                <h3>需要调整的地方</h3>
-                <p><strong>你的表达：</strong>{{ evidence.quote }}</p>
-                <p><strong>原因：</strong>{{ evidence.reason }}</p>
-                <p><strong>思考方向：</strong>{{ evidence.thinkingDirection }}</p>
-              </article>
-            </div>
-          </div>
-        </section>
         <section v-if="session.needHumanReason && session.status === 'IN_PROGRESS'" class="session-section"><el-alert title="已申请人工复核，你可以继续自讲。" type="warning" :closable="false" show-icon /></section>
         <section v-if="session.status === 'NEED_HUMAN'" class="session-section"><h2>需要人工处理</h2><el-alert title="自动学习流程已停止" :description="session.needHumanReason || '暂无法可靠判断，已转人工帮助。'" type="error" :closable="false" show-icon /></section>
         <section v-else-if="session.status === 'COMPLETED'" class="session-section completion-state"><h2>本轮自讲已完成</h2><p>你已经正确、完整地讲清了这道题。</p></section>
@@ -896,12 +805,12 @@ h2 { font-size: var(--font-size-lg); }
 .session-section p { color: var(--color-text-secondary); }
 .section-heading { display: flex; justify-content: space-between; gap: var(--space-4); }
 .section-description, .section-heading p { margin: var(--space-1) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.session-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: var(--space-4); overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
+.session-summary { display: flex; width: fit-content; min-width: 180px; overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
 .summary-item { display: flex; min-width: 0; flex-direction: column; padding: var(--space-4); gap: var(--space-1); }
 .summary-item + .summary-item { border-left: 1px solid var(--color-border); }
 .summary-item span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .summary-item strong { font-size: var(--font-size-lg); }
-.status-item { align-items: flex-start; }
+.support-count-item { align-items: baseline; flex-direction: row; justify-content: space-between; gap: var(--space-4); }
 .evaluation-results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .evaluation-result { padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-muted); }
 .evaluation-result span { display: block; color: var(--color-text-muted); font-size: var(--font-size-sm); }
@@ -911,7 +820,6 @@ h2 { font-size: var(--font-size-lg); }
 .evaluation-result.is-attention { color: var(--color-action-700); background: var(--color-action-100); }
 .dialog-segmented { width: 100%; margin-top: var(--space-4); }
 .dialog-segmented :deep(.el-segmented__item) { min-height: 44px; }
-.segment-operation-hint { min-height: 24px; margin: var(--space-2) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .dialog-panel {
   margin-top: var(--space-2);
   border: 1px solid var(--color-border-strong);
@@ -922,9 +830,9 @@ h2 { font-size: var(--font-size-lg); }
 }
 .dialog-pane { min-height: 190px; }
 .draft-meta { display: flex; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.primary-submit-action { margin-top: var(--space-4); }
-.primary-submit-action .el-button { width: 100%; }
-.secondary-actions { margin-top: var(--space-2); }
+.self-explain-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.self-explain-actions .el-button { width: 100%; min-width: 0; }
+.self-explain-actions .el-button:only-child { grid-column: 1 / -1; }
 .guided-question + .guided-question { margin-top: var(--space-4); }
 .guided-question p { margin: 0 0 var(--space-2); color: var(--color-text-primary); font-weight: 600; }
 .guided-question .voice-recorder { margin-top: 0; }
@@ -993,20 +901,16 @@ h2 { font-size: var(--font-size-lg); }
 .completion-state { color: var(--color-success-700); }
 .solution-state p { max-width: var(--reading-width); white-space: pre-wrap; color: var(--color-text-primary); }
 @media (max-width: 768px) {
-  .session-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .summary-item:nth-child(3) { border-top: 1px solid var(--color-border); border-left: 0; }
-  .summary-item:nth-child(4) { border-top: 1px solid var(--color-border); }
   .dialog-segmented :deep(.el-segmented__group) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: var(--space-2); background: transparent; }
   .dialog-segmented :deep(.el-segmented__item) { min-width: 0; padding: var(--space-2); border-radius: var(--radius-md); white-space: normal; }
 }
 @media (max-width: 640px) {
-  .session-page { padding: var(--space-6) var(--space-4) calc(var(--space-12) + var(--space-4)); }
+  .session-page { padding: var(--space-6) var(--space-4) var(--space-8); }
   .page-header { align-items: flex-start; flex-direction: column; }
   .page-header a, .page-header .el-button { width: 100%; }
   .question-content { padding: var(--space-4); }
   .dialog-panel { padding: var(--space-4); }
   .draft-meta { align-items: flex-start; flex-direction: column; gap: 0; }
-  .primary-submit-action { position: sticky; z-index: 5; bottom: var(--space-2); padding: var(--space-2); margin: var(--space-4) calc(var(--space-2) * -1) 0; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); box-shadow: var(--shadow-md); }
   .actions .el-button { flex: 1 1 100%; }
   .conversation-scroll { height: 480px; }
   .conversation-list { padding: var(--space-3); }
