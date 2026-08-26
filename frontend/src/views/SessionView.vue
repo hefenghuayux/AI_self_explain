@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue"
-import { useRoute } from "vue-router"
+import { useRoute, useRouter } from "vue-router"
 
 import {
   askDoubt,
   continueExplaining,
+  createSession,
   fetchLearningTimeline,
   fetchSession,
   SessionApiError,
@@ -36,6 +37,7 @@ interface DialogDrafts {
 }
 
 const route = useRoute()
+const router = useRouter()
 const session = ref<Session>()
 const question = ref<Question>()
 const timeline = ref<LearningTimelineItem[]>([])
@@ -271,6 +273,21 @@ async function continueAfterError() {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
     loading.value = false
+  }
+}
+
+async function restartSelfExplanation() {
+  if (!session.value) return
+  submitting.value = true
+  errorMessage.value = ""
+  try {
+    const restartedSession = await createSession(String(session.value.questionId), true)
+    localStorage.removeItem(dialogDraftStorageKey)
+    await router.push(`/sessions/${restartedSession.id}`)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -524,6 +541,7 @@ async function respondToSolution(understood: boolean) {
       <div class="page-header">
         <div><h1>自讲学习</h1><p>用自己的语言讲清思路，在反馈中逐步完善。</p></div>
         <div class="page-actions">
+          <el-button v-if="session" data-testid="restart-self-explanation" :loading="submitting" @click="restartSelfExplanation">重新自讲</el-button>
           <RouterLink v-if="session && authUser?.role === 'TEACHER'" :to="`/sessions/${session.id}/logs`"><el-button>查看运行日志</el-button></RouterLink>
           <RouterLink v-if="session" to="/"><el-button>返回题目列表</el-button></RouterLink>
         </div>

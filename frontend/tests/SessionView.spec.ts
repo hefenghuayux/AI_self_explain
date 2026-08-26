@@ -23,6 +23,7 @@ vi.mock("../src/api/sessions", () => ({
   },
   askDoubt: vi.fn(),
   continueExplaining: vi.fn(),
+  createSession: vi.fn(),
   fetchLearningTimeline: vi.fn(),
   fetchSession: vi.fn(),
   requestSupport: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock("../src/api/sessions", () => ({
 
 const askDoubt = vi.mocked(sessionApi.askDoubt)
 const continueExplaining = vi.mocked(sessionApi.continueExplaining)
+const createSessionRequest = vi.mocked(sessionApi.createSession)
 const fetchLearningTimeline = vi.mocked(sessionApi.fetchLearningTimeline)
 const fetchSession = vi.mocked(sessionApi.fetchSession)
 const fetchQuestion = vi.mocked(questionApi.fetchQuestion)
@@ -111,6 +113,17 @@ describe("SessionView", () => {
 
     expect(fetchQuestion).toHaveBeenCalledWith("3")
     expect(wrapper.get('[data-testid="question-content"]').text()).toBe("计算 1 + 1。")
+  })
+
+  it("restarts self-explanation with a fresh session", async () => {
+    fetchSession.mockResolvedValue(createSession())
+    createSessionRequest.mockResolvedValue(createSession({ id: 18 }))
+    const wrapper = await mountSessionView()
+
+    await wrapper.get('[data-testid="restart-self-explanation"]').trigger("click")
+    await flushPromises()
+
+    expect(createSessionRequest).toHaveBeenCalledWith("3", true)
   })
 
   it("keeps the self-explanation input available after human review is requested", async () => {
