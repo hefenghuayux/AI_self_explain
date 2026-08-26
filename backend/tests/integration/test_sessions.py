@@ -128,6 +128,75 @@ def test_new_session_has_initial_state_and_audit_event(settings: Settings, monke
     assert session_event.data == {}
 
 
+def test_starting_same_question_resumes_and_restart_creates_a_fresh_session(
+    settings: Settings, monkeypatch
+) -> None:
+    with prepare_client(settings, monkeypatch) as client:
+        question_id = create_question(client)
+        first_response = client.post("/api/sessions", json={"questionId": question_id})
+        assert first_response.status_code == 201
+        first = first_response.json()
+
+        paused = client.post(
+            f"/api/sessions/{first['id']}/pause", json={"version": first["version"]}
+        ).json()
+        resumed_response = client.post("/api/sessions", json={"questionId": question_id})
+        restarted_response = client.post(
+            "/api/sessions", json={"questionId": question_id, "restart": True}
+        )
+
+    assert resumed_response.status_code == 201
+    resumed = resumed_response.json()
+    assert resumed["id"] == first["id"]
+    assert resumed["status"] == "IN_PROGRESS"
+    assert resumed["flowStage"] == paused["pausedFromStage"]
+
+    assert restarted_response.status_code == 201
+    restarted = restarted_response.json()
+    assert restarted["id"] != first["id"]
+    assert restarted["round"] == 1
+    assert restarted["supportCountTotal"] == 0
+    assert restarted["currentDraft"] == ""
+
+    engine = create_engine(settings.database_url)
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    "SELECT id, user_id, parent_id, lifecycle_status FROM sessions ORDER BY id"
+                )
+            ).mappings().all()
+    finally:
+        engine.dispose()
+    assert rows[0]["user_id"] is not None
+    assert rows[0]["parent_id"] is None
+    assert rows[0]["lifecycle_status"] == "restarted"
+    assert rows[1]["parent_id"] is None
+    assert rows[1]["lifecycle_status"] == "active"
+
+
+def test_user_cannot_read_another_users_session(settings: Settings, monkeypatch) -> None:
+    with prepare_client(settings, monkeypatch) as client:
+        session = create_session(client, create_question(client))
+        register_response = client.post(
+            "/api/auth/register",
+            json={"username": "other-student", "password": "secret6", "fullName": "另一位学生"},
+        )
+        assert register_response.status_code == 201
+        login_response = client.post(
+            "/api/auth/login",
+            json={"username": "other-student", "password": "secret6"},
+        )
+        assert login_response.status_code == 200
+        response = client.get(
+            f"/api/sessions/{session['id']}",
+            headers={"Authorization": f"Bearer {login_response.json()['token']}"},
+        )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == f"会话不存在：{session['id']}"
+
+
 def test_archived_question_cannot_create_session(settings: Settings, monkeypatch) -> None:
     with prepare_client(settings, monkeypatch) as client:
         question_id = create_question(client)

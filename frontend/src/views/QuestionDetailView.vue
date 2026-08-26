@@ -41,14 +41,14 @@ async function changeArchiveState() {
   }
 }
 
-async function startSession() {
+async function startSession(restart = false) {
   if (!question.value) {
     return
   }
   creatingSession.value = true
   errorMessage.value = ""
   try {
-    const session = await createSession(String(question.value.id))
+    const session = await createSession(String(question.value.id), restart)
     await router.push(`/sessions/${session.id}`)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
@@ -77,6 +77,13 @@ async function startSession() {
               @click="startSession"
             >
               开始自讲
+            </el-button>
+            <el-button
+              v-if="question && !question.archivedAt"
+              :loading="creatingSession"
+              @click="startSession(true)"
+            >
+              重新自讲
             </el-button>
             <el-button
               v-if="question"

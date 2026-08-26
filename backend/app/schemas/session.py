@@ -23,6 +23,7 @@ VoiceInputTarget = Literal["SELF_EXPLANATION", "GUIDED_ANSWER", "DOUBT", "APPEAL
 
 class CreateSessionInput(QuestionSchema):
     question_id: int = Field(gt=0)
+    restart: bool = False
 
 
 class InitialChoiceInput(QuestionSchema):

@@ -86,9 +86,21 @@ class SessionRepository:
     def __init__(self, database_session: DatabaseSession) -> None:
         self.database_session = database_session
 
-    def create(self, question_id: int) -> Session:
+    def create_or_resume(self, question_id: int, user_id: int, *, restart: bool) -> Session:
+        session = self.get_resumable(question_id, user_id)
+        if session is not None and not restart:
+            if session.status == STATUS_PAUSED:
+                return self.resume(session)
+            return session
+        if session is not None:
+            session.lifecycle_status = "restarted"
+            self.database_session.commit()
+        return self.create(question_id, user_id)
+
+    def create(self, question_id: int, user_id: int) -> Session:
         session = Session(
             question_id=question_id,
+            user_id=user_id,
             status=STATUS_IN_PROGRESS,
             flow_stage=FLOW_STAGE_WAIT_INITIAL_CHOICE,
             round=1,
@@ -121,6 +133,19 @@ class SessionRepository:
         self.database_session.commit()
         self.database_session.refresh(session)
         return session
+
+    def get_resumable(self, question_id: int, user_id: int) -> Session | None:
+        statement = (
+            select(Session)
+            .where(
+                Session.question_id == question_id,
+                Session.user_id == user_id,
+                Session.lifecycle_status == "active",
+                Session.status.in_((STATUS_IN_PROGRESS, STATUS_PAUSED)),
+            )
+            .order_by(Session.updated_at.desc(), Session.id.desc())
+        )
+        return self.database_session.scalars(statement).first()
 
     def get(self, session_id: int) -> Session | None:
         return self.database_session.get(Session, session_id)

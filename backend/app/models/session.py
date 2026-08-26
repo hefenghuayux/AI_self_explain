@@ -20,13 +20,14 @@ class Session(Base):
     __tablename__ = "sessions"
     __table_args__ = (
         CheckConstraint(
-            "lifecycle_status IN ('active', 'completed', 'failed')",
+            "lifecycle_status IN ('active', 'completed', 'failed', 'restarted')",
             name="ck_sessions_lifecycle_status",
         ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     question_id: Mapped[int] = mapped_column(ForeignKey("questions.id"), index=True, nullable=False)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id"), index=True)
     lifecycle_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active", server_default="active"

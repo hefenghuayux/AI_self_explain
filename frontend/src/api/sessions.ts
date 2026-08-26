@@ -55,10 +55,10 @@ export async function requestSessionApi<T>(path: string, options?: RequestInit):
   return (await response.json()) as T
 }
 
-export function createSession(questionId: string): Promise<Session> {
+export function createSession(questionId: string, restart = false): Promise<Session> {
   return requestSessionApi<Session>("/api/sessions", {
     method: "POST",
-    body: JSON.stringify({ questionId: Number(questionId) }),
+    body: JSON.stringify({ questionId: Number(questionId), restart }),
   })
 }
 

@@ -14,7 +14,7 @@ from fastapi import (
     status,
 )
 
-from app.core.auth import DatabaseSession, get_current_user
+from app.core.auth import CurrentUser, DatabaseSession, get_current_user
 from app.core.logging import bind_trace_context, new_correlation_id, reset_trace_context
 from app.models.question import Question
 from app.models.session import Session
@@ -65,9 +65,11 @@ router = APIRouter(
 )
 
 
-def get_session_or_404(repository: SessionRepository, session_id: int) -> Session:
+def get_session_or_404(
+    repository: SessionRepository, session_id: int, current_user: CurrentUser
+) -> Session:
     session = repository.get(session_id)
-    if session is None:
+    if session is None or session.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"会话不存在：{session_id}"
         )
@@ -126,7 +128,9 @@ def to_session_response(
 
 @router.post("", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 def create_session(
-    session_input: CreateSessionInput, database_session: DatabaseSession
+    session_input: CreateSessionInput,
+    database_session: DatabaseSession,
+    current_user: CurrentUser,
 ) -> SessionResponse:
     question = database_session.get(Question, session_input.question_id)
     if question is None:
@@ -137,7 +141,9 @@ def create_session(
     if question.archived_at is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已归档题目不能创建会话")
     repository = SessionRepository(database_session)
-    created_session = repository.create(session_input.question_id)
+    created_session = repository.create_or_resume(
+        session_input.question_id, current_user.id, restart=session_input.restart
+    )
     return to_session_response(repository, created_session)
 
 
@@ -157,26 +163,31 @@ def get_voice_attempt_for_submission(
 
 
 @router.get("/{session_id}", response_model=SessionResponse)
-def get_session(session_id: int, database_session: DatabaseSession) -> SessionResponse:
+def get_session(
+    session_id: int, database_session: DatabaseSession, current_user: CurrentUser
+) -> SessionResponse:
     repository = SessionRepository(database_session)
-    return to_session_response(repository, get_session_or_404(repository, session_id))
+    return to_session_response(repository, get_session_or_404(repository, session_id, current_user))
 
 
 @router.get("/{session_id}/timeline", response_model=list[LearningTimelineItemResponse])
 def get_learning_timeline(
-    session_id: int, database_session: DatabaseSession
+    session_id: int, database_session: DatabaseSession, current_user: CurrentUser
 ) -> list[LearningTimelineItemResponse]:
     repository = SessionRepository(database_session)
-    get_session_or_404(repository, session_id)
+    get_session_or_404(repository, session_id, current_user)
     return repository.get_student_timeline(session_id)
 
 
 @router.post("/{session_id}/pause", response_model=SessionResponse)
 def pause_session(
-    session_id: int, action_input: StudentActionInput, database_session: DatabaseSession
+    session_id: int,
+    action_input: StudentActionInput,
+    database_session: DatabaseSession,
+    current_user: CurrentUser,
 ) -> SessionResponse:
     repository = SessionRepository(database_session)
-    session = get_session_or_404(repository, session_id)
+    session = get_session_or_404(repository, session_id, current_user)
     validate_version(session, action_input.version)
     validate_pauseable(session)
     return to_session_response(repository, repository.pause(session))
@@ -184,10 +195,13 @@ def pause_session(
 
 @router.post("/{session_id}/resume", response_model=SessionResponse)
 def resume_session(
-    session_id: int, action_input: StudentActionInput, database_session: DatabaseSession
+    session_id: int,
+    action_input: StudentActionInput,
+    database_session: DatabaseSession,
+    current_user: CurrentUser,
 ) -> SessionResponse:
     repository = SessionRepository(database_session)
-    session = get_session_or_404(repository, session_id)
+    session = get_session_or_404(repository, session_id, current_user)
     validate_version(session, action_input.version)
     if session.status != STATUS_PAUSED:
         reject_operation(f"当前会话状态不允许恢复：{session.status}")
@@ -199,10 +213,11 @@ def choose_initial_choice(
     session_id: int,
     choice_input: InitialChoiceInput,
     database_session: DatabaseSession,
+    current_user: CurrentUser,
     request: Request,
 ) -> SessionResponse:
     repository = SessionRepository(database_session)
-    session = get_session_or_404(repository, session_id)
+    session = get_session_or_404(repository, session_id, current_user)
     validate_in_progress(session)
     validate_version(session, choice_input.version)
     if session.flow_stage != FLOW_STAGE_WAIT_INITIAL_CHOICE:
@@ -216,10 +231,11 @@ def submit_text_attempt(
     session_id: int,
     attempt_input: TextAttemptInput,
     database_session: DatabaseSession,
+    current_user: CurrentUser,
     request: Request,
 ) -> SessionResponse:
     repository = SessionRepository(database_session)
-    session = get_session_or_404(repository, session_id)
+    session = get_session_or_404(repository, session_id, current_user)
     validate_in_progress(session)
     if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT:
         reject_operation(f"当前流程阶段不能提交文本：{session.flow_stage}")
@@ -332,9 +348,10 @@ def continue_explaining(
     session_id: int,
     action_input: StudentActionInput,
     database_session: DatabaseSession,
+    current_user: CurrentUser,
 ) -> SessionResponse:
     repository = SessionRepository(database_session)
-    session = get_session_or_404(repository, session_id)
+    session = get_session_or_404(repository, session_id, current_user)
     validate_in_progress(session)
     validate_version(session, action_input.version)
     if session.flow_stage != FLOW_STAGE_WAIT_STUDENT_ACTION:
@@ -347,10 +364,11 @@ def request_support(
     session_id: int,
     action_input: HelpRequestInput,
     database_session: DatabaseSession,
+    current_user: CurrentUser,
     request: Request,
 ) -> SessionResponse:
     repository = SessionRepository(database_session)
-    session = get_session_or_404(repository, session_id)
+    session = get_session_or_404(repository, session_id, current_user)
     validate_in_progress(session)
     validate_version(session, action_input.version)
     if session.flow_stage != FLOW_STAGE_WAIT_STUDENT_ACTION:
@@ -400,10 +418,11 @@ def ask_doubt(
     session_id: int,
     action_input: DoubtRequestInput,
     database_session: DatabaseSession,
+    current_user: CurrentUser,
     request: Request,
 ) -> SessionResponse:
     repository = SessionRepository(database_session)
-    session = get_session_or_404(repository, session_id)
+    session = get_session_or_404(repository, session_id, current_user)
     validate_in_progress(session)
     validate_version(session, action_input.version)
     if not can_submit_student_interruption(session.flow_stage):
@@ -456,10 +475,11 @@ def submit_guided_answers(
     session_id: int,
     action_input: GuidedAnswersInput,
     database_session: DatabaseSession,
+    current_user: CurrentUser,
     request: Request,
 ) -> SessionResponse:
     repository = SessionRepository(database_session)
-    session = get_session_or_404(repository, session_id)
+    session = get_session_or_404(repository, session_id, current_user)
     validate_in_progress(session)
     validate_version(session, action_input.version)
     if session.flow_stage != FLOW_STAGE_WAIT_GUIDED_ANSWERS:
@@ -556,9 +576,10 @@ def appeal(
     session_id: int,
     appeal_input: AppealInput,
     database_session: DatabaseSession,
+    current_user: CurrentUser,
 ) -> SessionResponse:
     repository = SessionRepository(database_session)
-    session = get_session_or_404(repository, session_id)
+    session = get_session_or_404(repository, session_id, current_user)
     validate_in_progress(session)
     validate_version(session, appeal_input.version)
     if not can_submit_student_interruption(session.flow_stage):
@@ -589,9 +610,10 @@ def respond_to_first_solution(
     session_id: int,
     understanding_input: SolutionUnderstandingInput,
     database_session: DatabaseSession,
+    current_user: CurrentUser,
 ) -> SessionResponse:
     repository = SessionRepository(database_session)
-    session = get_session_or_404(repository, session_id)
+    session = get_session_or_404(repository, session_id, current_user)
     validate_in_progress(session)
     validate_version(session, understanding_input.version)
     if session.flow_stage != FLOW_STAGE_SHOWING_FULL_SOLUTION or session.round != 1:
@@ -666,7 +688,12 @@ async def stream_voice_input(
     try:
         repository = SessionRepository(database_session)
         session = repository.get(session_id)
-        if session is None:
+        try:
+            current_user = get_current_user(websocket, database_session)
+        except HTTPException as error:
+            await reject_voice_stream(websocket, str(error.detail))
+            return
+        if session is None or session.user_id != current_user.id:
             await reject_voice_stream(websocket, f"会话不存在：{session_id}")
             return
         if session.status != STATUS_IN_PROGRESS:

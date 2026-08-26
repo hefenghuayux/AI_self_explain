@@ -43,7 +43,7 @@ afterEach(() => {
 })
 
 describe("QuestionListView", () => {
-  it("lets a student start self-explanation without showing management actions", async () => {
+  it("lets a student start or restart self-explanation without showing management actions", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -73,11 +73,16 @@ describe("QuestionListView", () => {
     expect(wrapper.text()).not.toContain("编辑")
     expect(wrapper.text()).not.toContain("归档")
 
-    const selfExplainButton = wrapper.findAll("button").find((item) => item.text() === "自讲")
+    const selfExplainButton = wrapper.findAll("button").find((item) => item.text() === "开始自讲")
     await selfExplainButton?.trigger("click")
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe("/sessions/99")
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/sessions",
+      expect.objectContaining({ body: JSON.stringify({ questionId: 1, restart: false }) }),
+    )
+    expect(wrapper.text()).toContain("重新自讲")
   })
 
   it("shows question management actions to a teacher", async () => {

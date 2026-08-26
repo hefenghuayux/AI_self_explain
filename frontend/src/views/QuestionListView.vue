@@ -26,12 +26,12 @@ async function loadQuestions() {
   }
 }
 
-async function startSelfExplanation(question: Question) {
+async function startSelfExplanation(question: Question, restart = false) {
   if (question.archivedAt) return
   actingQuestionId.value = question.id
   errorMessage.value = ""
   try {
-    const session = await createSession(String(question.id))
+    const session = await createSession(String(question.id), restart)
     await router.push(`/sessions/${session.id}`)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
@@ -109,7 +109,7 @@ onMounted(loadQuestions)
       </el-table-column>
       <el-table-column
         label="操作"
-        :width="authUser?.role === 'TEACHER' ? 330 : 110"
+        :width="authUser?.role === 'TEACHER' ? 420 : 200"
         fixed="right"
       >
         <template #default="scope">
@@ -121,7 +121,15 @@ onMounted(loadQuestions)
               :loading="actingQuestionId === scope.row.id"
               @click="startSelfExplanation(scope.row)"
             >
-              自讲
+              开始自讲
+            </el-button>
+            <el-button
+              v-if="!scope.row.archivedAt"
+              size="small"
+              :loading="actingQuestionId === scope.row.id"
+              @click="startSelfExplanation(scope.row, true)"
+            >
+              重新自讲
             </el-button>
             <template v-if="authUser?.role === 'TEACHER'">
               <RouterLink :to="`/questions/${scope.row.id}`">
@@ -154,6 +162,7 @@ onMounted(loadQuestions)
         <p>{{ question.questionContent }}</p>
         <div class="row-actions">
           <el-button v-if="!question.archivedAt" type="success" :loading="actingQuestionId === question.id" @click="startSelfExplanation(question)">开始自讲</el-button>
+          <el-button v-if="!question.archivedAt" :loading="actingQuestionId === question.id" @click="startSelfExplanation(question, true)">重新自讲</el-button>
           <template v-if="authUser?.role === 'TEACHER'">
             <RouterLink :to="`/questions/${question.id}`"><el-button>查看详情</el-button></RouterLink>
             <RouterLink v-if="!question.archivedAt" :to="`/questions/${question.id}/edit`"><el-button>编辑</el-button></RouterLink>

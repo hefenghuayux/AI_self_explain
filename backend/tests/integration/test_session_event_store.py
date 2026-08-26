@@ -13,6 +13,7 @@ from app.core.database import create_database_engine
 from app.models.question import Question
 from app.models.session import Session
 from app.models.session_event import SessionEvent
+from app.models.user import User
 from app.repositories.sessions import SessionRepository
 from app.services.event_store import EventStore, InvalidEventDataError
 
@@ -42,7 +43,16 @@ def create_question(database_session: DatabaseSession) -> Question:
 
 def create_learning_session(database_session: DatabaseSession) -> Session:
     question = create_question(database_session)
-    return SessionRepository(database_session).create(question.id)
+    user = User(
+        username="event-store-user",
+        password_hash="test-password-hash",
+        full_name="事件存储测试用户",
+        role="TEACHER",
+    )
+    database_session.add(user)
+    database_session.commit()
+    database_session.refresh(user)
+    return SessionRepository(database_session).create(question.id, user.id)
 
 
 def test_migration_creates_event_constraints_and_indexes(
@@ -69,7 +79,7 @@ def test_migration_creates_event_constraints_and_indexes(
         "ix_session_events_session_run_seq",
         "ix_session_events_session_type_seq",
     }
-    assert {"parent_id", "lifecycle_status"} <= session_columns
+    assert {"parent_id", "lifecycle_status", "user_id"} <= session_columns
 
 
 def test_migration_backfills_started_event_for_existing_session(
