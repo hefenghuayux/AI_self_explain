@@ -486,9 +486,62 @@ describe("SessionView", () => {
     ])
     const wrapper = await mountSessionView()
 
-    expect(wrapper.text()).toContain("自讲记录")
+    expect(wrapper.text()).toContain("历史记录")
+    expect(wrapper.text()).toContain("学生")
+    expect(wrapper.text()).toContain("AI")
     const contents = wrapper.findAll('[data-testid="timeline-content"]').map((item) => item.text())
     expect(contents).toEqual(["1 加 1 等于 2。", "还需要说明为什么是 2。"])
+  })
+
+  it("keeps feedback evidence collapsed until the student requests it", async () => {
+    fetchSession.mockResolvedValue(createSession({
+      flowStage: "WAIT_STUDENT_ACTION",
+      latestEvaluation: {
+        id: 4,
+        correctness: "WRONG",
+        completeness: "INCOMPLETE",
+        coveredPoints: [],
+        missingPoints: ["正确计算加法"],
+        errorEvidence: [{
+          quote: "1 加 1 等于 3。",
+          locationDescription: "计算结果",
+          reason: "两个 1 相加的结果应为 2。",
+          thinkingDirection: "可以用实物计数验证。",
+        }],
+        confidence: 1,
+        needHumanReason: null,
+        promptVersion: "test",
+        modelProvider: "test",
+        modelName: "test",
+        createdAt: "2026-07-20T00:00:00Z",
+      },
+      latestSupport: {
+        id: 5,
+        supportType: "GIVE_CORRECTION",
+        supportKind: "EVALUATION",
+        round: 1,
+        status: "VALID",
+        content: "请重新检查两个数相加的结果。",
+        mainDraft: "1 加 1 等于 3。",
+        doubtText: null,
+        guidedQuestions: null,
+        guidedAnswers: null,
+        followUpContent: null,
+        createdAt: "2026-07-20T00:00:00Z",
+      },
+    }))
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.text()).toContain("最新反馈")
+    expect(wrapper.text()).toContain("下一步：请重新检查两个数相加的结果。")
+    expect(wrapper.text()).not.toContain("两个 1 相加的结果应为 2。")
+
+    const toggle = wrapper.get('[aria-controls="feedback-details"]')
+    expect(toggle.attributes("aria-expanded")).toBe("false")
+    await toggle.trigger("click")
+
+    expect(toggle.attributes("aria-expanded")).toBe("true")
+    expect(wrapper.text()).toContain("两个 1 相加的结果应为 2。")
   })
 
   it("restores saved drafts for each segmented input block", async () => {

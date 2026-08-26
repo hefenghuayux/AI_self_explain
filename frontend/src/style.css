@@ -3,6 +3,7 @@
   --color-brand-600: #0d9488;
   --color-brand-100: #ccfbf1;
   --color-brand-50: #f0fdfa;
+  --color-focus-ring: rgb(13 148 136 / 32%);
   --color-action-700: #c2410c;
   --color-action-900: #7c2d12;
   --color-action-100: #ffedd5;
@@ -28,6 +29,7 @@
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
   --space-12: 48px;
@@ -36,6 +38,7 @@
   --radius-lg: 8px;
   --shadow-sm: 0 1px 2px rgb(23 37 36 / 6%);
   --shadow-md: 0 8px 24px rgb(23 37 36 / 8%);
+  --transition-interactive: 180ms ease;
   --font-size-sm: 14px;
   --font-size-base: 16px;
   --font-size-lg: 18px;
@@ -99,7 +102,7 @@ a {
 }
 
 :focus-visible {
-  outline: 3px solid rgb(13 148 136 / 32%);
+  outline: 3px solid var(--color-focus-ring);
   outline-offset: 3px;
 }
 
@@ -120,8 +123,15 @@ a {
 .el-textarea__inner:focus,
 .el-segmented__item:focus-visible,
 .el-switch:focus-visible {
-  outline: 3px solid rgb(13 148 136 / 28%);
+  outline: 3px solid var(--color-focus-ring);
   outline-offset: 2px;
+}
+
+.el-button,
+.el-segmented__item,
+.el-textarea__inner {
+  transition: color var(--transition-interactive), background-color var(--transition-interactive),
+    border-color var(--transition-interactive), box-shadow var(--transition-interactive), opacity var(--transition-interactive);
 }
 
 .el-alert {
