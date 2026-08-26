@@ -631,7 +631,7 @@ async function respondToSolution(understood: boolean) {
                   :disabled="submitting || session.flowStage === 'AI_EVALUATING'"
                 />
                 <VoiceRecorder
-                  v-if="session.flowStage === 'CAPTURING_INPUT'"
+                  v-if="session.flowStage === 'CAPTURING_INPUT' && !submitting"
                   ref="voiceRecorderRef"
                   :session-id="sessionId"
                   :version="session.version"

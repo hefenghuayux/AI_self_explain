@@ -141,6 +141,29 @@ describe("SessionView", () => {
     expect(submitTextAttempt).toHaveBeenCalledWith("12", "1 加 1 等于 2。", 2, undefined)
   })
 
+  it("does not show the voice recorder while submitting an explanation", async () => {
+    fetchSession.mockResolvedValue(createSession())
+    submitInitialChoice.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 2, initialChoice: "KNOW" }))
+    let resolveTextAttempt: (session: Session) => void = () => undefined
+    submitTextAttempt.mockReturnValue(new Promise((resolve) => {
+      resolveTextAttempt = resolve
+    }))
+    const wrapper = await mountSessionView()
+
+    await wrapper.get('[data-testid="main-draft"]').setValue("1 加 1 等于 2。")
+    const submitPromise = wrapper.get('[data-testid="submit-explanation"]').trigger("click")
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAllComponents(VoiceRecorder).filter(
+      (recorder) => recorder.props("target") === "SELF_EXPLANATION",
+    )).toHaveLength(0)
+
+    resolveTextAttempt(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 3 }))
+    await submitPromise
+    await flushPromises()
+  })
+
   it("reminds once before allowing an empty draft to request support", async () => {
     fetchSession.mockResolvedValue(createSession())
     const wrapper = await mountSessionView()
