@@ -39,13 +39,15 @@ if (-not (Test-Path -LiteralPath $vitePath -PathType Leaf)) {
 $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($currentUser)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "正在请求管理员权限以配置局域网访问..."
     Start-Process `
         -FilePath "powershell.exe" `
-        -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath `
+        -ArgumentList "-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath `
         -Verb RunAs
-    exit
+    return
 }
 
+Write-Host "正在检查网络与端口..."
 $defaultRoute = Get-NetRoute -DestinationPrefix "0.0.0.0/0" |
     Sort-Object RouteMetric |
     Select-Object -First 1
@@ -68,6 +70,7 @@ if ([string]::IsNullOrWhiteSpace($lanAddress)) {
 Assert-PortAvailable -Port 8000
 Assert-PortAvailable -Port 5173
 
+Write-Host "正在配置专用网络防火墙规则..."
 $firewallRule = Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue
 if ($null -eq $firewallRule) {
     New-NetFirewallRule `
@@ -87,11 +90,13 @@ else {
         -Profile Private | Out-Null
 }
 
+Write-Host "正在执行数据库迁移..."
 & $pythonPath -m alembic -c backend\alembic.ini upgrade head
 if ($LASTEXITCODE -ne 0) {
     throw "数据库迁移失败，退出码：${LASTEXITCODE}"
 }
 
+Write-Host "正在启动后端服务..."
 $backend = Start-Process `
     -FilePath $pythonPath `
     -ArgumentList "-m", "uvicorn", "app.main:app", "--app-dir", (Join-Path $projectRoot "backend"), "--host", "127.0.0.1", "--port", "8000" `
