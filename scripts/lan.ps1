@@ -3,6 +3,7 @@
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $pythonPath = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $envFile = Join-Path $projectRoot ".env"
+$alembicConfigPath = Join-Path $projectRoot "backend\alembic.ini"
 $frontendPath = Join-Path $projectRoot "frontend"
 $vitePath = Join-Path $frontendPath "node_modules\.bin\vite.cmd"
 $firewallRuleName = "AI Self Explain LAN (Vite 5173)"
@@ -30,6 +31,10 @@ if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) {
 
 if (-not (Test-Path -LiteralPath $envFile -PathType Leaf)) {
     throw "缺少配置文件：${envFile}。请复制 .env.example 为 .env 并填写配置。"
+}
+
+if (-not (Test-Path -LiteralPath $alembicConfigPath -PathType Leaf)) {
+    throw "缺少数据库迁移配置：${alembicConfigPath}。"
 }
 
 if (-not (Test-Path -LiteralPath $vitePath -PathType Leaf)) {
@@ -91,9 +96,15 @@ else {
 }
 
 Write-Host "正在执行数据库迁移..."
-& $pythonPath -m alembic -c backend\alembic.ini upgrade head
-if ($LASTEXITCODE -ne 0) {
-    throw "数据库迁移失败，退出码：${LASTEXITCODE}"
+Push-Location $projectRoot
+try {
+    & $pythonPath -m alembic -c $alembicConfigPath upgrade head
+    if ($LASTEXITCODE -ne 0) {
+        throw "数据库迁移失败，退出码：${LASTEXITCODE}"
+    }
+}
+finally {
+    Pop-Location
 }
 
 Write-Host "正在启动后端服务..."
