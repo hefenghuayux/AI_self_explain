@@ -15,7 +15,9 @@ Copy-Item .env.example .env
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".\backend[dev]"
-pnpm --dir frontend install
+Push-Location frontend
+pnpm install
+Pop-Location
 ```
 
 请在启动前替换 `.env` 中的示例模型配置。阶段 01 不调用 AI 或 ASR，但仍会校验全部已确认配置，避免后续阶段才发现配置缺失。
@@ -32,7 +34,9 @@ pnpm --dir frontend install
 
 ```powershell
 python -m uvicorn app.main:app --app-dir backend --reload
-pnpm --dir frontend dev
+Push-Location frontend
+pnpm dev
+Pop-Location
 ```
 
 前端地址为 `http://127.0.0.1:5173`，API 健康检查地址为 `http://127.0.0.1:8000/api/health`。Vite 从根目录 `.env` 读取 `BACKEND_PROXY_TARGET`，并将 `/api` 代理到 FastAPI。
@@ -43,7 +47,9 @@ pnpm --dir frontend dev
 python -m pytest backend/tests
 python -m ruff check backend
 python -m ruff format --check backend
-pnpm --dir frontend test
-pnpm --dir frontend typecheck
-pnpm --dir frontend build
+Push-Location frontend
+pnpm test
+pnpm typecheck
+pnpm build
+Pop-Location
 ```

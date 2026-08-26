@@ -3,6 +3,7 @@
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $pythonPath = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $envFile = Join-Path $projectRoot ".env"
+$frontendPath = Join-Path $projectRoot "frontend"
 
 if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) {
     throw "缺少虚拟环境 Python：${pythonPath}。请先创建 .venv 并安装后端依赖。"
@@ -33,7 +34,13 @@ try {
     if ($backend.WaitForExit(1000)) {
         throw "FastAPI 启动失败，退出码：$($backend.ExitCode)"
     }
-    & pnpm --dir (Join-Path $projectRoot "frontend") dev
+    Push-Location $frontendPath
+    try {
+        & pnpm dev
+    }
+    finally {
+        Pop-Location
+    }
 }
 finally {
     if (-not $backend.HasExited) {
