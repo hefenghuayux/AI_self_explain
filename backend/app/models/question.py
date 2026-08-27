@@ -41,3 +41,7 @@ class Question(Base):
         if self.standard_answer is None and self.full_solution is None:
             return "AI_GENERAL"
         return "BASIC"
+
+    @property
+    def rubric_point_count(self) -> int:
+        return len(self.rubric_points or [])

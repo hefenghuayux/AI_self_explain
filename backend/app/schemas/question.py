@@ -84,3 +84,47 @@ class QuestionResponse(QuestionSchema):
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class QuestionListQuery(BaseModel):
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=100)
+    grade_period: int | None = None
+    subject: str | None = None
+    keyword: str | None = None
+
+    @field_validator("subject", "keyword", mode="before")
+    @classmethod
+    def normalize_blank_filter_to_none(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+
+class QuestionListItemResponse(QuestionSchema):
+    id: int
+    question_content: RequiredText
+    grade_period: int | None
+    subject: str | None
+    q_type: int | None
+    difficulty_level: int | None
+    evaluation_mode: str
+    rubric_point_count: int
+    archived_at: datetime | None
+
+
+class QuestionPaginationResponse(QuestionSchema):
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
+
+
+class QuestionListResponse(QuestionSchema):
+    items: list[QuestionListItemResponse]
+    pagination: QuestionPaginationResponse
+
+
+class QuestionFilterOptionsResponse(QuestionSchema):
+    grade_periods: list[int]
+    subjects: list[str]

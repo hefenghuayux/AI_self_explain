@@ -1,10 +1,10 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import case, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.models.question import Question
-from app.schemas.question import QuestionInput
+from app.schemas.question import QuestionInput, QuestionListQuery
 
 
 class QuestionRepository:
@@ -18,15 +18,54 @@ class QuestionRepository:
         self.session.refresh(question)
         return question
 
-    def list_questions(self, include_archived: bool) -> list[Question]:
-        statement = select(Question).order_by(
-            case((Question.rubric_points.is_not(None), 0), else_=1),
-            Question.created_at.desc(),
-            Question.id.desc(),
-        )
+    def list_questions(
+        self, query: QuestionListQuery, *, include_archived: bool
+    ) -> tuple[list[Question], int]:
+        conditions = []
         if not include_archived:
-            statement = statement.where(Question.archived_at.is_(None))
-        return list(self.session.scalars(statement))
+            conditions.append(Question.archived_at.is_(None))
+        if query.grade_period is not None:
+            conditions.append(Question.grade_period == query.grade_period)
+        if query.subject is not None:
+            conditions.append(Question.subject == query.subject)
+        if query.keyword is not None:
+            escaped_keyword = query.keyword.replace("\\", "\\\\")
+            escaped_keyword = escaped_keyword.replace("%", "\\%").replace("_", "\\_")
+            conditions.append(Question.question_content.like(f"%{escaped_keyword}%", escape="\\"))
+
+        total = self.session.scalar(select(func.count()).select_from(Question).where(*conditions))
+        statement = (
+            select(Question)
+            .where(*conditions)
+            .order_by(
+                case((Question.rubric_points.is_not(None), 0), else_=1),
+                Question.created_at.desc(),
+                Question.id.desc(),
+            )
+            .offset((query.page - 1) * query.page_size)
+            .limit(query.page_size)
+        )
+        return list(self.session.scalars(statement)), total or 0
+
+    def list_filter_options(self, *, include_archived: bool) -> tuple[list[int], list[str]]:
+        conditions = [] if include_archived else [Question.archived_at.is_(None)]
+        grade_periods = list(
+            self.session.scalars(
+                select(Question.grade_period)
+                .where(*conditions, Question.grade_period.is_not(None))
+                .distinct()
+                .order_by(Question.grade_period)
+            )
+        )
+        subjects = list(
+            self.session.scalars(
+                select(Question.subject)
+                .where(*conditions, Question.subject.is_not(None))
+                .distinct()
+                .order_by(Question.subject)
+            )
+        )
+        return grade_periods, subjects
 
     def get(self, question_id: int) -> Question | None:
         return self.session.get(Question, question_id)

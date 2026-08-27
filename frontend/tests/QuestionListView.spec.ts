@@ -5,23 +5,26 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { login } from "../src/stores/auth"
 import QuestionListView from "../src/views/QuestionListView.vue"
-import type { Question } from "../src/types/question"
+import type { QuestionListItem } from "../src/types/question"
 
-function question(): Question {
+function question(): QuestionListItem {
   return {
     id: 1,
     evaluationMode: "FULL_RUBRIC",
     questionContent: "计算 1 + 1。",
-    standardAnswer: "2",
-    rubricPoints: ["正确计算加法"],
-    commonErrors: ["结果写成 3"],
-    alternativeSolutions: ["实物计数"],
-    layeredHints: ["先数一数"],
-    guidedQuestions: [],
-    fullSolution: "1 加 1 等于 2。",
+    gradePeriod: 2,
+    subject: "S",
+    qType: 1,
+    difficultyLevel: 1,
+    rubricPointCount: 1,
     archivedAt: null,
-    createdAt: "2026-07-22T00:00:00Z",
-    updatedAt: "2026-07-22T00:00:00Z",
+  }
+}
+
+function questionListResponse() {
+  return {
+    items: [question()],
+    pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
   }
 }
 
@@ -55,7 +58,8 @@ describe("QuestionListView", () => {
           user: { id: 1, username: "student", fullName: "学生", role: "STUDENT" },
         }),
       })
-      .mockResolvedValueOnce({ ok: true, json: async () => [question()] })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ gradePeriods: [2], subjects: ["S"] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => questionListResponse() })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 99 }) })
     vi.stubGlobal("fetch", fetchMock)
     await login("student", "secret6", false)
@@ -99,7 +103,8 @@ describe("QuestionListView", () => {
             user: { id: 2, username: "teacher", fullName: "教师", role: "TEACHER" },
           }),
         })
-        .mockResolvedValueOnce({ ok: true, json: async () => [question()] }),
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ gradePeriods: [2], subjects: ["S"] }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => questionListResponse() }),
     )
     await login("teacher", "secret6", false)
     const router = createTestRouter()

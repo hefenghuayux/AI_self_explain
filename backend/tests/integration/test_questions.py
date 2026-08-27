@@ -68,7 +68,8 @@ def test_question_can_be_saved_and_read_completely(question_client: TestClient) 
     detail_response = question_client.get(f"/api/questions/{created['id']}")
 
     assert list_response.status_code == 200
-    assert [item["id"] for item in list_response.json()] == [created["id"]]
+    assert [item["id"] for item in list_response.json()["items"]] == [created["id"]]
+    assert "standardAnswer" not in list_response.json()["items"][0]
     assert detail_response.status_code == 200
     assert detail_response.json() == created
 
@@ -120,7 +121,7 @@ def test_migrated_question_with_empty_guided_questions_can_be_read(
     detail_response = question_client.get(f"/api/questions/{question_id}")
 
     assert list_response.status_code == 200
-    assert list_response.json()[0]["guidedQuestions"] == []
+    assert list_response.json()["items"][0]["rubricPointCount"] == 1
     assert detail_response.status_code == 200
     assert detail_response.json()["guidedQuestions"] == []
 
@@ -137,11 +138,14 @@ def test_question_list_prioritizes_rubric_and_returns_evaluation_mode(
     response = question_client.get("/api/questions")
 
     assert response.status_code == 200
-    assert [item["id"] for item in response.json()] == [
+    assert [item["id"] for item in response.json()["items"]] == [
         with_rubric.json()["id"],
         without_rubric.json()["id"],
     ]
-    assert [item["evaluationMode"] for item in response.json()] == ["FULL_RUBRIC", "AI_GENERAL"]
+    assert [item["evaluationMode"] for item in response.json()["items"]] == [
+        "FULL_RUBRIC",
+        "AI_GENERAL",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -193,9 +197,9 @@ def test_question_can_be_archived_and_restored(question_client: TestClient) -> N
 
     assert archive_response.status_code == 200
     assert archive_response.json()["archivedAt"]
-    assert question_client.get("/api/questions").json() == []
+    assert question_client.get("/api/questions").json()["items"] == []
     archived_list = question_client.get("/api/questions?include_archived=true")
-    assert [item["id"] for item in archived_list.json()] == [created["id"]]
+    assert [item["id"] for item in archived_list.json()["items"]] == [created["id"]]
     assert question_client.get(f"/api/questions/{created['id']}").status_code == 200
 
     edit_response = question_client.put(f"/api/questions/{created['id']}", json=original_payload)
@@ -206,4 +210,59 @@ def test_question_can_be_archived_and_restored(question_client: TestClient) -> N
 
     assert restore_response.status_code == 200
     assert restore_response.json()["archivedAt"] is None
-    assert [item["id"] for item in question_client.get("/api/questions").json()] == [created["id"]]
+    assert [item["id"] for item in question_client.get("/api/questions").json()["items"]] == [
+        created["id"]
+    ]
+
+
+def test_question_list_filters_paginates_and_returns_dynamic_options(
+    question_client: TestClient, migrated_settings: Settings
+) -> None:
+    engine = create_engine(migrated_settings.database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                insert(Question),
+                [
+                    {
+                        "question_content": "学段二语文题干 100%",
+                        "grade_period": 2,
+                        "subject": "Y",
+                    },
+                    {
+                        "question_content": "学段二数学题干",
+                        "grade_period": 2,
+                        "subject": "S",
+                    },
+                    {
+                        "question_content": "学段三语文题干",
+                        "grade_period": 3,
+                        "subject": "Y",
+                    },
+                ],
+            )
+    finally:
+        engine.dispose()
+
+    response = question_client.get(
+        "/api/questions",
+        params={
+            "page": 1,
+            "page_size": 1,
+            "grade_period": 2,
+            "subject": "Y",
+            "keyword": "100%",
+        },
+    )
+    options_response = question_client.get("/api/questions/filter-options")
+
+    assert response.status_code == 200
+    assert response.json()["pagination"] == {
+        "page": 1,
+        "pageSize": 1,
+        "total": 1,
+        "totalPages": 1,
+    }
+    assert response.json()["items"][0]["questionContent"] == "学段二语文题干 100%"
+    assert options_response.status_code == 200
+    assert options_response.json() == {"gradePeriods": [2, 3], "subjects": ["S", "Y"]}

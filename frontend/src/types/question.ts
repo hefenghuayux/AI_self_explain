@@ -17,6 +17,44 @@ export interface Question extends QuestionInput {
   updatedAt: string
 }
 
+export interface QuestionListItem {
+  id: number
+  questionContent: string
+  gradePeriod: number | null
+  subject: string | null
+  qType: number | null
+  difficultyLevel: number | null
+  evaluationMode: "FULL_RUBRIC" | "BASIC" | "AI_GENERAL"
+  rubricPointCount: number
+  archivedAt: string | null
+}
+
+export interface QuestionPagination {
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+
+export interface QuestionListResponse {
+  items: QuestionListItem[]
+  pagination: QuestionPagination
+}
+
+export interface QuestionFilterOptions {
+  gradePeriods: number[]
+  subjects: string[]
+}
+
+export interface QuestionListQuery {
+  page: number
+  pageSize: number
+  includeArchived: boolean
+  gradePeriod?: number
+  subject?: string
+  keyword?: string
+}
+
 export interface QuestionFormInput {
   questionContent: string
   standardAnswer: string

@@ -1,4 +1,10 @@
-import type { Question, QuestionInput } from "../types/question"
+import type {
+  Question,
+  QuestionFilterOptions,
+  QuestionInput,
+  QuestionListQuery,
+  QuestionListResponse,
+} from "../types/question"
 import { getAuthToken } from "../stores/auth"
 
 async function requestQuestionApi<T>(path: string, options?: RequestInit): Promise<T> {
@@ -19,9 +25,21 @@ async function requestQuestionApi<T>(path: string, options?: RequestInit): Promi
   return (await response.json()) as T
 }
 
-export function fetchQuestions(includeArchived = false): Promise<Question[]> {
+export function fetchQuestions(query: QuestionListQuery): Promise<QuestionListResponse> {
+  const parameters = new URLSearchParams({
+    page: String(query.page),
+    page_size: String(query.pageSize),
+  })
+  if (query.includeArchived) parameters.set("include_archived", "true")
+  if (query.gradePeriod !== undefined) parameters.set("grade_period", String(query.gradePeriod))
+  if (query.subject) parameters.set("subject", query.subject)
+  if (query.keyword) parameters.set("keyword", query.keyword)
+  return requestQuestionApi<QuestionListResponse>(`/api/questions?${parameters}`)
+}
+
+export function fetchQuestionFilterOptions(includeArchived: boolean): Promise<QuestionFilterOptions> {
   const query = includeArchived ? "?include_archived=true" : ""
-  return requestQuestionApi<Question[]>(`/api/questions${query}`)
+  return requestQuestionApi<QuestionFilterOptions>(`/api/questions/filter-options${query}`)
 }
 
 export function fetchQuestion(questionId: string): Promise<Question> {

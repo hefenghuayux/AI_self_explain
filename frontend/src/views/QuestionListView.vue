@@ -2,19 +2,31 @@
 import { onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 
-import { archiveQuestion, fetchQuestions, restoreQuestion } from "../api/questions"
+import {
+  archiveQuestion,
+  fetchQuestionFilterOptions,
+  fetchQuestions,
+  restoreQuestion,
+} from "../api/questions"
 import { createSession } from "../api/sessions"
 import { authUser } from "../stores/auth"
-import type { Question } from "../types/question"
+import type { QuestionFilterOptions, QuestionListItem } from "../types/question"
 
 const router = useRouter()
-const questions = ref<Question[]>([])
+const questions = ref<QuestionListItem[]>([])
 const loading = ref(true)
 const errorMessage = ref("")
 const showArchived = ref(false)
 const actingQuestionId = ref<number>()
+const filterOptions = ref<QuestionFilterOptions>({ gradePeriods: [], subjects: [] })
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
+const gradePeriod = ref<number>()
+const subject = ref("")
+const keyword = ref("")
 
-function evaluationModeLabel(question: Question): string {
+function evaluationModeLabel(question: QuestionListItem): string {
   return {
     FULL_RUBRIC: "完整评分",
     BASIC: "基础评价",
@@ -22,7 +34,7 @@ function evaluationModeLabel(question: Question): string {
   }[question.evaluationMode]
 }
 
-function evaluationModeTagType(question: Question): "success" | "warning" | "info" {
+function evaluationModeTagType(question: QuestionListItem): "success" | "warning" | "info" {
   if (question.evaluationMode === "FULL_RUBRIC") return "success"
   if (question.evaluationMode === "BASIC") return "warning"
   return "info"
@@ -32,7 +44,16 @@ async function loadQuestions() {
   loading.value = true
   errorMessage.value = ""
   try {
-    questions.value = await fetchQuestions(authUser.value?.role === "TEACHER" && showArchived.value)
+    const result = await fetchQuestions({
+      page: page.value,
+      pageSize: pageSize.value,
+      includeArchived: authUser.value?.role === "TEACHER" && showArchived.value,
+      gradePeriod: gradePeriod.value,
+      subject: subject.value || undefined,
+      keyword: keyword.value || undefined,
+    })
+    questions.value = result.items
+    total.value = result.pagination.total
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -40,7 +61,27 @@ async function loadQuestions() {
   }
 }
 
-async function startSelfExplanation(question: Question, restart = false) {
+async function loadFilterOptions() {
+  try {
+    filterOptions.value = await fetchQuestionFilterOptions(
+      authUser.value?.role === "TEACHER" && showArchived.value,
+    )
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  }
+}
+
+async function resetAndLoadQuestions() {
+  page.value = 1
+  await loadQuestions()
+}
+
+async function changeArchiveScope() {
+  page.value = 1
+  await Promise.all([loadFilterOptions(), loadQuestions()])
+}
+
+async function startSelfExplanation(question: QuestionListItem, restart = false) {
   if (question.archivedAt) return
   actingQuestionId.value = question.id
   errorMessage.value = ""
@@ -54,7 +95,7 @@ async function startSelfExplanation(question: Question, restart = false) {
   }
 }
 
-async function changeArchiveState(question: Question) {
+async function changeArchiveState(question: QuestionListItem) {
   actingQuestionId.value = question.id
   errorMessage.value = ""
   try {
@@ -68,7 +109,9 @@ async function changeArchiveState(question: Question) {
   }
 }
 
-onMounted(loadQuestions)
+onMounted(async () => {
+  await Promise.all([loadFilterOptions(), loadQuestions()])
+})
 </script>
 
 <template>
@@ -92,11 +135,22 @@ onMounted(loadQuestions)
       show-icon
     />
 
-    <div v-if="authUser?.role === 'TEACHER'" class="list-toolbar">
+    <div class="list-toolbar">
+      <div class="list-filters">
+        <el-select v-model="gradePeriod" clearable placeholder="全部学段" @change="resetAndLoadQuestions">
+          <el-option v-for="item in filterOptions.gradePeriods" :key="item" :label="`学段 ${item}`" :value="item" />
+        </el-select>
+        <el-select v-model="subject" clearable placeholder="全部学科" @change="resetAndLoadQuestions">
+          <el-option v-for="item in filterOptions.subjects" :key="item" :label="item" :value="item" />
+        </el-select>
+        <el-input v-model="keyword" clearable placeholder="检索题干" @keyup.enter="resetAndLoadQuestions" />
+        <el-button @click="resetAndLoadQuestions">搜索</el-button>
+      </div>
       <el-switch
+        v-if="authUser?.role === 'TEACHER'"
         v-model="showArchived"
         active-text="显示已归档"
-        @change="loadQuestions"
+        @change="changeArchiveScope"
       />
     </div>
 
@@ -118,7 +172,7 @@ onMounted(loadQuestions)
         label="评分点数"
         width="110"
       >
-        <template #default="scope">{{ scope.row.rubricPoints?.length ?? 0 }}</template>
+        <template #default="scope">{{ scope.row.rubricPointCount }}</template>
       </el-table-column>
       <el-table-column v-if="authUser?.role === 'TEACHER'" label="状态" width="100">
         <template #default="scope">
@@ -193,6 +247,18 @@ onMounted(loadQuestions)
         </div>
       </article>
     </div>
+    <el-pagination
+      v-if="!loading && total > 0"
+      v-model:current-page="page"
+      v-model:page-size="pageSize"
+      class="question-pagination"
+      background
+      layout="total, sizes, prev, pager, next"
+      :page-sizes="[20, 50, 100]"
+      :total="total"
+      @current-change="loadQuestions"
+      @size-change="resetAndLoadQuestions"
+    />
   </main>
 </template>
 
@@ -226,7 +292,9 @@ h1 {
 .question-table {
   margin-top: var(--space-6);
 }
-.list-toolbar { display: flex; justify-content: flex-end; padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); }
+.list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); }
+.list-filters { display: flex; flex: 1; gap: var(--space-3); }
+.question-pagination { justify-content: flex-end; margin-top: var(--space-6); }
 .question-table { border-top: 1px solid var(--color-border); }
 .question-table :deep(.question-content-cell .cell) { overflow: hidden; display: -webkit-box; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 
@@ -246,6 +314,7 @@ h1 {
     flex-direction: column;
   }
   .page-header a, .page-header .el-button { width: 100%; }
+  .list-toolbar, .list-filters { align-items: stretch; flex-direction: column; }
   .question-table { display: none; }
   .question-list-mobile { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
   .question-item { padding: var(--space-4) 0 var(--space-6); border-bottom: 1px solid var(--color-border); }
