@@ -82,6 +82,34 @@ def test_complete_decision_is_deterministic_and_skips_generation(settings) -> No
     assert decision.completion_type == "WITH_SUPPORT"
 
 
+@pytest.mark.parametrize("evaluation_mode", ["BASIC", "AI_GENERAL"])
+def test_non_rubric_correct_evaluation_completes_without_teaching(
+    settings, evaluation_mode: str
+) -> None:
+    decision = decide_teaching(
+        evaluation=evaluation("CORRECT", "INCOMPLETE"),
+        session=session(),
+        settings=settings,
+        evaluation_mode=evaluation_mode,
+    )
+
+    assert decision.next_status == "COMPLETED"
+    assert decision.should_generate is False
+
+
+def test_non_rubric_wrong_evaluation_requests_human_review(settings) -> None:
+    decision = decide_teaching(
+        evaluation=evaluation("WRONG", "INCOMPLETE"),
+        session=session(),
+        settings=settings,
+        evaluation_mode="BASIC",
+    )
+
+    assert decision.next_status == "IN_PROGRESS"
+    assert decision.should_generate is False
+    assert decision.need_human_reason == "题目未配置评分点，无法生成可审计的针对性支持"
+
+
 def test_uncertain_decision_preserves_coverage_and_requests_human(settings) -> None:
     current_session = session(
         covered_points_current_round=["评分点 A"],

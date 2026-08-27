@@ -20,13 +20,35 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.add_column(
         "sessions",
-        sa.Column("no_progress_help_request_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column(
+            "no_progress_help_request_count",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
+        ),
     )
-    op.add_column("sessions", sa.Column("current_draft", sa.Text(), nullable=False, server_default=""))
-    op.add_column("sessions", sa.Column("last_support_draft", sa.Text(), nullable=False, server_default=""))
+    if op.get_bind().dialect.name == "mysql":
+        op.add_column("sessions", sa.Column("current_draft", sa.Text(), nullable=True))
+        op.add_column("sessions", sa.Column("last_support_draft", sa.Text(), nullable=True))
+        op.execute("UPDATE sessions SET current_draft = '', last_support_draft = ''")
+        op.alter_column("sessions", "current_draft", existing_type=sa.Text(), nullable=False)
+        op.alter_column("sessions", "last_support_draft", existing_type=sa.Text(), nullable=False)
+    else:
+        op.add_column(
+            "sessions", sa.Column("current_draft", sa.Text(), nullable=False, server_default="")
+        )
+        op.add_column(
+            "sessions",
+            sa.Column("last_support_draft", sa.Text(), nullable=False, server_default=""),
+        )
     op.add_column(
         "support_events",
-        sa.Column("support_kind", sa.String(length=40), nullable=False, server_default="EVALUATION"),
+        sa.Column(
+            "support_kind",
+            sa.String(length=40),
+            nullable=False,
+            server_default="EVALUATION",
+        ),
     )
     op.add_column("support_events", sa.Column("main_draft", sa.Text(), nullable=True))
     op.add_column("support_events", sa.Column("doubt_text", sa.Text(), nullable=True))

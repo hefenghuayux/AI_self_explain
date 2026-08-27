@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from app.models.question import Question
@@ -19,7 +19,11 @@ class QuestionRepository:
         return question
 
     def list_questions(self, include_archived: bool) -> list[Question]:
-        statement = select(Question).order_by(Question.created_at.desc(), Question.id.desc())
+        statement = select(Question).order_by(
+            case((Question.rubric_points.is_not(None), 0), else_=1),
+            Question.created_at.desc(),
+            Question.id.desc(),
+        )
         if not include_archived:
             statement = statement.where(Question.archived_at.is_(None))
         return list(self.session.scalars(statement))

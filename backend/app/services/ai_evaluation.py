@@ -134,7 +134,9 @@ class AIEvaluationService:
         session: Session,
         attempt: ExplanationAttempt,
     ) -> AIEvaluation | Session:
-        schema = evaluation_json_schema(question.rubric_points)
+        rubric_points = question.rubric_points or []
+        evaluation_mode = question.evaluation_mode
+        schema = evaluation_json_schema(rubric_points)
         validation_errors: list[str] = []
         external_attempt_number = 0
         run_id = session_run_id(session.id, attempt.id)
@@ -179,7 +181,7 @@ class AIEvaluationService:
                 raise RuntimeError("AI 评价传输成功后缺少外部调用记录")
             evaluation, validation_errors = _parse_and_validate_evaluation(
                 model_response.content,
-                question.rubric_points,
+                rubric_points,
                 attempt.confirmed_text,
             )
             if validation_errors:
@@ -220,6 +222,7 @@ class AIEvaluationService:
                     model_provider=self.settings.ai_provider,
                     model_name=self.settings.ai_model,
                     external_call_record_id=external_call.id,
+                    evaluation_mode=evaluation_mode,
                 )
                 if schema_attempt == self.settings.ai_schema_max_retries:
                     reason = "AI 结构化评价在配置的重试次数内仍不合法：" + "；".join(
@@ -268,6 +271,7 @@ class AIEvaluationService:
                 model_provider=self.settings.ai_provider,
                 model_name=self.settings.ai_model,
                 external_call_record_id=external_call.id,
+                evaluation_mode=evaluation_mode,
             )
         raise RuntimeError("AI 结构化评价循环未产生结果")
 
@@ -368,7 +372,8 @@ def _render_prompt(
     question_context: dict[str, object] = {
         "questionContent": question.question_content,
         "standardAnswer": question.standard_answer,
-        "rubricPoints": question.rubric_points,
+        "evaluationMode": question.evaluation_mode,
+        "rubricPoints": question.rubric_points or [],
         "commonErrors": question.common_errors,
         "alternativeSolutions": question.alternative_solutions,
         "layeredHints": question.layered_hints,

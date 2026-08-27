@@ -72,14 +72,17 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        prepare_sqlite_migration_connection(connection)
+        is_sqlite = connection.dialect.name == "sqlite"
+        if is_sqlite:
+            prepare_sqlite_migration_connection(connection)
         context.configure(connection=connection, target_metadata=target_metadata)
 
         try:
             with context.begin_transaction():
                 context.run_migrations()
         finally:
-            restore_sqlite_foreign_keys(connection)
+            if is_sqlite:
+                restore_sqlite_foreign_keys(connection)
 
 
 if context.is_offline_mode():

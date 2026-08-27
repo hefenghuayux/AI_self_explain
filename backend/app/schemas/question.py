@@ -39,8 +39,24 @@ class QuestionInput(QuestionSchema):
         return value
 
 
-class QuestionResponse(QuestionInput):
+class QuestionResponse(QuestionSchema):
     id: int
+    question_content: RequiredText
+    standard_answer: str | None
+    rubric_points: list[str] | None
+    common_errors: list[str] | None
+    alternative_solutions: list[str] | None
+    layered_hints: list[str] | None
+    guided_questions: list[str] | None
+    full_solution: str | None
+    tiku_question_id: int | None = None
+    grade_period: int | None = None
+    subject: str | None = None
+    q_type: int | None = None
+    difficulty_level: int | None = None
+    review: str | None = None
+    topics: str | None = None
+    method: str | None = None
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime

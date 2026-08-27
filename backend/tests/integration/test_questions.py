@@ -39,12 +39,13 @@ def question_client(migrated_settings: Settings) -> Iterator[TestClient]:
         yield test_client
 
 
-def test_migration_creates_questions_table(migrated_settings: Settings) -> None:
+def test_migration_creates_self_explain_questions_table(migrated_settings: Settings) -> None:
     engine = create_engine(migrated_settings.database_url)
     try:
-        assert inspect(engine).has_table("questions")
-        columns = inspect(engine).get_columns("questions")
+        assert inspect(engine).has_table("self_explain_questions")
+        columns = inspect(engine).get_columns("self_explain_questions")
         assert "archived_at" in {column["name"] for column in columns}
+        assert "tiku_question_id" in {column["name"] for column in columns}
     finally:
         engine.dispose()
 

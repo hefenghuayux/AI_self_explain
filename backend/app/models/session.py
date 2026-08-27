@@ -26,7 +26,9 @@ class Session(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    question_id: Mapped[int] = mapped_column(ForeignKey("questions.id"), index=True, nullable=False)
+    question_id: Mapped[int] = mapped_column(
+        ForeignKey("self_explain_questions.id"), index=True, nullable=False
+    )
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id"), index=True)
     lifecycle_status: Mapped[str] = mapped_column(

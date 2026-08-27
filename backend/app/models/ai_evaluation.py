@@ -24,6 +24,7 @@ class AIEvaluation(Base):
     error_evidence: Mapped[list[dict[str, str]] | None] = mapped_column(JSON)
     confidence: Mapped[float | None] = mapped_column(Float)
     need_human_reason: Mapped[str | None] = mapped_column(Text)
+    evaluation_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="FULL_RUBRIC")
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
     model_provider: Mapped[str] = mapped_column(String(100), nullable=False)
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)

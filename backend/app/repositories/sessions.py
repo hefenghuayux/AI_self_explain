@@ -736,6 +736,7 @@ class SessionRepository:
         model_provider: str,
         model_name: str,
         external_call_record_id: int,
+        evaluation_mode: str,
     ) -> AIEvaluation:
         saved_evaluation = self._create_evaluation(
             session=session,
@@ -749,6 +750,7 @@ class SessionRepository:
             model_provider=model_provider,
             model_name=model_name,
             external_call_record_id=external_call_record_id,
+            evaluation_mode=evaluation_mode,
         )
         self.database_session.commit()
         self.database_session.refresh(saved_evaluation)
@@ -766,6 +768,7 @@ class SessionRepository:
         model_provider: str,
         model_name: str,
         external_call_record_id: int,
+        evaluation_mode: str,
     ) -> AIEvaluation:
         saved_evaluation = self._create_evaluation(
             session=session,
@@ -779,6 +782,7 @@ class SessionRepository:
             model_provider=model_provider,
             model_name=model_name,
             external_call_record_id=external_call_record_id,
+            evaluation_mode=evaluation_mode,
         )
         self.database_session.commit()
         self.database_session.refresh(saved_evaluation)
@@ -1263,6 +1267,7 @@ class SessionRepository:
         model_provider: str,
         model_name: str,
         external_call_record_id: int,
+        evaluation_mode: str,
     ) -> AIEvaluation:
         saved_evaluation = AIEvaluation(
             session_id=session.id,
@@ -1277,6 +1282,7 @@ class SessionRepository:
             else None,
             confidence=float(evaluation.confidence) if evaluation is not None else None,
             need_human_reason=evaluation.need_human_reason if evaluation is not None else None,
+            evaluation_mode=evaluation_mode,
             prompt_version=prompt_version,
             model_provider=model_provider,
             model_name=model_name,

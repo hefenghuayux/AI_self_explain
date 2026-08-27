@@ -281,6 +281,7 @@ def submit_text_attempt(
         evaluation=evaluation_output,
         session=session,
         settings=request.app.state.settings,
+        evaluation_mode=evaluation_result.evaluation_mode,
     )
     if not decision.should_generate:
         decided_session, _ = repository.apply_teaching_decision(

@@ -18,13 +18,18 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    context_column = sa.Column("context", sa.JSON(), nullable=False)
+    if op.get_bind().dialect.name != "mysql":
+        context_column = sa.Column(
+            "context", sa.JSON(), nullable=False, server_default=sa.text("'{}'")
+        )
     op.create_table(
         "student_submissions",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("session_id", sa.Integer(), nullable=False),
         sa.Column("submission_type", sa.String(length=40), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
-        sa.Column("context", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
+        context_column,
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

@@ -48,8 +48,15 @@ class TeachingDecision:
 
 
 def decide_teaching(
-    *, evaluation: AIEvaluationOutput, session: Session, settings: Settings
+    *,
+    evaluation: AIEvaluationOutput,
+    session: Session,
+    settings: Settings,
+    evaluation_mode: str = "FULL_RUBRIC",
 ) -> TeachingDecision:
+    if evaluation_mode != "FULL_RUBRIC":
+        return _decide_without_rubric(evaluation=evaluation, session=session, settings=settings)
+
     coverage = _coverage_result(evaluation=evaluation, session=session)
     action = INITIAL_ACTIONS[(evaluation.correctness, evaluation.completeness)]
 
@@ -104,6 +111,35 @@ def decide_teaching(
         coverage=coverage,
         allowed_action=action,
         should_generate=True,
+    )
+
+
+def _decide_without_rubric(
+    *, evaluation: AIEvaluationOutput, session: Session, settings: Settings
+) -> TeachingDecision:
+    coverage = _coverage_result(evaluation=evaluation, session=session)
+    if evaluation.correctness == "CORRECT":
+        return _decision(
+            session=session,
+            settings=settings,
+            coverage=coverage,
+            next_status="COMPLETED",
+            next_flow_stage="WAIT_STUDENT_ACTION",
+            completion_type=completion_type_for(
+                solution_exposed=session.solution_exposed,
+                round_number=session.round,
+                support_count_total=session.support_count_total,
+            ),
+        )
+
+    reason = evaluation.need_human_reason or "题目未配置评分点，无法生成可审计的针对性支持"
+    return _decision(
+        session=session,
+        settings=settings,
+        coverage=coverage,
+        next_status="IN_PROGRESS",
+        next_flow_stage="WAIT_STUDENT_ACTION",
+        need_human_reason=reason,
     )
 
 

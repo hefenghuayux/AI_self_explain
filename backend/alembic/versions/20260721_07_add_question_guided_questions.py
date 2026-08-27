@@ -18,10 +18,20 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "questions",
-        sa.Column("guided_questions", sa.JSON(), nullable=False, server_default=sa.text("'[]'")),
-    )
+    if op.get_bind().dialect.name == "mysql":
+        op.add_column("questions", sa.Column("guided_questions", sa.JSON(), nullable=True))
+        op.execute("UPDATE questions SET guided_questions = JSON_ARRAY()")
+        op.alter_column("questions", "guided_questions", existing_type=sa.JSON(), nullable=False)
+    else:
+        op.add_column(
+            "questions",
+            sa.Column(
+                "guided_questions",
+                sa.JSON(),
+                nullable=False,
+                server_default=sa.text("'[]'"),
+            ),
+        )
 
 
 def downgrade() -> None:
