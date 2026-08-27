@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router"
 import { archiveQuestion, fetchQuestion, restoreQuestion } from "../api/questions"
 import { createSession } from "../api/sessions"
 import type { Question } from "../types/question"
+import { sanitizeQuestionHtml } from "../utils/questionHtml"
 
 const route = useRoute()
 const router = useRouter()
@@ -120,8 +121,13 @@ async function startSession(restart = false) {
             {{ question.evaluationMode === "FULL_RUBRIC" ? "完整评分" : question.evaluationMode === "BASIC" ? "基础评价" : "通用评价" }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="题目内容">{{ question.questionContent }}</el-descriptions-item>
-        <el-descriptions-item label="标准答案">{{ question.standardAnswer || "未配置" }}</el-descriptions-item>
+        <el-descriptions-item label="题目内容">
+          <div class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
+        </el-descriptions-item>
+        <el-descriptions-item label="标准答案">
+          <div v-if="question.standardAnswer" class="question-rich-text" v-html="sanitizeQuestionHtml(question.standardAnswer)" />
+          <span v-else class="empty-value">未配置</span>
+        </el-descriptions-item>
         <el-descriptions-item label="关键评分点">
           <ul v-if="materialItems(question.rubricPoints).length"><li v-for="item in materialItems(question.rubricPoints)" :key="item">{{ item }}</li></ul>
           <span v-else class="empty-value">未配置</span>
@@ -144,7 +150,10 @@ async function startSession(restart = false) {
           </ul>
           <span v-else class="empty-value">未配置</span>
         </el-descriptions-item>
-        <el-descriptions-item label="完整解析">{{ question.fullSolution || "未配置" }}</el-descriptions-item>
+        <el-descriptions-item label="完整解析">
+          <div v-if="question.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" />
+          <span v-else class="empty-value">未配置</span>
+        </el-descriptions-item>
       </el-descriptions>
     </section>
   </main>
@@ -177,6 +186,9 @@ h1 {
 .detail-surface { margin-top: var(--space-8); padding-top: var(--space-6); border-top: 1px solid var(--color-border); }
 .detail-surface :deep(.el-descriptions__content) { line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
 .detail-surface :deep(.el-descriptions__label) { width: 160px; color: var(--color-text-primary); font-weight: 600; }
+.question-rich-text :deep(p) { margin: 0; }
+.question-rich-text :deep(p + p) { margin-top: var(--space-3); }
+.question-rich-text :deep(img) { display: block; max-width: 100%; height: auto; }
 
 ul {
   margin: 0;

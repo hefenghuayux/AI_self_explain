@@ -26,6 +26,7 @@ import type {
   VoiceInputTarget,
 } from "../types/session"
 import type { Question } from "../types/question"
+import { sanitizeQuestionHtml } from "../utils/questionHtml"
 
 type SegmentKey = "selfExplain" | "guidedAnswers" | "doubt" | "appeal"
 
@@ -554,7 +555,7 @@ async function respondToSolution(understood: boolean) {
       <template v-else-if="session">
         <section v-if="question" class="question-content" aria-labelledby="question-title">
           <h2 id="question-title">题目</h2>
-          <p data-testid="question-content">{{ question.questionContent }}</p>
+          <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </section>
         <section class="session-section progress-section" aria-label="本轮学习进度">
           <div class="session-summary">
@@ -768,12 +769,12 @@ async function respondToSolution(understood: boolean) {
             </div>
           </section>
           <section v-if="session.flowStage === 'AI_EVALUATING'" class="session-section"><h2>AI 正在评价</h2><p>请等待评价结果返回。</p></section>
-          <section v-else-if="session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2>完整解析</h2><p v-if="question">{{ question.fullSolution }}</p><p>请确认你是否已经理解解析；确认后需要从头完成第二轮自讲。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，开始第二轮自讲</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
+          <section v-else-if="session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2>完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析；确认后需要从头完成第二轮自讲。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，开始第二轮自讲</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
         </template>
         <section v-if="session.needHumanReason && session.status === 'IN_PROGRESS'" class="session-section"><el-alert title="已申请人工复核，你可以继续自讲。" type="warning" :closable="false" show-icon /></section>
         <section v-if="session.status === 'NEED_HUMAN'" class="session-section"><h2>需要人工处理</h2><el-alert title="自动学习流程已停止" :description="session.needHumanReason || '暂无法可靠判断，已转人工帮助。'" type="error" :closable="false" show-icon /></section>
         <section v-else-if="session.status === 'COMPLETED'" class="session-section completion-state"><h2>本轮自讲已完成</h2><p>你已经正确、完整地讲清了这道题。</p></section>
-        <section v-else-if="session.status === 'STOPPED_LIMIT'" class="session-section solution-state"><h2>已达到本轮支持上限</h2><p v-if="question">{{ question.fullSolution }}</p></section>
+        <section v-else-if="session.status === 'STOPPED_LIMIT'" class="session-section solution-state"><h2>已达到本轮支持上限</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
         <section class="session-section timeline-section" aria-labelledby="timeline-title">
           <h2 id="timeline-title">历史记录</h2>
           <p class="section-description">按时间查看你的表达、AI 评价、提示与系统反馈。</p>
@@ -818,7 +819,10 @@ h1, h2, h3 { margin: 0; line-height: 1.4; }
 h1 { font-size: var(--font-size-2xl); }
 h2 { font-size: var(--font-size-lg); }
 .question-content { padding: var(--space-6); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
-.question-content p { max-width: var(--reading-width); margin: var(--space-3) 0 0; color: var(--color-text-primary); font-size: var(--font-size-lg); font-weight: 600; line-height: 1.75; overflow-wrap: anywhere; }
+.question-rich-text { max-width: var(--reading-width); margin-top: var(--space-3); color: var(--color-text-primary); font-size: var(--font-size-lg); font-weight: 600; line-height: 1.75; overflow-wrap: anywhere; }
+.question-rich-text :deep(p) { margin: 0; }
+.question-rich-text :deep(p + p) { margin-top: var(--space-3); }
+.question-rich-text :deep(img) { display: block; max-width: 100%; height: auto; }
 .session-section { margin-top: var(--space-8); }
 .session-section p { color: var(--color-text-secondary); }
 .section-heading { display: flex; justify-content: space-between; gap: var(--space-4); }

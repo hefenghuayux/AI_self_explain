@@ -11,6 +11,7 @@ import {
 import { createSession } from "../api/sessions"
 import { authUser } from "../stores/auth"
 import type { QuestionFilterOptions, QuestionListItem } from "../types/question"
+import { sanitizeQuestionHtml } from "../utils/questionHtml"
 
 const router = useRouter()
 const questions = ref<QuestionListItem[]>([])
@@ -161,7 +162,11 @@ onMounted(async () => {
     />
     <el-table v-else :data="questions" class="question-table" table-layout="fixed">
       <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="questionContent" label="题目内容" min-width="360" class-name="question-content-cell" />
+      <el-table-column label="题目内容" min-width="360" class-name="question-content-cell">
+        <template #default="scope">
+          <div class="question-rich-text" v-html="sanitizeQuestionHtml(scope.row.questionContent)" />
+        </template>
+      </el-table-column>
       <el-table-column label="评价方式" width="110">
         <template #default="scope">
           <el-tag :type="evaluationModeTagType(scope.row)">{{ evaluationModeLabel(scope.row) }}</el-tag>
@@ -235,7 +240,7 @@ onMounted(async () => {
             </el-tag>
           </div>
         </div>
-        <p>{{ question.questionContent }}</p>
+        <div class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         <div class="row-actions">
           <el-button v-if="!question.archivedAt" type="success" :loading="actingQuestionId === question.id" @click="startSelfExplanation(question)">开始自讲</el-button>
           <el-button v-if="!question.archivedAt" :loading="actingQuestionId === question.id" @click="startSelfExplanation(question, true)">重新自讲</el-button>
@@ -297,6 +302,8 @@ h1 {
 .question-pagination { justify-content: flex-end; margin-top: var(--space-6); }
 .question-table { border-top: 1px solid var(--color-border); }
 .question-table :deep(.question-content-cell .cell) { overflow: hidden; display: -webkit-box; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.question-rich-text :deep(p) { margin: 0; }
+.question-rich-text :deep(img) { display: block; max-width: 100%; height: auto; }
 
 .row-actions {
   min-height: 32px;
@@ -321,7 +328,7 @@ h1 {
   .question-item-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
   .question-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
   .question-id { color: var(--color-text-muted); font-size: var(--font-size-sm); font-weight: 600; }
-  .question-item p { margin: var(--space-3) 0 var(--space-4); overflow-wrap: anywhere; }
+  .question-item .question-rich-text { margin: var(--space-3) 0 var(--space-4); overflow-wrap: anywhere; }
   .row-actions { flex-wrap: wrap; }
 }
 </style>

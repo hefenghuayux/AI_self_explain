@@ -11,7 +11,7 @@ function question(): QuestionListItem {
   return {
     id: 1,
     evaluationMode: "FULL_RUBRIC",
-    questionContent: "计算 1 + 1。",
+    questionContent: '<p>计算 1 + 1。</p><img src="https://example.test/question.png">',
     gradePeriod: 2,
     subject: "S",
     qType: 1,
@@ -74,6 +74,7 @@ describe("QuestionListView", () => {
 
     expect(wrapper.text()).toContain("题目列表")
     expect(wrapper.text()).toContain("自讲")
+    expect(wrapper.find('.question-rich-text img').attributes("src")).toBe("https://example.test/question.png")
     expect(wrapper.text()).not.toContain("录入题目")
     expect(wrapper.text()).not.toContain("编辑")
     expect(wrapper.text()).not.toContain("归档")
