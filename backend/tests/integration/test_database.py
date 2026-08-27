@@ -23,6 +23,18 @@ def test_sqlite_database_connects(settings: Settings) -> None:
         engine.dispose()
 
 
+def test_mysql_database_engine_uses_mysql_dialect(settings_values: dict[str, str]) -> None:
+    settings_values["database_url"] = "mysql+pymysql://user:password@localhost/test"
+    mysql_settings = Settings(**settings_values)
+
+    engine = create_database_engine(mysql_settings)
+    try:
+        assert engine.url.get_backend_name() == "mysql"
+        assert engine.url.get_driver_name() == "pymysql"
+    finally:
+        engine.dispose()
+
+
 def test_runtime_sqlite_connection_enforces_foreign_keys(settings: Settings) -> None:
     engine = create_database_engine(settings)
     try:

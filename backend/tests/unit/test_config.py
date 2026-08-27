@@ -69,10 +69,19 @@ def test_rejects_non_positive_backoff(settings_values: dict[str, str]) -> None:
         Settings(**settings_values)
 
 
-def test_rejects_non_sqlite_database(settings_values: dict[str, str]) -> None:
-    settings_values["database_url"] = "postgresql://localhost/test"
+def test_accepts_mysql_database(settings_values: dict[str, str]) -> None:
+    settings_values["database_url"] = "mysql+pymysql://user:password@localhost/test"
 
-    with pytest.raises(ValidationError, match="SQLite"):
+    settings = Settings(**settings_values)
+
+    assert settings.database_url == "mysql+pymysql://user:password@localhost/test"
+
+
+@pytest.mark.parametrize("database_url", ["mysql://localhost/test", "postgresql://localhost/test"])
+def test_rejects_unsupported_database(settings_values: dict[str, str], database_url: str) -> None:
+    settings_values["database_url"] = database_url
+
+    with pytest.raises(ValidationError, match="SQLite 或 mysql"):
         Settings(**settings_values)
 
 

@@ -8,11 +8,15 @@ from app.core.config import Settings
 
 
 def create_database_engine(settings: Settings) -> Engine:
-    engine = create_engine(
-        settings.database_url,
-        connect_args={"timeout": settings.database_busy_timeout_seconds},
-    )
-    event.listen(engine, "connect", _enable_sqlite_foreign_keys)
+    if _is_sqlite_database_url(settings.database_url):
+        engine = create_engine(
+            settings.database_url,
+            connect_args={"timeout": settings.database_busy_timeout_seconds},
+        )
+        event.listen(engine, "connect", _enable_sqlite_foreign_keys)
+        return engine
+
+    engine = create_engine(settings.database_url)
     return engine
 
 
@@ -42,7 +46,14 @@ def _enable_sqlite_foreign_keys(
 
 
 def _sqlite_database_path(database_url: str) -> Path | None:
+    if not _is_sqlite_database_url(database_url):
+        return None
+
     path_text = database_url.split("///", maxsplit=1)[1]
     if path_text == ":memory:":
         return None
     return Path(path_text)
+
+
+def _is_sqlite_database_url(database_url: str) -> bool:
+    return database_url.startswith(("sqlite:///", "sqlite+pysqlite:///"))

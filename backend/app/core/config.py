@@ -90,8 +90,8 @@ class Settings(BaseSettings):
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, value: str) -> str:
-        if not value.startswith(("sqlite:///", "sqlite+pysqlite:///")):
-            raise ValueError("DATABASE_URL 必须使用 SQLite URL")
+        if not value.startswith(("sqlite:///", "sqlite+pysqlite:///", "mysql+pymysql://")):
+            raise ValueError("DATABASE_URL 必须使用 SQLite 或 mysql+pymysql URL")
         return value
 
     @field_validator("asr_base_url")
