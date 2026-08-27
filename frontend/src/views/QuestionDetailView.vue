@@ -14,6 +14,10 @@ const errorMessage = ref("")
 const changingArchiveState = ref(false)
 const creatingSession = ref(false)
 
+function materialItems(items: string[] | null): string[] {
+  return items ?? []
+}
+
 onMounted(async () => {
   try {
     question.value = await fetchQuestion(String(route.params.questionId))
@@ -111,27 +115,36 @@ async function startSession(restart = false) {
             {{ question.archivedAt ? "已归档" : "可用" }}
           </el-tag>
         </el-descriptions-item>
+        <el-descriptions-item label="评价方式">
+          <el-tag :type="question.evaluationMode === 'FULL_RUBRIC' ? 'success' : 'warning'">
+            {{ question.evaluationMode === "FULL_RUBRIC" ? "完整评分" : question.evaluationMode === "BASIC" ? "基础评价" : "通用评价" }}
+          </el-tag>
+        </el-descriptions-item>
         <el-descriptions-item label="题目内容">{{ question.questionContent }}</el-descriptions-item>
-        <el-descriptions-item label="标准答案">{{ question.standardAnswer }}</el-descriptions-item>
+        <el-descriptions-item label="标准答案">{{ question.standardAnswer || "未配置" }}</el-descriptions-item>
         <el-descriptions-item label="关键评分点">
-          <ul><li v-for="item in question.rubricPoints" :key="item">{{ item }}</li></ul>
+          <ul v-if="materialItems(question.rubricPoints).length"><li v-for="item in materialItems(question.rubricPoints)" :key="item">{{ item }}</li></ul>
+          <span v-else class="empty-value">未配置</span>
         </el-descriptions-item>
         <el-descriptions-item label="常见错误">
-          <ul><li v-for="item in question.commonErrors" :key="item">{{ item }}</li></ul>
+          <ul v-if="materialItems(question.commonErrors).length"><li v-for="item in materialItems(question.commonErrors)" :key="item">{{ item }}</li></ul>
+          <span v-else class="empty-value">未配置</span>
         </el-descriptions-item>
         <el-descriptions-item label="可接受的其他解法">
-          <ul><li v-for="item in question.alternativeSolutions" :key="item">{{ item }}</li></ul>
+          <ul v-if="materialItems(question.alternativeSolutions).length"><li v-for="item in materialItems(question.alternativeSolutions)" :key="item">{{ item }}</li></ul>
+          <span v-else class="empty-value">未配置</span>
         </el-descriptions-item>
         <el-descriptions-item label="分层提示">
-          <ul><li v-for="item in question.layeredHints" :key="item">{{ item }}</li></ul>
+          <ul v-if="materialItems(question.layeredHints).length"><li v-for="item in materialItems(question.layeredHints)" :key="item">{{ item }}</li></ul>
+          <span v-else class="empty-value">未配置</span>
         </el-descriptions-item>
         <el-descriptions-item label="提示子问题">
-          <ul v-if="question.guidedQuestions.length">
-            <li v-for="item in question.guidedQuestions" :key="item">{{ item }}</li>
+          <ul v-if="materialItems(question.guidedQuestions).length">
+            <li v-for="item in materialItems(question.guidedQuestions)" :key="item">{{ item }}</li>
           </ul>
           <span v-else class="empty-value">未配置</span>
         </el-descriptions-item>
-        <el-descriptions-item label="完整解析">{{ question.fullSolution }}</el-descriptions-item>
+        <el-descriptions-item label="完整解析">{{ question.fullSolution || "未配置" }}</el-descriptions-item>
       </el-descriptions>
     </section>
   </main>

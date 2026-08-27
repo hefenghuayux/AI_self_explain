@@ -10,6 +10,7 @@ import type { Question } from "../src/types/question"
 function question(): Question {
   return {
     id: 1,
+    evaluationMode: "FULL_RUBRIC",
     questionContent: "计算 1 + 1。",
     standardAnswer: "2",
     rubricPoints: ["正确计算加法"],

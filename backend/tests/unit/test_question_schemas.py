@@ -24,25 +24,35 @@ def test_question_input_accepts_complete_material_and_strips_whitespace() -> Non
     assert question.standard_answer == "2"
 
 
-def test_question_input_accepts_empty_guided_questions() -> None:
+def test_question_input_converts_empty_material_to_null() -> None:
     payload = question_payload()
+    payload["standardAnswer"] = " "
+    payload["rubricPoints"] = []
+    payload["commonErrors"] = []
+    payload["alternativeSolutions"] = []
+    payload["layeredHints"] = []
     payload["guidedQuestions"] = []
+    payload["fullSolution"] = " "
 
     question = QuestionInput.model_validate(payload)
 
-    assert question.guided_questions == []
+    assert question.standard_answer is None
+    assert question.rubric_points is None
+    assert question.common_errors is None
+    assert question.alternative_solutions is None
+    assert question.layered_hints is None
+    assert question.guided_questions is None
+    assert question.full_solution is None
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
     [
         ("questionContent", " "),
-        ("standardAnswer", ""),
-        ("commonErrors", []),
+        ("commonErrors", [""]),
         ("alternativeSolutions", [""]),
         ("layeredHints", [" "]),
         ("guidedQuestions", [" "]),
-        ("fullSolution", " "),
     ],
 )
 def test_question_input_rejects_missing_or_blank_required_material(

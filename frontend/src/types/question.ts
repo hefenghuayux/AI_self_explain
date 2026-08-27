@@ -1,5 +1,24 @@
 export interface QuestionInput {
   questionContent: string
+  standardAnswer: string | null
+  rubricPoints: string[] | null
+  commonErrors: string[] | null
+  alternativeSolutions: string[] | null
+  layeredHints: string[] | null
+  guidedQuestions: string[] | null
+  fullSolution: string | null
+}
+
+export interface Question extends QuestionInput {
+  id: number
+  evaluationMode: "FULL_RUBRIC" | "BASIC" | "AI_GENERAL"
+  archivedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface QuestionFormInput {
+  questionContent: string
   standardAnswer: string
   rubricPoints: string[]
   commonErrors: string[]
@@ -9,35 +28,28 @@ export interface QuestionInput {
   fullSolution: string
 }
 
-export interface Question extends QuestionInput {
-  id: number
-  archivedAt: string | null
-  createdAt: string
-  updatedAt: string
-}
-
-export function createQuestionDraft(): QuestionInput {
+export function createQuestionDraft(): QuestionFormInput {
   return {
     questionContent: "",
     standardAnswer: "",
-    rubricPoints: [""],
-    commonErrors: [""],
-    alternativeSolutions: [""],
-    layeredHints: [""],
+    rubricPoints: [],
+    commonErrors: [],
+    alternativeSolutions: [],
+    layeredHints: [],
     guidedQuestions: [],
     fullSolution: "",
   }
 }
 
-export function toQuestionInput(question: Question): QuestionInput {
+export function toQuestionFormInput(question: Question): QuestionFormInput {
   return {
     questionContent: question.questionContent,
-    standardAnswer: question.standardAnswer,
-    rubricPoints: [...question.rubricPoints],
-    commonErrors: [...question.commonErrors],
-    alternativeSolutions: [...question.alternativeSolutions],
-    layeredHints: [...question.layeredHints],
-    guidedQuestions: [...question.guidedQuestions],
-    fullSolution: question.fullSolution,
+    standardAnswer: question.standardAnswer ?? "",
+    rubricPoints: [...(question.rubricPoints ?? [])],
+    commonErrors: [...(question.commonErrors ?? [])],
+    alternativeSolutions: [...(question.alternativeSolutions ?? [])],
+    layeredHints: [...(question.layeredHints ?? [])],
+    guidedQuestions: [...(question.guidedQuestions ?? [])],
+    fullSolution: question.fullSolution ?? "",
   }
 }

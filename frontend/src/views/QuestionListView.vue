@@ -14,6 +14,20 @@ const errorMessage = ref("")
 const showArchived = ref(false)
 const actingQuestionId = ref<number>()
 
+function evaluationModeLabel(question: Question): string {
+  return {
+    FULL_RUBRIC: "完整评分",
+    BASIC: "基础评价",
+    AI_GENERAL: "通用评价",
+  }[question.evaluationMode]
+}
+
+function evaluationModeTagType(question: Question): "success" | "warning" | "info" {
+  if (question.evaluationMode === "FULL_RUBRIC") return "success"
+  if (question.evaluationMode === "BASIC") return "warning"
+  return "info"
+}
+
 async function loadQuestions() {
   loading.value = true
   errorMessage.value = ""
@@ -94,12 +108,17 @@ onMounted(loadQuestions)
     <el-table v-else :data="questions" class="question-table" table-layout="fixed">
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="questionContent" label="题目内容" min-width="360" class-name="question-content-cell" />
+      <el-table-column label="评价方式" width="110">
+        <template #default="scope">
+          <el-tag :type="evaluationModeTagType(scope.row)">{{ evaluationModeLabel(scope.row) }}</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column
         v-if="authUser?.role === 'TEACHER'"
         label="评分点数"
         width="110"
       >
-        <template #default="scope">{{ scope.row.rubricPoints.length }}</template>
+        <template #default="scope">{{ scope.row.rubricPoints?.length ?? 0 }}</template>
       </el-table-column>
       <el-table-column v-if="authUser?.role === 'TEACHER'" label="状态" width="100">
         <template #default="scope">
@@ -155,9 +174,12 @@ onMounted(loadQuestions)
       <article v-for="question in questions" :key="question.id" class="question-item">
         <div class="question-item-head">
           <span class="question-id">题目 {{ question.id }}</span>
-          <el-tag v-if="authUser?.role === 'TEACHER'" :type="question.archivedAt ? 'warning' : 'success'">
-            {{ question.archivedAt ? "已归档" : "可用" }}
-          </el-tag>
+          <div class="question-tags">
+            <el-tag :type="evaluationModeTagType(question)">{{ evaluationModeLabel(question) }}</el-tag>
+            <el-tag v-if="authUser?.role === 'TEACHER'" :type="question.archivedAt ? 'warning' : 'success'">
+              {{ question.archivedAt ? "已归档" : "可用" }}
+            </el-tag>
+          </div>
         </div>
         <p>{{ question.questionContent }}</p>
         <div class="row-actions">
@@ -228,6 +250,7 @@ h1 {
   .question-list-mobile { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
   .question-item { padding: var(--space-4) 0 var(--space-6); border-bottom: 1px solid var(--color-border); }
   .question-item-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .question-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
   .question-id { color: var(--color-text-muted); font-size: var(--font-size-sm); font-weight: 600; }
   .question-item p { margin: var(--space-3) 0 var(--space-4); overflow-wrap: anywhere; }
   .row-actions { flex-wrap: wrap; }

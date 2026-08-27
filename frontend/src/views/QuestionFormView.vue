@@ -4,12 +4,12 @@ import { useRoute, useRouter } from "vue-router"
 
 import { createQuestion, fetchQuestion, updateQuestion } from "../api/questions"
 import QuestionForm from "../components/QuestionForm.vue"
-import { toQuestionInput, type QuestionInput } from "../types/question"
+import { toQuestionFormInput, type QuestionFormInput, type QuestionInput } from "../types/question"
 
 const route = useRoute()
 const router = useRouter()
 const questionId = route.params.questionId ? String(route.params.questionId) : undefined
-const initialQuestion = ref<QuestionInput>()
+const initialQuestion = ref<QuestionFormInput>()
 const loading = ref(Boolean(questionId))
 const submitting = ref(false)
 const errorMessage = ref("")
@@ -19,7 +19,7 @@ onMounted(async () => {
     return
   }
   try {
-    initialQuestion.value = toQuestionInput(await fetchQuestion(questionId))
+    initialQuestion.value = toQuestionFormInput(await fetchQuestion(questionId))
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -48,7 +48,7 @@ async function submitQuestion(question: QuestionInput) {
     <div class="page-header">
       <div>
         <h1>{{ questionId ? "编辑题目" : "录入题目" }}</h1>
-        <p>完整填写题目材料，供后续 AI 评价与引导使用。</p>
+        <p>题目内容必填；评分点等 AI 材料可逐步补录。</p>
       </div>
       <RouterLink to="/questions"><el-button>取消</el-button></RouterLink>
     </div>

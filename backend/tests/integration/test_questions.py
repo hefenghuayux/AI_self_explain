@@ -73,24 +73,26 @@ def test_question_can_be_saved_and_read_completely(question_client: TestClient) 
     assert detail_response.json() == created
 
 
-def test_question_can_be_created_and_updated_without_guided_questions(
+def test_question_can_be_created_and_updated_without_ai_material(
     question_client: TestClient,
 ) -> None:
-    payload = {**question_payload(), "guidedQuestions": []}
+    payload = {"questionContent": "可补录题目"}
 
     create_response = question_client.post("/api/questions", json=payload)
 
     assert create_response.status_code == 201
     created = create_response.json()
-    assert created["guidedQuestions"] == []
+    assert created["evaluationMode"] == "AI_GENERAL"
+    assert created["rubricPoints"] is None
 
     update_response = question_client.put(
         f"/api/questions/{created['id']}",
-        json={**payload, "questionContent": "更新后的题目"},
+        json={**payload, "questionContent": "更新后的题目", "rubricPoints": ["补录评分点"]},
     )
 
     assert update_response.status_code == 200
-    assert update_response.json()["guidedQuestions"] == []
+    assert update_response.json()["evaluationMode"] == "FULL_RUBRIC"
+    assert update_response.json()["rubricPoints"] == ["补录评分点"]
 
 
 def test_migrated_question_with_empty_guided_questions_can_be_read(
@@ -123,10 +125,28 @@ def test_migrated_question_with_empty_guided_questions_can_be_read(
     assert detail_response.json()["guidedQuestions"] == []
 
 
+def test_question_list_prioritizes_rubric_and_returns_evaluation_mode(
+    question_client: TestClient,
+) -> None:
+    without_rubric = question_client.post("/api/questions", json={"questionContent": "无评分点"})
+    with_rubric = question_client.post(
+        "/api/questions",
+        json={"questionContent": "有评分点", "rubricPoints": ["评分点"]},
+    )
+
+    response = question_client.get("/api/questions")
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == [
+        with_rubric.json()["id"],
+        without_rubric.json()["id"],
+    ]
+    assert [item["evaluationMode"] for item in response.json()] == ["FULL_RUBRIC", "AI_GENERAL"]
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("standardAnswer", " "),
         ("rubricPoints", ["有效评分点", " "]),
         ("rubricPoints", ["有效评分点", "有效评分点"]),
         ("layeredHints", [" "]),

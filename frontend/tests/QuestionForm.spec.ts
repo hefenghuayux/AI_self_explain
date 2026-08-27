@@ -3,9 +3,9 @@ import ElementPlus from "element-plus"
 import { describe, expect, it } from "vitest"
 
 import QuestionForm from "../src/components/QuestionForm.vue"
-import type { QuestionInput } from "../src/types/question"
+import type { QuestionFormInput, QuestionInput } from "../src/types/question"
 
-function questionInput(): QuestionInput {
+function questionInput(): QuestionFormInput {
   return {
     questionContent: "计算 1 + 1。",
     standardAnswer: "2",
@@ -29,7 +29,7 @@ describe("QuestionForm", () => {
     await wrapper.get("form").trigger("submit")
     await flushPromises()
 
-    expect(wrapper.emitted("submit")).toEqual([[input]])
+    expect(wrapper.emitted("submit")).toEqual([[input as QuestionInput]])
   })
 
   it("submits question material without guided questions", async () => {
@@ -43,7 +43,7 @@ describe("QuestionForm", () => {
     await wrapper.get("form").trigger("submit")
     await flushPromises()
 
-    expect(wrapper.emitted("submit")).toEqual([[input]])
+    expect(wrapper.emitted("submit")).toEqual([[{ ...input, guidedQuestions: null }]])
   })
 
   it("rejects blank guided question before requesting the API", async () => {

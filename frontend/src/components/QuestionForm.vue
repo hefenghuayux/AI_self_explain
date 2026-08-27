@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { reactive, ref, watch } from "vue"
 
-import { createQuestionDraft, type QuestionInput } from "../types/question"
+import { createQuestionDraft, type QuestionFormInput, type QuestionInput } from "../types/question"
 
 const props = defineProps<{
-  initialQuestion?: QuestionInput
+  initialQuestion?: QuestionFormInput
   submitting: boolean
   serverError: string
 }>()
@@ -13,7 +13,7 @@ const emit = defineEmits<{
   submit: [question: QuestionInput]
 }>()
 
-const form = reactive<QuestionInput>(createQuestionDraft())
+const form = reactive<QuestionFormInput>(createQuestionDraft())
 const validationError = ref("")
 
 watch(
@@ -25,7 +25,7 @@ watch(
   { immediate: true },
 )
 
-function cloneQuestion(question: QuestionInput): QuestionInput {
+function cloneQuestion(question: QuestionFormInput): QuestionFormInput {
   return {
     ...question,
     rubricPoints: [...question.rubricPoints],
@@ -36,58 +36,60 @@ function cloneQuestion(question: QuestionInput): QuestionInput {
   }
 }
 
-function addArrayItem(field: keyof Pick<QuestionInput, "rubricPoints" | "commonErrors" | "alternativeSolutions" | "layeredHints" | "guidedQuestions">) {
+function addArrayItem(field: keyof Pick<QuestionFormInput, "rubricPoints" | "commonErrors" | "alternativeSolutions" | "layeredHints" | "guidedQuestions">) {
   form[field].push("")
 }
 
 function removeArrayItem(
-  field: keyof Pick<QuestionInput, "rubricPoints" | "commonErrors" | "alternativeSolutions" | "layeredHints" | "guidedQuestions">,
+  field: keyof Pick<QuestionFormInput, "rubricPoints" | "commonErrors" | "alternativeSolutions" | "layeredHints" | "guidedQuestions">,
   index: number,
 ) {
   form[field].splice(index, 1)
 }
 
-function normalizeQuestion(question: QuestionInput): QuestionInput {
+function normalizeQuestion(question: QuestionFormInput): QuestionInput {
   return {
     questionContent: question.questionContent.trim(),
-    standardAnswer: question.standardAnswer.trim(),
-    rubricPoints: question.rubricPoints.map((item) => item.trim()),
-    commonErrors: question.commonErrors.map((item) => item.trim()),
-    alternativeSolutions: question.alternativeSolutions.map((item) => item.trim()),
-    layeredHints: question.layeredHints.map((item) => item.trim()),
-    guidedQuestions: question.guidedQuestions.map((item) => item.trim()),
-    fullSolution: question.fullSolution.trim(),
+    standardAnswer: nullableText(question.standardAnswer),
+    rubricPoints: nullableList(question.rubricPoints),
+    commonErrors: nullableList(question.commonErrors),
+    alternativeSolutions: nullableList(question.alternativeSolutions),
+    layeredHints: nullableList(question.layeredHints),
+    guidedQuestions: nullableList(question.guidedQuestions),
+    fullSolution: nullableText(question.fullSolution),
   }
 }
 
-function validateQuestion(question: QuestionInput): string {
-  const requiredTextFields: Array<[string, string]> = [
-    ["题目内容", question.questionContent],
-    ["标准答案", question.standardAnswer],
-    ["完整解析", question.fullSolution],
-  ]
-  const blankTextField = requiredTextFields.find(([, value]) => !value)
-  if (blankTextField) {
-    return `请填写${blankTextField[0]}`
-  }
+function nullableText(value: string): string | null {
+  const normalized = value.trim()
+  return normalized || null
+}
 
-  const arrayFields: Array<[string, string[]]> = [
+function nullableList(values: string[]): string[] | null {
+  const normalized = values.map((item) => item.trim())
+  return normalized.length ? normalized : null
+}
+
+function validateQuestion(question: QuestionInput): string {
+  if (!question.questionContent) return "请填写题目内容"
+
+  const arrayFields: Array<[string, string[] | null]> = [
     ["评分点", question.rubricPoints],
     ["常见错误", question.commonErrors],
     ["其他解法", question.alternativeSolutions],
     ["分层提示", question.layeredHints],
   ]
-  const invalidArrayField = arrayFields.find(([, values]) => values.length === 0 || values.some((item) => !item))
+  const invalidArrayField = arrayFields.find(([, values]) => values?.some((item) => !item))
   if (invalidArrayField) {
     return `${invalidArrayField[0]}不能包含空白项`
   }
-  if (question.guidedQuestions.some((item) => !item)) {
+  if (question.guidedQuestions?.some((item) => !item)) {
     return "提示子问题不能包含空白项"
   }
-  if (new Set(question.rubricPoints).size !== question.rubricPoints.length) {
+  if (question.rubricPoints && new Set(question.rubricPoints).size !== question.rubricPoints.length) {
     return "评分点不能重复"
   }
-  if (new Set(question.guidedQuestions).size !== question.guidedQuestions.length) {
+  if (question.guidedQuestions && new Set(question.guidedQuestions).size !== question.guidedQuestions.length) {
     return "提示子问题不能重复"
   }
   return ""
@@ -115,17 +117,17 @@ function submitForm() {
     />
 
     <h2>题目与答案</h2>
-    <p class="section-description">填写学生看到的题目，以及用于评价的标准答案。</p>
+    <p class="section-description">题目内容必填；其余内容可随人工补录逐步完善。</p>
     <el-form-item label="题目内容" required>
       <el-input v-model="form.questionContent" type="textarea" :rows="4" />
     </el-form-item>
-    <el-form-item label="标准答案" required>
+    <el-form-item label="标准答案">
       <el-input v-model="form.standardAnswer" type="textarea" :rows="3" />
     </el-form-item>
 
     <h2>评价材料</h2>
-    <p class="section-description">评分点和常见错误会直接影响评价质量，请拆分为清晰、独立的条目。</p>
-    <el-form-item label="关键评分点" required>
+    <p class="section-description">评分点非空时使用完整评分规则；其余材料可按需补录。</p>
+    <el-form-item label="关键评分点">
       <div class="array-editor">
         <div v-for="(_, index) in form.rubricPoints" :key="`rubric-${index}`" class="array-row">
           <span class="item-index">{{ index + 1 }}</span>
@@ -136,7 +138,7 @@ function submitForm() {
       </div>
     </el-form-item>
 
-    <el-form-item label="常见错误" required>
+    <el-form-item label="常见错误">
       <div class="array-editor">
         <div v-for="(_, index) in form.commonErrors" :key="`error-${index}`" class="array-row">
           <span class="item-index">{{ index + 1 }}</span>
@@ -147,7 +149,7 @@ function submitForm() {
       </div>
     </el-form-item>
 
-    <el-form-item label="可接受的其他解法" required>
+    <el-form-item label="可接受的其他解法">
       <div class="array-editor">
         <div v-for="(_, index) in form.alternativeSolutions" :key="`solution-${index}`" class="array-row">
           <span class="item-index">{{ index + 1 }}</span>
@@ -160,7 +162,7 @@ function submitForm() {
 
     <h2>学习引导</h2>
     <p class="section-description">按从轻到重的顺序填写提示，可选子问题用于引导学生继续思考。</p>
-    <el-form-item label="分层提示" required>
+    <el-form-item label="分层提示">
       <div class="array-editor">
         <div v-for="(_, index) in form.layeredHints" :key="`hint-${index}`" class="array-row">
           <span class="item-index">{{ index + 1 }}</span>
@@ -183,8 +185,8 @@ function submitForm() {
     </el-form-item>
 
     <h2>完整解析</h2>
-    <p class="section-description">达到支持上限后向学生展示，内容应能独立说明完整解题过程。</p>
-    <el-form-item label="完整解析" required>
+    <p class="section-description">达到支持上限后向学生展示；未填写时系统仍允许基础自讲。</p>
+    <el-form-item label="完整解析">
       <el-input v-model="form.fullSolution" type="textarea" :rows="5" />
     </el-form-item>
     <div class="submit-area"><el-button native-type="submit" type="primary" :loading="submitting">保存题目</el-button></div>
