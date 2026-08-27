@@ -103,18 +103,37 @@ describe("SessionEventLogView", () => {
           content: { questionContent: "计算 1 + 1。" },
         }],
       }))
+      .mockResolvedValueOnce(response({
+        sessionId: 42,
+        events: [{
+          sessionId: 42,
+          seq: 4,
+          eventId: "evt-4",
+          runId: "run-1",
+          eventType: "model.responded",
+          occurredAt: "2026-08-20T10:00:04Z",
+          data: { rawContent: '{"correctness":"CORRECT"}' },
+        }],
+        nextAfterSeq: 4,
+      }))
     vi.stubGlobal("fetch", fetchMock)
 
     const wrapper = await mountView()
     await wrapper.findAll(".view-switch button")[0].trigger("click")
     await flushPromises()
 
-    expect(fetchMock).toHaveBeenLastCalledWith(
+    expect(fetchMock).toHaveBeenCalledWith(
       "/api/sessions/42/surface",
+      expect.any(Object),
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sessions/42/events?afterSeq=-1&limit=500",
       expect.any(Object),
     )
     expect(wrapper.text()).toContain("学生的完整回答")
     expect(wrapper.text()).toContain("question")
     expect(wrapper.text()).toContain("#5")
+    expect(wrapper.text()).toContain("模型原始回复")
+    expect(wrapper.text()).toContain('{"correctness":"CORRECT"}')
   })
 })

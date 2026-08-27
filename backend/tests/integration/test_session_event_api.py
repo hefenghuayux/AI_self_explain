@@ -68,7 +68,12 @@ def append_run(settings: Settings, session_id: int) -> None:
             responded = store.append(
                 session_id,
                 "model.responded",
-                {"output": {"correctness": "CORRECT"}, "validation": "valid", "durationMs": 3},
+                {
+                    "output": {"correctness": "CORRECT"},
+                    "rawContent": '{"correctness": "CORRECT"}',
+                    "validation": "valid",
+                    "durationMs": 3,
+                },
                 run_id=run_id,
                 parent_event_id=requested.event_id,
             )
@@ -102,9 +107,7 @@ def test_session_event_projection_apis(settings, monkeypatch) -> None:
             f"/api/sessions/{session_id}/surface", params={"asOfSeq": 1}
         )
         trajectory = client.get(f"/api/sessions/{session_id}/trajectory")
-        trace = client.get(
-            f"/api/sessions/{session_id}/trace", params={"run_id": "run_api_1"}
-        )
+        trace = client.get(f"/api/sessions/{session_id}/trace", params={"run_id": "run_api_1"})
 
     assert events.status_code == 200
     assert [item["seq"] for item in events.json()["events"]] == [0, 1]
@@ -113,6 +116,7 @@ def test_session_event_projection_apis(settings, monkeypatch) -> None:
     assert event.json()["eventType"] == "model.requested"
     assert surface.json()["messages"][0]["content"] == "1 加 1 等于 2。"
     assert surface.json()["contexts"][0]["source"] == "question:1"
+    assert page.json()["events"][2]["data"]["rawContent"] == '{"correctness": "CORRECT"}'
     assert historical_surface.json()["messages"][0]["seq"] == 1
     assert historical_surface.json()["contexts"] == []
     steps = trajectory.json()["runs"][0]["steps"]
@@ -132,9 +136,7 @@ def test_session_event_api_returns_contract_errors(settings, monkeypatch) -> Non
         session_id = created.json()["id"]
         missing_session = client.get("/api/sessions/99999/events")
         missing_event = client.get(f"/api/sessions/{session_id}/events/99999")
-        invalid_limit = client.get(
-            f"/api/sessions/{session_id}/events", params={"limit": 501}
-        )
+        invalid_limit = client.get(f"/api/sessions/{session_id}/events", params={"limit": 501})
 
     assert missing_session.status_code == 404
     assert missing_session.json()["detail"] == "SESSION_NOT_FOUND"

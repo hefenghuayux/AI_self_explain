@@ -51,6 +51,7 @@ class ModelRequestedData(EventData):
 
 class ModelRespondedData(EventData):
     output: dict[str, JsonValue]
+    rawContent: NonEmptyText
     validation: Literal["valid", "invalid"]
     durationMs: NonNegativeInt | None = None
     inputTokens: NonNegativeInt | None = None

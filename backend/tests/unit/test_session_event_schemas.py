@@ -22,7 +22,10 @@ from app.schemas.session_event import EVENT_DATA_SCHEMAS, SessionEventResponse
                 "surfaceSeq": 2,
             },
         ),
-        ("model.responded", {"output": {}, "validation": "valid"}),
+        (
+            "model.responded",
+            {"output": {}, "rawContent": '{"correctness": "CORRECT"}', "validation": "valid"},
+        ),
         ("model.failed", {"errorType": "TIMEOUT", "message": "模型请求超时"}),
         (
             "state.changed",
@@ -41,6 +44,11 @@ def test_all_event_payloads_accept_the_documented_shape(
 def test_event_payload_rejects_extra_fields() -> None:
     with pytest.raises(ValidationError, match="extra_forbidden"):
         EVENT_DATA_SCHEMAS["session.started"].model_validate({"unexpected": True})
+
+
+def test_model_response_requires_raw_content() -> None:
+    with pytest.raises(ValidationError, match="rawContent"):
+        EVENT_DATA_SCHEMAS["model.responded"].model_validate({"output": {}, "validation": "valid"})
 
 
 def test_event_response_uses_camel_case_and_omits_empty_correlation_fields() -> None:

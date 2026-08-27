@@ -113,6 +113,7 @@ class SessionEventLog:
             parent_event_id=parent_event_id,
             data={
                 "output": output,
+                "rawContent": response_content,
                 "durationMs": duration_ms,
                 "validation": validation,
             },

@@ -95,6 +95,11 @@ def test_text_self_explanation_writes_real_event_chain(settings, monkeypatch) ->
     assert requested.data["messages"] == [
         {"role": "user", "content": requested.data["messages"][0]["content"]}
     ]
+    assert responded.data["rawContent"] == (
+        '{"correctness":"CORRECT","completeness":"COMPLETE",'
+        '"coveredPoints":["正确计算加法","得出结果 2"],"missingPoints":[],'
+        '"errorEvidence":[],"confidence":1,"needHumanReason":null}'
+    )
     assert responded.data["validation"] == "valid"
     state_events = [event for event in events if event.event_type == "state.changed"]
     assert state_events[-1].parent_event_id == responded.event_id

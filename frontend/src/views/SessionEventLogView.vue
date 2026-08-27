@@ -4,6 +4,7 @@ import { useRoute } from "vue-router"
 
 import {
   fetchSessionEvent,
+  fetchSessionEvents,
   fetchSessionSurface,
   fetchSessionTrace,
   fetchSessionTrajectory,
@@ -28,6 +29,7 @@ const trace = ref<Trace>()
 const surface = ref<Surface>()
 const selectedRunId = ref("")
 const events = ref<Record<number, SessionEvent>>({})
+const modelResponses = ref<SessionEvent[]>([])
 const loading = ref(true)
 const traceLoading = ref(false)
 const surfaceLoading = ref(false)
@@ -83,12 +85,33 @@ async function loadSurface() {
   surfaceLoading.value = true
   errorMessage.value = ""
   try {
-    surface.value = await fetchSessionSurface(sessionId)
+    const [surfaceResult, modelResponseEvents] = await Promise.all([
+      fetchSessionSurface(sessionId),
+      loadModelResponseEvents(),
+    ])
+    surface.value = surfaceResult
+    modelResponses.value = modelResponseEvents
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
     surfaceLoading.value = false
   }
+}
+
+async function loadModelResponseEvents(): Promise<SessionEvent[]> {
+  const modelResponseEvents: SessionEvent[] = []
+  let afterSeq = -1
+  while (true) {
+    const page = await fetchSessionEvents(sessionId, afterSeq, 500)
+    modelResponseEvents.push(...page.events.filter((event) => event.eventType === "model.responded"))
+    if (page.events.length < 500) return modelResponseEvents
+    afterSeq = page.nextAfterSeq
+  }
+}
+
+function rawModelContent(event: SessionEvent): string | undefined {
+  const value = event.data.rawContent
+  return typeof value === "string" ? value : undefined
 }
 
 async function showEvent(seq: number) {
@@ -183,6 +206,18 @@ watch(selectedRunId, () => {
               </details>
             </section>
           </div>
+          <section class="surface-panel model-response-panel">
+            <header class="surface-panel-header">
+              <h2>模型原始回复</h2>
+              <span>{{ modelResponses.length }} 条</span>
+            </header>
+            <p v-if="!modelResponses.length" class="empty-state">当前没有模型回复。</p>
+            <details v-for="response in modelResponses" :key="response.seq" class="model-response" open>
+              <summary>原始内容 <small>#{{ response.seq }}</small></summary>
+              <pre v-if="rawModelContent(response)">{{ rawModelContent(response) }}</pre>
+              <p v-else class="empty-state">该历史事件未保存模型原始回复。</p>
+            </details>
+          </section>
         </template>
       </section>
 
@@ -294,6 +329,11 @@ export default defineComponent({
 .surface-context summary { display: flex; justify-content: space-between; gap: var(--space-3); cursor: pointer; color: var(--color-brand-700); }
 .surface-context summary span { font-weight: 650; }
 .surface-context pre { margin-top: var(--space-3); }
+.model-response-panel { margin-top: var(--space-4); }
+.model-response { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+.model-response summary { display: flex; justify-content: space-between; gap: var(--space-3); cursor: pointer; color: var(--color-brand-700); }
+.model-response summary small { color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.model-response pre { margin-top: var(--space-3); }
 .step-list { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
 .step-item { padding: var(--space-4); border: 1px solid var(--color-border); border-left: 4px solid var(--color-brand-600); border-radius: var(--radius-md); background: var(--color-surface); }
 .step-heading { align-items: flex-start; }
