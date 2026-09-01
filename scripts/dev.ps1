@@ -4,6 +4,30 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $pythonPath = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $envFile = Join-Path $projectRoot ".env"
 $frontendPath = Join-Path $projectRoot "frontend"
+$nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+
+if (-not $nodeCommand) {
+    throw "缺少 Node.js 运行时。请安装 Node.js 20 或更高版本。"
+}
+
+$nvmRoot = Split-Path -Parent (Split-Path -Parent $nodeCommand.Source)
+$node20Path = Get-ChildItem -LiteralPath $nvmRoot -Directory -Filter "v20.*" -ErrorAction SilentlyContinue |
+    Sort-Object Name -Descending |
+    Select-Object -First 1
+
+if (-not $node20Path) {
+    throw "缺少 Node.js 20 运行时。请安装 Node.js 20 或更高版本。"
+}
+
+$nodeExecutable = Join-Path $node20Path.FullName "node.exe"
+$corepackExecutable = Join-Path $node20Path.FullName "corepack.cmd"
+if (-not (Test-Path -LiteralPath $nodeExecutable -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $corepackExecutable -PathType Leaf)) {
+    throw "Node.js 20 安装不完整，缺少 node.exe 或 corepack.cmd：$($node20Path.FullName)"
+}
+
+$env:COREPACK_HOME = Join-Path $env:LOCALAPPDATA "ai-self-explain\corepack"
+$env:Path = "$($node20Path.FullName);$env:Path"
 
 if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) {
     throw "缺少虚拟环境 Python：${pythonPath}。请先创建 .venv 并安装后端依赖。"
@@ -36,7 +60,7 @@ try {
     }
     Push-Location $frontendPath
     try {
-        & pnpm dev
+        & $corepackExecutable "pnpm@10.19.0" dev
     }
     finally {
         Pop-Location
