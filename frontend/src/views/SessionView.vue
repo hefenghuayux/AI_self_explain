@@ -64,7 +64,6 @@ const segmentEntries: Array<{ label: string; value: SegmentKey }> = [
   { label: "自讲", value: "selfExplain" },
   { label: "回答子问题", value: "guidedAnswers" },
   { label: "我有疑问", value: "doubt" },
-  { label: "AI说错了", value: "appeal" },
 ]
 
 const studentInterruptionFlowStages = new Set<Session["flowStage"]>([

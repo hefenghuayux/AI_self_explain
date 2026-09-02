@@ -535,6 +535,7 @@ describe("SessionView", () => {
     expect(wrapper.find('[data-testid="request-support"]').exists()).toBe(false)
     expect(wrapper.get(".self-explain-actions").get('[data-testid="submit-explanation"]')).toBeTruthy()
     expect(wrapper.get(".self-explain-actions").get('[data-testid="start-voice"]')).toBeTruthy()
+    expect(wrapper.get('[data-testid="dialog-segmented"]').text()).not.toContain("AI说错了")
     expect(wrapper.html().indexOf("最新反馈")).toBeLessThan(
       wrapper.html().indexOf('data-testid="dialog-segmented"'),
     )
