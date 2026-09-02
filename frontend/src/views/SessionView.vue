@@ -241,6 +241,16 @@ const segmentOptions = computed(() => segmentEntries.map((segment) => ({
 const selfExplainCharacterCount = computed(() => selfExplainDraft.value.length)
 const feedbackDetailsOpen = ref(false)
 
+const learningProgressSummary = computed(() => {
+  const rubricPoints = question.value?.rubricPoints ?? []
+  const rubricPointSet = new Set(rubricPoints)
+  const coveredPointCount = new Set(
+    (session.value?.coveredPointsCurrentRound ?? []).filter((point) => rubricPointSet.has(point)),
+  ).size
+  const remainingPointCount = Math.max(rubricPoints.length - coveredPointCount, 0)
+  return `已讲清 ${coveredPointCount} 个关键点，还差 ${remainingPointCount} 个`
+})
+
 function evaluationClass(value: string) {
   if (value === "CORRECT" || value === "COMPLETE") return "is-positive"
   if (value === "WRONG") return "is-negative"
@@ -558,7 +568,11 @@ async function respondToSolution(understood: boolean) {
         </section>
         <section class="session-section progress-section" aria-label="本轮学习进度">
           <div class="session-summary">
-            <div class="summary-item support-count-item"><span>本轮支持</span><strong>{{ session.supportCountRound }} 次</strong></div>
+            <div class="summary-item learning-progress-item">
+              <span>本轮学习进度</span>
+              <strong data-testid="learning-progress">{{ learningProgressSummary }}</strong>
+              <small>辅助支持 {{ session.supportCountRound }} 次</small>
+            </div>
           </div>
         </section>
         <section v-if="session.latestEvaluation" class="session-section feedback-section" aria-labelledby="feedback-title" aria-live="polite">
@@ -831,7 +845,9 @@ h2 { font-size: var(--font-size-lg); }
 .summary-item + .summary-item { border-left: 1px solid var(--color-border); }
 .summary-item span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .summary-item strong { font-size: var(--font-size-lg); }
-.support-count-item { align-items: baseline; flex-direction: row; justify-content: space-between; gap: var(--space-4); }
+.learning-progress-item { min-width: min(100%, 360px); }
+.learning-progress-item strong { line-height: 1.5; }
+.learning-progress-item small { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .evaluation-results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .evaluation-result { padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-muted); }
 .evaluation-result span { display: block; color: var(--color-text-muted); font-size: var(--font-size-sm); }

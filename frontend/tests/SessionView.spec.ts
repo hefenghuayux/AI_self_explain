@@ -523,7 +523,9 @@ describe("SessionView", () => {
     }))
     const wrapper = await mountSessionView()
 
-    expect(wrapper.text()).toContain("本轮支持")
+    expect(wrapper.text()).toContain("已讲清 0 个关键点，还差 1 个")
+    expect(wrapper.text()).toContain("辅助支持 0 次")
+    expect(wrapper.text()).not.toContain("本轮支持")
     expect(wrapper.text()).not.toContain("当前学习状态")
     expect(wrapper.text()).not.toContain("进度由系统规则计算")
     expect(wrapper.text()).not.toContain("当前输入与主操作")
@@ -546,6 +548,35 @@ describe("SessionView", () => {
 
     expect(toggle.attributes("aria-expanded")).toBe("true")
     expect(wrapper.text()).toContain("两个 1 相加的结果应为 2。")
+  })
+
+  it("shows covered and remaining rubric points as the primary progress", async () => {
+    fetchQuestion.mockResolvedValueOnce({
+      id: 3,
+      evaluationMode: "FULL_RUBRIC",
+      questionContent: "综合题",
+      standardAnswer: "答案",
+      rubricPoints: ["关键点一", "关键点二", "关键点三"],
+      commonErrors: [],
+      alternativeSolutions: [],
+      layeredHints: [],
+      guidedQuestions: [],
+      fullSolution: "解析",
+      archivedAt: null,
+      createdAt: "2026-07-20T00:00:00Z",
+      updatedAt: "2026-07-20T00:00:00Z",
+    })
+    fetchSession.mockResolvedValue(createSession({
+      coveredPointsCurrentRound: ["关键点一", "关键点二"],
+      supportCountRound: 2,
+    }))
+
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.get('[data-testid="learning-progress"]').text()).toBe(
+      "已讲清 2 个关键点，还差 1 个",
+    )
+    expect(wrapper.text()).toContain("辅助支持 2 次")
   })
 
   it("restores saved drafts for each segmented input block", async () => {

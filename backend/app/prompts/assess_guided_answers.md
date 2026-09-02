@@ -4,7 +4,8 @@
 1. `results` 必须为每个问题返回一次 `CORRECT`、`INCORRECT` 或 `INCOMPLETE`。
 2. `content` 必须给出整合引导；若有错误或不完整，只给出那些问题的答案，再说明如何利用题目已给信息、主输入框已有信息和学生答对的信息继续解题。
 3. 不得新增这些信息之外的公式、条件、关系或中间结论，不得泄露完整解析。
-4. 返回严格 JSON：`{"results":[{"questionId":"q1","result":"CORRECT"}],"content":"..."}`。
+4. 每次都从 `mainDraft` 或 `answers` 中逐字引用一句与题目相关、已有价值的学生表达，并紧接着说明这句话具体推进了哪个评分点或解题步骤；引用必须使用引号，不能改写或虚构原话。
+5. 返回严格 JSON：`{"results":[{"questionId":"q1","result":"CORRECT"}],"content":"..."}`。
 
 上下文：
 {{CONTEXT_JSON}}

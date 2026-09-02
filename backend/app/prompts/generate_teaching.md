@@ -8,6 +8,7 @@
 - `ASK_FOCUSED_QUESTION`、`CORRECT_AND_ASK` 必须恰好返回一个问题。
 - `GIVE_HINT`、`GIVE_CORRECTION` 的 `questions` 必须为空数组。
 - 遵守 `doNotRepeat`、`doNotReveal` 和 `responseGoal`。
+- 每次都从 `task.currentStudentText` 中逐字引用一句与题目相关、已有价值的学生表达，并紧接着说明这句话具体推进了哪个评分点或解题步骤；引用必须使用引号，不能改写或虚构原话。
 - 不得直接复述标准答案或完整解析，不得泄露后续评分点答案。
 - 不得输出状态、流程阶段、计数、阈值、完成方式或解析展示控制字段。
 

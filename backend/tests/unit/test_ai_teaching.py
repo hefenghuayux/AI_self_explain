@@ -122,6 +122,7 @@ def test_teaching_service_records_valid_call_without_state_changes(settings, mon
     )
     request = service.repository.record_external_call.call_args.kwargs["request_snapshot"]
     assert request.purpose == "AI_SUPPORT"
+    assert "逐字引用一句" in request.transport.messages[0].content
     service.repository.record_external_call_validation.assert_called_once_with(
         record=service.repository.record_external_call.return_value,
         validation_status="VALID",

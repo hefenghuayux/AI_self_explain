@@ -51,6 +51,7 @@ def test_support_request_snapshot_separates_main_draft_and_doubt() -> None:
     assert request.blocks.memory_context is None
     assert request.transport_payload() == request.transport.model_dump(mode="json")
     assert "为什么这里使用加法？" in request.transport.messages[0].content
+    assert "逐字引用一句" in request.transport.messages[0].content
 
 
 def test_guided_answer_snapshot_separates_questions_and_answers() -> None:
@@ -79,3 +80,4 @@ def test_guided_answer_snapshot_separates_questions_and_answers() -> None:
     assert request.privacy.contains_student_content is True
     assert request.privacy.contains_answer_material is True
     assert request.privacy.contains_memory is False
+    assert "逐字引用一句" in request.transport.messages[0].content
