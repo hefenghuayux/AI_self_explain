@@ -177,14 +177,22 @@ describe("SessionView", () => {
     await flushPromises()
   })
 
-  it("shows only the direct start-recording entry without voice guidance text", async () => {
+  it("shows one start-recording entry without voice guidance text", async () => {
     fetchSession.mockResolvedValue(createSession())
     const wrapper = await mountSessionView()
 
-    expect(wrapper.get('[data-testid="start-voice"]').text()).toBe("开始录音")
+    expect(wrapper.findAll('[data-testid="start-voice"]')).toHaveLength(1)
     expect(wrapper.text()).not.toContain("使用语音自讲")
     expect(wrapper.text()).not.toContain("实时语音输入")
     expect(wrapper.text()).not.toContain("确认语音转写")
+  })
+
+  it("keeps the self-explanation recorder in the same inline action row", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT" }))
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.get(".self-explain-actions").findComponent(VoiceRecorder).props("inline")).toBe(true)
+    expect(wrapper.get(".self-explain-actions").findAll('[data-testid="start-voice"]')).toHaveLength(1)
   })
 
   it("appends only final voice transcripts to the editable draft", async () => {
@@ -536,7 +544,7 @@ describe("SessionView", () => {
     expect(wrapper.text()).not.toContain("两个 1 相加的结果应为 2。")
     expect(wrapper.find('[data-testid="request-support"]').exists()).toBe(false)
     expect(wrapper.get(".self-explain-actions").get('[data-testid="submit-explanation"]')).toBeTruthy()
-    expect(wrapper.get(".self-explain-actions").get('[data-testid="start-voice"]')).toBeTruthy()
+    expect(wrapper.get(".self-explain-actions").findAll('[data-testid="start-voice"]')).toHaveLength(1)
     expect(wrapper.get('[data-testid="dialog-segmented"]').text()).not.toContain("AI说错了")
     expect(wrapper.html().indexOf("最新反馈")).toBeLessThan(
       wrapper.html().indexOf('data-testid="dialog-segmented"'),

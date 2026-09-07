@@ -625,18 +625,6 @@ async function respondToSolution(understood: boolean) {
                   aria-describedby="self-explain-hint"
                 />
                 <div id="self-explain-hint" class="draft-meta"><span>已输入 {{ selfExplainCharacterCount }} 字</span><span>请用自己的语言说明思路。</span></div>
-                <VoiceRecorder
-                  v-if="session.flowStage === 'CAPTURING_INPUT' && !submitting"
-                  ref="voiceRecorderRef"
-                  :session-id="sessionId"
-                  :version="session.version"
-                  target="SELF_EXPLANATION"
-                  :disabled="submitting || (voiceRecording && activeVoiceKey !== 'self-explanation')"
-                  @final-transcript="appendFinalTranscript"
-                  @completed="handleVoiceCompleted('SELF_EXPLANATION', undefined, $event)"
-                  @recording-change="handleRecordingChange('self-explanation', $event)"
-                  @error="errorMessage = $event"
-                />
                 <div
                   v-if="session.flowStage !== 'WAIT_GUIDED_ANSWERS'
                     && session.flowStage !== 'AI_EVALUATING'
@@ -652,6 +640,19 @@ async function respondToSolution(understood: boolean) {
                     :loading="submitting"
                     @click="startVoiceRecording"
                   >开始录音</el-button>
+                  <VoiceRecorder
+                    v-if="session.flowStage === 'CAPTURING_INPUT' && !submitting"
+                    ref="voiceRecorderRef"
+                    :session-id="sessionId"
+                    :version="session.version"
+                    target="SELF_EXPLANATION"
+                    inline
+                    :disabled="submitting || (voiceRecording && activeVoiceKey !== 'self-explanation')"
+                    @final-transcript="appendFinalTranscript"
+                    @completed="handleVoiceCompleted('SELF_EXPLANATION', undefined, $event)"
+                    @recording-change="handleRecordingChange('self-explanation', $event)"
+                    @error="errorMessage = $event"
+                  />
                 </div>
               </div>
               <div v-show="activeSegment === 'guidedAnswers'" class="dialog-pane">
