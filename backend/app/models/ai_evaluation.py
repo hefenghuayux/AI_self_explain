@@ -19,7 +19,7 @@ class AIEvaluation(Base):
     )
     correctness: Mapped[str | None] = mapped_column(String(20))
     completeness: Mapped[str | None] = mapped_column(String(20))
-    covered_points: Mapped[list[str] | None] = mapped_column(JSON)
+    covered_points: Mapped[list[int] | None] = mapped_column(JSON)
     error_evidence: Mapped[list[dict[str, str]] | None] = mapped_column(JSON)
     need_human_reason: Mapped[str | None] = mapped_column(Text)
     evaluation_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="FULL_RUBRIC")

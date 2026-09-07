@@ -252,12 +252,7 @@ const learningProgressSummary = computed(() => {
 })
 
 const coveredPointNumbers = computed(() => {
-  const rubricPoints = question.value?.rubricPoints ?? []
-  const covered = new Set(session.value?.latestEvaluation?.coveredPoints ?? [])
-  return rubricPoints.reduce<number[]>((numbers, point, index) => {
-    if (covered.has(point)) numbers.push(index + 1)
-    return numbers
-  }, [])
+  return session.value?.latestEvaluation?.coveredPoints ?? []
 })
 
 function evaluationClass(value: string) {

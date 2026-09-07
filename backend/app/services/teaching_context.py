@@ -7,7 +7,7 @@ from app.models.question import Question
 from app.models.session import Session
 from app.models.support_event import SupportEvent
 from app.rules.teaching_decision import TeachingDecision
-from app.schemas.ai_evaluation import AIEvaluationOutput
+from app.schemas.ai_evaluation import AIEvaluationOutput, covered_point_labels
 from app.schemas.teaching import (
     EvaluationContext,
     GivenQuestion,
@@ -46,7 +46,11 @@ class TeachingContextService:
         if attempt.confirmed_text is None:
             raise ValueError("构造 TeachingContext 时缺少确认文本")
 
-        target_point = _target_rubric_point(question.rubric_points, evaluation.covered_points)
+        covered_labels = covered_point_labels(question.rubric_points, evaluation.covered_points)
+        newly_covered = decision.coverage.newly_covered
+        if newly_covered and isinstance(newly_covered[0], int):
+            newly_covered = covered_point_labels(question.rubric_points, newly_covered)
+        target_point = _target_rubric_point(question.rubric_points, covered_labels)
         if decision.allowed_action in {"ASK_FOCUSED_QUESTION", "CORRECT_AND_ASK"}:
             if target_point is None:
                 raise ValueError("需要追问的教学动作缺少目标评分点")
@@ -67,15 +71,15 @@ class TeachingContextService:
             latest_evaluation=EvaluationContext(
                 correctness=evaluation.correctness,
                 completeness=evaluation.completeness,
-                covered_points=evaluation.covered_points,
+                covered_points=covered_labels,
                 missing_points=[
-                    point for point in question.rubric_points if point not in set(evaluation.covered_points)
+                    point for point in question.rubric_points if point not in set(covered_labels)
                 ],
                 error_evidence=evaluation.error_evidence,
             ),
             learning_progress=LearningProgress(
                 already_covered_points=list(session.covered_points_current_round),
-                newly_covered_points=decision.coverage.newly_covered,
+                newly_covered_points=newly_covered,
                 target_rubric_point=target_point,
                 target_error_evidence=(
                     evaluation.error_evidence[0] if evaluation.error_evidence else None
@@ -119,12 +123,21 @@ class TeachingContextService:
                 .order_by(AIEvaluation.id)
             )
         )
+        session_record = self.database_session.get(Session, session_id)
+        rubric_points: list[str] = []
+        if session_record is not None:
+            question = self.database_session.get(Question, session_record.question_id)
+            rubric_points = question.rubric_points or [] if question is not None else []
         evaluations_by_attempt = {item.attempt_id: item for item in evaluations}
         seen_by_round: dict[int, set[str]] = {}
         recent_attempts: list[RecentAttempt] = []
         for prior_attempt in attempts:
             prior_evaluation = evaluations_by_attempt.get(prior_attempt.id)
-            covered = prior_evaluation.covered_points if prior_evaluation is not None else []
+            covered = (
+                covered_point_labels(rubric_points, prior_evaluation.covered_points)
+                if prior_evaluation is not None and prior_evaluation.covered_points
+                else []
+            )
             seen = seen_by_round.setdefault(prior_attempt.round, set())
             new_covered = [point for point in covered or [] if point not in seen]
             seen.update(covered or [])

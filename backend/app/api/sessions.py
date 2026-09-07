@@ -33,7 +33,7 @@ from app.rules.session_lifecycle import (
     can_submit_student_interruption,
 )
 from app.rules.teaching_decision import decide_teaching
-from app.schemas.ai_evaluation import AIEvaluationOutput, AIEvaluationResponse
+from app.schemas.ai_evaluation import AIEvaluationOutput, AIEvaluationResponse, covered_point_labels
 from app.schemas.session import (
     AppealInput,
     CreateSessionInput,
@@ -277,8 +277,15 @@ def submit_text_attempt(
         return to_session_response(repository, evaluation_result)
 
     evaluation_output = AIEvaluationOutput.model_validate(evaluation_result)
+    decision_evaluation = evaluation_output.model_copy(
+        update={
+            "covered_points": covered_point_labels(
+                question.rubric_points or [], evaluation_output.covered_points
+            )
+        }
+    )
     decision = decide_teaching(
-        evaluation=evaluation_output,
+        evaluation=decision_evaluation,
         session=session,
         settings=request.app.state.settings,
         evaluation_mode=evaluation_result.evaluation_mode,

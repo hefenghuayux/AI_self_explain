@@ -13,17 +13,18 @@ def evaluation(
     missing_points: list[str] | None = None,
     need_human_reason: str | None = None,
 ) -> AIEvaluationOutput:
-    return AIEvaluationOutput.model_validate(
+    result = AIEvaluationOutput.model_validate(
         {
             "correctness": correctness,
             "completeness": completeness,
-            "coveredPoints": covered_points or [],
+            "coveredPoints": [],
             "missingPoints": missing_points or [],
             "errorEvidence": [],
             "confidence": 1,
             "needHumanReason": need_human_reason,
         }
     )
+    return result.model_copy(update={"covered_points": covered_points or []})
 
 
 def session(**updates: object) -> Session:

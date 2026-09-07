@@ -154,7 +154,7 @@ def test_valid_evaluation_and_generated_teaching_are_saved(
             return AIModelResponse("{\"choices\": []}", focused_teaching_content(), 10)
         prompt = request.transport.messages[0].content
         schema = request.blocks.question_context["outputSchema"]
-        assert "正确计算加法" in schema["properties"]["coveredPoints"]["items"]["enum"]
+        assert 1 in schema["properties"]["coveredPoints"]["items"]["enum"]
         assert "我先计算 1 加 1。" in prompt
         assert "两个 1 合起来是多少？" in prompt
         return AIModelResponse("{\"choices\": []}", valid_evaluation_content(), 12)
@@ -195,7 +195,7 @@ def test_valid_evaluation_and_generated_teaching_are_saved(
     finally:
         engine.dispose()
     assert evaluation["validation_status"] == "VALID"
-    assert json.loads(evaluation["covered_points"]) == ["正确计算加法"]
+    assert json.loads(evaluation["covered_points"]) == [1]
     assert json.loads(evaluation["validation_errors"]) == []
     assert dict(call) == {
         "provider": "test-ai",

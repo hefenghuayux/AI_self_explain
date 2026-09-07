@@ -426,9 +426,20 @@ def _parse_and_validate_evaluation(
     confirmed_text: str,
 ) -> tuple[AIEvaluationOutput | None, list[str]]:
     try:
-        evaluation = AIEvaluationOutput.model_validate_json(content)
-    except ValidationError as error:
-        return None, [entry["msg"] for entry in error.errors()]
+        payload = json.loads(content)
+        if isinstance(payload, dict):
+            legacy_points = payload.get("coveredPoints")
+            if isinstance(legacy_points, list) and all(
+                isinstance(point, str) for point in legacy_points
+            ):
+                payload["coveredPoints"] = [
+                    rubric_points.index(point) + 1 for point in legacy_points
+                ]
+        evaluation = AIEvaluationOutput.model_validate(payload)
+    except (ValidationError, ValueError, TypeError) as error:
+        if isinstance(error, ValidationError):
+            return None, [entry["msg"] for entry in error.errors()]
+        return None, [str(error)]
     return evaluation, validate_evaluation_relationships(evaluation, rubric_points, confirmed_text)
 
 

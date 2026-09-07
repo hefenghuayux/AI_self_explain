@@ -14,7 +14,7 @@ def valid_payload() -> dict[str, object]:
     return {
         "correctness": "CORRECT",
         "completeness": "INCOMPLETE",
-        "coveredPoints": ["正确计算加法"],
+        "coveredPoints": [1],
         "errorEvidence": [],
         "needHumanReason": None,
     }
@@ -24,7 +24,7 @@ def test_evaluation_schema_uses_the_original_rubric_points_as_dynamic_enum() -> 
     schema = evaluation_json_schema(["正确计算加法", "得出结果 2"])
     properties = schema["properties"]
 
-    assert properties["coveredPoints"]["items"]["enum"] == ["正确计算加法", "得出结果 2"]
+    assert properties["coveredPoints"]["items"]["enum"] == [1, 2]
     assert "missingPoints" not in properties
     assert schema["additionalProperties"] is False
 
@@ -32,7 +32,7 @@ def test_evaluation_schema_uses_the_original_rubric_points_as_dynamic_enum() -> 
 def test_evaluation_schema_rejects_missing_fields_and_unknown_enum() -> None:
     payload = valid_payload()
     payload["correctness"] = "UNKNOWN"
-    payload["coveredPoints"] = ["未知评分点"]
+    payload["coveredPoints"] = [3]
 
     with pytest.raises(ValidationError):
         AIEvaluationOutput.model_validate_json(json.dumps(payload))
@@ -41,7 +41,7 @@ def test_evaluation_schema_rejects_missing_fields_and_unknown_enum() -> None:
 @pytest.mark.parametrize(
     ("payload_update", "expected_error"),
     [
-        ({"coveredPoints": ["未知评分点"]}, "来自题目评分点"),
+        ({"coveredPoints": [3]}, "是题目评分点编号"),
         ({"correctness": "UNCERTAIN", "needHumanReason": None}, "needHumanReason 必填"),
         ({"needHumanReason": "不确定"}, "必须为空"),
         (

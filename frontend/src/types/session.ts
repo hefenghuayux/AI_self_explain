@@ -23,7 +23,7 @@ export interface AIEvaluation {
   id: number
   correctness: "CORRECT" | "WRONG" | "UNCERTAIN"
   completeness: "COMPLETE" | "INCOMPLETE"
-  coveredPoints: string[]
+  coveredPoints: number[]
   errorEvidence: ErrorEvidence[]
   needHumanReason: string | null
   promptVersion: string

@@ -33,7 +33,7 @@ class AIEvaluationOutput(QuestionSchema):
 
     correctness: Correctness
     completeness: Completeness
-    covered_points: list[RequiredText]
+    covered_points: list[int]
     error_evidence: list[ErrorEvidence]
     need_human_reason: RequiredText | None
 
@@ -51,7 +51,7 @@ class AIEvaluationResponse(QuestionSchema):
     id: int
     correctness: Correctness
     completeness: Completeness
-    covered_points: list[str]
+    covered_points: list[int]
     error_evidence: list[ErrorEvidence]
     need_human_reason: str | None
     prompt_version: str
@@ -70,7 +70,7 @@ class AIEvaluationResponse(QuestionSchema):
 def evaluation_json_schema(rubric_points: list[str]) -> dict[str, object]:
     schema = AIEvaluationOutput.model_json_schema(by_alias=True)
     properties = schema["properties"]
-    point_schema = {"type": "string", "enum": rubric_points}
+    point_schema = {"type": "integer", "enum": list(range(1, len(rubric_points) + 1))}
     properties["coveredPoints"]["items"] = point_schema
     return schema
 
@@ -82,13 +82,12 @@ def validate_evaluation_relationships(
 ) -> list[str]:
     errors: list[str] = []
     covered_points = set(evaluation.covered_points)
-    expected_points = set(rubric_points)
+    expected_points = set(range(1, len(rubric_points) + 1))
 
     if len(covered_points) != len(evaluation.covered_points):
         errors.append("coveredPoints 不能包含重复评分点")
     if not covered_points <= expected_points:
-        errors.append("coveredPoints 必须来自题目评分点")
-
+        errors.append("coveredPoints 必须是题目评分点编号")
     if evaluation.correctness == "UNCERTAIN":
         if evaluation.need_human_reason is None:
             errors.append("correctness 为 UNCERTAIN 时 needHumanReason 必填")
@@ -100,3 +99,7 @@ def validate_evaluation_relationships(
             errors.append("errorEvidence.quote 必须是 confirmedText 中的原文片段")
             break
     return errors
+
+
+def covered_point_labels(rubric_points: list[str], covered_points: list[int]) -> list[str]:
+    return [rubric_points[index - 1] for index in covered_points]

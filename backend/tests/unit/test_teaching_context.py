@@ -62,7 +62,7 @@ def test_teaching_context_is_bounded_and_excludes_raw_state(settings) -> None:
                         attempt_id=prior_attempt.id,
                         correctness="CORRECT",
                         completeness="INCOMPLETE",
-                        covered_points=["说明加法"],
+                        covered_points=[1],
                         error_evidence=[],
                         need_human_reason=None,
                         prompt_version="test",
@@ -98,7 +98,7 @@ def test_teaching_context_is_bounded_and_excludes_raw_state(settings) -> None:
                 {
                     "correctness": "CORRECT",
                     "completeness": "INCOMPLETE",
-                    "coveredPoints": ["说明加法"],
+                    "coveredPoints": [1],
                     "errorEvidence": [],
                     "needHumanReason": None,
                 }
@@ -135,7 +135,7 @@ def test_context_rejects_non_generation_decision(settings) -> None:
         {
             "correctness": "CORRECT",
             "completeness": "COMPLETE",
-            "coveredPoints": ["评分点"],
+            "coveredPoints": [1],
                 "errorEvidence": [],
             "needHumanReason": None,
         }
