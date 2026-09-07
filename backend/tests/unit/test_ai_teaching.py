@@ -122,7 +122,12 @@ def test_teaching_service_records_valid_call_without_state_changes(settings, mon
     )
     request = service.repository.record_external_call.call_args.kwargs["request_snapshot"]
     assert request.purpose == "AI_SUPPORT"
-    assert "逐字引用一句" in request.transport.messages[0].content
+    prompt = request.transport.messages[0].content
+    assert "逐字引用一句" in prompt
+    assert "最多保留两个原因假设，并只优先验证一个" in prompt
+    assert "原因假设适用于全部教学动作" in prompt
+    assert "不得在问题中说出原因标签或暗示答案" in prompt
+    assert "最终仍只返回 `content` 和 `questions`" in prompt
     service.repository.record_external_call_validation.assert_called_once_with(
         record=service.repository.record_external_call.return_value,
         validation_status="VALID",
