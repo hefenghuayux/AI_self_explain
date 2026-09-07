@@ -24,9 +24,7 @@ export interface AIEvaluation {
   correctness: "CORRECT" | "WRONG" | "UNCERTAIN"
   completeness: "COMPLETE" | "INCOMPLETE"
   coveredPoints: string[]
-  missingPoints: string[]
   errorEvidence: ErrorEvidence[]
-  confidence: number
   needHumanReason: string | null
   promptVersion: string
   modelProvider: string

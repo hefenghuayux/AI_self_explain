@@ -423,10 +423,9 @@ def _model_request(
 
 def _validate_support_request(output: SupportRequestOutput, rubric_points: list[str]) -> list[str]:
     covered_points = set(output.covered_points)
-    missing_points = set(output.missing_points)
     expected_points = set(rubric_points)
-    if covered_points & missing_points or covered_points | missing_points != expected_points:
-        return ["coveredPoints 与 missingPoints 必须无重叠且完整覆盖题目评分点"]
+    if not covered_points <= expected_points:
+        return ["coveredPoints 必须来自题目评分点"]
     if output.action == "GUIDED_QUESTIONS" and not output.questions:
         return ["GUIDED_QUESTIONS 必须提供至少一个子问题"]
     if output.action != "GUIDED_QUESTIONS" and output.questions:

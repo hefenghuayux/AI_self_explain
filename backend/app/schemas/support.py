@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, field_validator, model_validator
 
 from app.schemas.question import QuestionSchema, RequiredText, to_camel_case
 
@@ -31,9 +31,16 @@ class SupportRequestOutput(QuestionSchema):
 
     action: SupportAction
     covered_points: list[RequiredText]
-    missing_points: list[RequiredText]
     content: RequiredText
     questions: list[GuidedQuestion]
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_removed_fields(cls, value: object) -> object:
+        if isinstance(value, dict):
+            value = dict(value)
+            value.pop("missingPoints", None)
+        return value
 
 
 class GuidedAnswer(QuestionSchema):

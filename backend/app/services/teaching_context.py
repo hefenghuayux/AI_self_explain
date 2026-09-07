@@ -46,7 +46,7 @@ class TeachingContextService:
         if attempt.confirmed_text is None:
             raise ValueError("构造 TeachingContext 时缺少确认文本")
 
-        target_point = _target_rubric_point(question.rubric_points, evaluation.missing_points)
+        target_point = _target_rubric_point(question.rubric_points, evaluation.covered_points)
         if decision.allowed_action in {"ASK_FOCUSED_QUESTION", "CORRECT_AND_ASK"}:
             if target_point is None:
                 raise ValueError("需要追问的教学动作缺少目标评分点")
@@ -68,7 +68,9 @@ class TeachingContextService:
                 correctness=evaluation.correctness,
                 completeness=evaluation.completeness,
                 covered_points=evaluation.covered_points,
-                missing_points=evaluation.missing_points,
+                missing_points=[
+                    point for point in question.rubric_points if point not in set(evaluation.covered_points)
+                ],
                 error_evidence=evaluation.error_evidence,
             ),
             learning_progress=LearningProgress(
@@ -152,9 +154,9 @@ class TeachingContextService:
         )
 
 
-def _target_rubric_point(rubric_points: list[str], missing_points: list[str]) -> str | None:
-    missing = set(missing_points)
-    return next((point for point in rubric_points if point in missing), None)
+def _target_rubric_point(rubric_points: list[str], covered_points: list[str]) -> str | None:
+    covered = set(covered_points)
+    return next((point for point in rubric_points if point not in covered), None)
 
 
 def _given_support(support: SupportEvent) -> GivenSupport:

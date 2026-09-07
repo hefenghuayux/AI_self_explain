@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, field_validator, model_validator
 
 from app.schemas.question import QuestionSchema, RequiredText, to_camel_case
 
@@ -34,10 +34,17 @@ class AIEvaluationOutput(QuestionSchema):
     correctness: Correctness
     completeness: Completeness
     covered_points: list[RequiredText]
-    missing_points: list[RequiredText]
     error_evidence: list[ErrorEvidence]
-    confidence: Literal[1]
     need_human_reason: RequiredText | None
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_removed_fields(cls, value: object) -> object:
+        if isinstance(value, dict):
+            value = dict(value)
+            value.pop("missingPoints", None)
+            value.pop("confidence", None)
+        return value
 
 
 class AIEvaluationResponse(QuestionSchema):
@@ -45,9 +52,7 @@ class AIEvaluationResponse(QuestionSchema):
     correctness: Correctness
     completeness: Completeness
     covered_points: list[str]
-    missing_points: list[str]
     error_evidence: list[ErrorEvidence]
-    confidence: float
     need_human_reason: str | None
     prompt_version: str
     model_provider: str
@@ -67,7 +72,6 @@ def evaluation_json_schema(rubric_points: list[str]) -> dict[str, object]:
     properties = schema["properties"]
     point_schema = {"type": "string", "enum": rubric_points}
     properties["coveredPoints"]["items"] = point_schema
-    properties["missingPoints"]["items"] = point_schema
     return schema
 
 
@@ -78,17 +82,12 @@ def validate_evaluation_relationships(
 ) -> list[str]:
     errors: list[str] = []
     covered_points = set(evaluation.covered_points)
-    missing_points = set(evaluation.missing_points)
     expected_points = set(rubric_points)
 
     if len(covered_points) != len(evaluation.covered_points):
         errors.append("coveredPoints 不能包含重复评分点")
-    if len(missing_points) != len(evaluation.missing_points):
-        errors.append("missingPoints 不能包含重复评分点")
-    if covered_points & missing_points:
-        errors.append("coveredPoints 与 missingPoints 不能重叠")
-    if covered_points | missing_points != expected_points:
-        errors.append("coveredPoints 与 missingPoints 必须完整覆盖题目评分点")
+    if not covered_points <= expected_points:
+        errors.append("coveredPoints 必须来自题目评分点")
 
     if evaluation.correctness == "UNCERTAIN":
         if evaluation.need_human_reason is None:

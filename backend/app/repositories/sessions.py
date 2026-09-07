@@ -1276,11 +1276,9 @@ class SessionRepository:
             correctness=evaluation.correctness if evaluation is not None else None,
             completeness=evaluation.completeness if evaluation is not None else None,
             covered_points=evaluation.covered_points if evaluation is not None else None,
-            missing_points=evaluation.missing_points if evaluation is not None else None,
             error_evidence=[item.model_dump() for item in evaluation.error_evidence]
             if evaluation is not None
             else None,
-            confidence=float(evaluation.confidence) if evaluation is not None else None,
             need_human_reason=evaluation.need_human_reason if evaluation is not None else None,
             evaluation_mode=evaluation_mode,
             prompt_version=prompt_version,

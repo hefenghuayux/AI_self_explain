@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -20,9 +20,7 @@ class AIEvaluation(Base):
     correctness: Mapped[str | None] = mapped_column(String(20))
     completeness: Mapped[str | None] = mapped_column(String(20))
     covered_points: Mapped[list[str] | None] = mapped_column(JSON)
-    missing_points: Mapped[list[str] | None] = mapped_column(JSON)
     error_evidence: Mapped[list[dict[str, str]] | None] = mapped_column(JSON)
-    confidence: Mapped[float | None] = mapped_column(Float)
     need_human_reason: Mapped[str | None] = mapped_column(Text)
     evaluation_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="FULL_RUBRIC")
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)

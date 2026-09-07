@@ -251,6 +251,15 @@ const learningProgressSummary = computed(() => {
   return `已讲清 ${coveredPointCount} 个关键点，还差 ${remainingPointCount} 个`
 })
 
+const coveredPointNumbers = computed(() => {
+  const rubricPoints = question.value?.rubricPoints ?? []
+  const covered = new Set(session.value?.latestEvaluation?.coveredPoints ?? [])
+  return rubricPoints.reduce<number[]>((numbers, point, index) => {
+    if (covered.has(point)) numbers.push(index + 1)
+    return numbers
+  }, [])
+})
+
 function evaluationClass(value: string) {
   if (value === "CORRECT" || value === "COMPLETE") return "is-positive"
   if (value === "WRONG") return "is-negative"
@@ -582,6 +591,7 @@ async function respondToSolution(understood: boolean) {
               <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.correctness)"><span>正确性</span><strong>{{ correctnessLabels[session.latestEvaluation.correctness] }}</strong></div>
               <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.completeness)"><span>完整性</span><strong>{{ completenessLabels[session.latestEvaluation.completeness] }}</strong></div>
             </div>
+            <p v-if="coveredPointNumbers.length" class="covered-points">已覆盖评分点：{{ coveredPointNumbers.join('、') }}</p>
             <p v-if="session.latestSupport?.content" class="feedback-next-step"><strong>下一步：</strong>{{ session.latestSupport.content }}</p>
             <el-button
               v-if="session.latestEvaluation.errorEvidence.length"
