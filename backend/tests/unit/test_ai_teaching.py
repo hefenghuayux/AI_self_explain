@@ -127,6 +127,11 @@ def test_teaching_service_records_valid_call_without_state_changes(settings, mon
     assert "最多保留两个原因假设，并只优先验证一个" in prompt
     assert "原因假设适用于全部教学动作" in prompt
     assert "不得在问题中说出原因标签或暗示答案" in prompt
+    assert "表达遗漏或过度简略" in prompt
+    assert "前置知识缺失或提取困难" in prompt
+    assert "表达或输入障碍" in prompt
+    assert "请学生只对出错局部重算或核对" in prompt
+    assert "不能仅凭一次错误推断稳定能力、态度、粗心、疲劳" in prompt
     assert "最终仍只返回 `content` 和 `questions`" in prompt
     service.repository.record_external_call_validation.assert_called_once_with(
         record=service.repository.record_external_call.return_value,
