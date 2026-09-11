@@ -20,6 +20,8 @@ const selectedRunId = ref("")
 const selectedSeq = ref<number>()
 const timelineMode = ref<"sequence" | "duration">("sequence")
 const searchQuery = ref("")
+/** 精简范围只显示上下文、用户与助手信息；完整范围追加状态变化与模型请求。 */
+const ledgerScope = ref<"core" | "all">("core")
 const collapsedRunIds = ref<ReadonlySet<string>>(new Set())
 const ledgerWindow = ref(LEDGER_WINDOW)
 const loading = ref(true)
@@ -156,6 +158,14 @@ watch(selectedRunId, () => {
           <button type="button" class="toolbar-button" @click="toggleAllRuns">
             {{ allRunsCollapsed ? "展开所有运行" : "收起所有运行" }}
           </button>
+          <button
+            type="button"
+            class="toolbar-button"
+            :aria-pressed="ledgerScope === 'all'"
+            @click="ledgerScope = ledgerScope === 'core' ? 'all' : 'core'"
+          >
+            {{ ledgerScope === "core" ? "显示完整日志" : "只看上下文与助手" }}
+          </button>
         </div>
         <div class="toolbar-search">
           <input
@@ -182,8 +192,10 @@ watch(selectedRunId, () => {
 
       <div class="trajectory-split" :class="{ 'with-details': selectedRecord !== undefined }">
         <EventLedger
+          :key="`${selectedRunId}-${ledgerScope}`"
           :records="visibleRecords"
           :run-label="runLabel"
+          :scope="ledgerScope"
           :selected-seq="selectedSeq"
           :collapsed="runCollapsed"
           :search-query="searchQuery"

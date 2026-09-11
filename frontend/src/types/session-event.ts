@@ -139,7 +139,8 @@ export interface TrajectoryRecord {
   label: string
   summary: string
   status: TrajectoryRecordStatus
-  durationMs?: number
+  /** 后端显式输出 null 表示该事件类型不记录耗时。 */
+  durationMs?: number | null
   occurredAt: string
   parentEventId?: string
   detail: TrajectoryRecordDetail

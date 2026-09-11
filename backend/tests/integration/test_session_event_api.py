@@ -132,7 +132,7 @@ def test_session_event_projection_apis(settings, monkeypatch) -> None:
     ]
     assert [record["index"] for record in records] == [1, 2, 3, 4, 5]
     assert records[0]["summary"] == "1 加 1 等于 2。"
-    assert records[1]["summary"] == "question · question:1"
+    assert records[1]["summary"] == "question · question:1 · 计算 1 + 1。"
     assert records[2]["status"] == "complete"
     assert records[2]["detail"]["modelRequest"]["surfaceSeq"] == 2
     assert records[3]["status"] == "complete"

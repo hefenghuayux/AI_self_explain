@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_serializer
 
 from app.schemas.question import to_camel_case
 from app.schemas.session_event import EventType
@@ -13,6 +13,16 @@ class ProjectionSchema(BaseModel):
         populate_by_name=True,
         frozen=True,
     )
+
+    @field_serializer("occurred_at", "started_at", check_fields=False)
+    def _serialize_utc(self, value: datetime) -> str:
+        """SQLite 读回的时间会丢失时区，必须显式补成带 Z 的 UTC。
+
+        否则 API 输出无时区标记的时间串，前端 new Date() 会按本地时间解析，
+        把 UTC 值当成本地时间，显示结果整体偏移一个时区。
+        """
+        moment = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return moment.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 class SurfaceMessage(ProjectionSchema):

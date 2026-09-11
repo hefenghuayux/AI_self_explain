@@ -128,10 +128,19 @@ async function openTab(wrapper: ReturnType<typeof mount>, label: string) {
   await flushPromises()
 }
 
+async function showAllRecords(wrapper: ReturnType<typeof mount>) {
+  const button = wrapper
+    .findAll("button.toolbar-button")
+    .find((candidate) => candidate.text() === "显示完整日志")
+  if (button === undefined) throw new Error("缺少「显示完整日志」按钮")
+  await button.trigger("click")
+  await flushPromises()
+}
+
 describe("SessionEventLogView", () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it("只读取 trajectory，并把同一批事件渲染成记录账本", async () => {
+  it("默认只展示上下文、用户与助手记录，并统计被隐藏的记录数", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
     vi.stubGlobal("fetch", fetchMock)
 
@@ -139,16 +148,52 @@ describe("SessionEventLogView", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith("/api/sessions/42/trajectory", expect.any(Object))
-    expect(wrapper.findAll("tr.record-row")).toHaveLength(5)
+    // 5 条记录中隐藏「模型请求」与「状态变化」，只留用户、上下文、模型回复。
+    expect(wrapper.findAll("div.record-row")).toHaveLength(3)
+    expect(wrapper.text()).toContain("已按精简范围隐藏 2 条状态变化与模型请求记录")
     expect(wrapper.text()).toContain("1 加 1 等于 2。")
     expect(wrapper.text()).toContain("question · question:1")
-    expect(wrapper.text()).toContain("test-model · 1 条消息 · surfaceSeq #2")
     expect(wrapper.text()).toContain("correctness=CORRECT · valid")
-    expect(wrapper.text()).toContain("AI_EVALUATING → WAIT_STUDENT_ACTION")
     expect(wrapper.text()).toContain("1.20 s")
+    expect(
+      wrapper.findAll("div.record-row").map((row) => row.attributes("data-kind")),
+    ).toEqual(["user", "context", "model_response"])
+    expect(wrapper.text()).not.toContain("test-model · 1 条消息")
     // 界面只保留轨迹：不再出现 Surface / Trace 视图切换。
     expect(wrapper.text()).not.toContain("Trace 因果关系")
     expect(wrapper.text()).not.toContain("Surface 模型上下文")
+
+    await showAllRecords(wrapper)
+    expect(wrapper.findAll("div.record-row")).toHaveLength(5)
+    expect(wrapper.text()).toContain("test-model · 1 条消息 · surfaceSeq #2")
+    expect(wrapper.text()).toContain("AI_EVALUATING → WAIT_STUDENT_ACTION")
+  })
+
+  it("没有耗时的记录显示“未记录”，不显示 null ms", async () => {
+    const payload = trajectoryPayload()
+    payload.runs[0].records[0] = { ...payload.runs[0].records[0], durationMs: null }
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(payload))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).not.toContain("null ms")
+    expect(wrapper.find("div.record-row").text()).toContain("未记录")
+  })
+
+  it("展开按钮就地显示记录全文", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const wrapper = await mountView()
+    const firstRow = wrapper.find("div.record-row")
+    expect(firstRow.find(".expanded-text").exists()).toBe(false)
+
+    await firstRow.get("button.expand-button").trigger("click")
+    expect(firstRow.get(".record-summary.expanded-text").text()).toBe("1 加 1 等于 2。")
+
+    await firstRow.get("button.expand-button").trigger("click")
+    expect(firstRow.find(".expanded-text").exists()).toBe(false)
   })
 
   it("点击记录行后展示结构化详情，并能跳转到父事件", async () => {
@@ -158,7 +203,8 @@ describe("SessionEventLogView", () => {
     const wrapper = await mountView()
     expect(wrapper.find("aside.details").exists()).toBe(false)
 
-    await wrapper.findAll("tr.record-row")[2].trigger("click")
+    await showAllRecords(wrapper)
+    await wrapper.findAll("div.record-row")[2].trigger("click")
     await flushPromises()
 
     const details = wrapper.get("aside.details")
@@ -201,7 +247,8 @@ describe("SessionEventLogView", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     const wrapper = await mountView()
-    await wrapper.findAll("tr.record-row")[2].trigger("click")
+    await showAllRecords(wrapper)
+    await wrapper.findAll("div.record-row")[2].trigger("click")
     await flushPromises()
 
     await openTab(wrapper, "模型上下文")
@@ -233,7 +280,8 @@ describe("SessionEventLogView", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     const wrapper = await mountView()
-    await wrapper.findAll("tr.record-row")[3].trigger("click")
+    // 默认精简范围下，模型回复是第 3 行。
+    await wrapper.findAll("div.record-row")[2].trigger("click")
     await flushPromises()
     await openTab(wrapper, "输出")
 
@@ -250,14 +298,15 @@ describe("SessionEventLogView", () => {
     await wrapper.get('input[aria-label="搜索轨迹"]').setValue("模型")
     await flushPromises()
 
-    expect(wrapper.text()).toContain("搜索「模型」命中 2 / 5 条记录")
-    expect(wrapper.findAll("tr.record-row.matched")).toHaveLength(2)
+    // 精简范围下只有「模型回复」命中，「模型请求」已被范围过滤掉。
+    expect(wrapper.text()).toContain("搜索「模型」命中 1 / 3 条记录")
+    expect(wrapper.findAll("div.record-row.matched")).toHaveLength(1)
 
-    await wrapper.get("button.toolbar-button").trigger("click")
+    await wrapper.findAll("button.toolbar-button")[0].trigger("click")
     await flushPromises()
 
-    expect(wrapper.findAll("tr.record-row")).toHaveLength(0)
-    expect(wrapper.get("tr.group-row").text()).toContain("已收起")
-    expect(wrapper.get("tr.group-row").text()).toContain("5 条记录")
+    expect(wrapper.findAll("div.record-row")).toHaveLength(0)
+    expect(wrapper.get("div.group-row").text()).toContain("已收起")
+    expect(wrapper.get("div.group-row").text()).toContain("当前范围 3 条记录")
   })
 })

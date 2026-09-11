@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue"
 
 import JsonTree from "./JsonTree.vue"
 import { fetchSessionSurface } from "../api/session-events"
+import { formatDateTime, formatDuration } from "../utils/trajectoryTime"
 import type { Surface, TrajectoryRecord } from "../types/session-event"
 
 type DetailTab =
@@ -76,7 +77,7 @@ const childRecords = computed<TrajectoryRecord[]>(() =>
 )
 
 function displayTime(value: string): string {
-  return new Date(value).toLocaleString("zh-CN", { hour12: false })
+  return formatDateTime(value)
 }
 
 function messageRole(message: Record<string, unknown>): string {
@@ -87,12 +88,6 @@ function messageRole(message: Record<string, unknown>): string {
 function messageContent(message: Record<string, unknown>): string {
   const content = message.content
   return typeof content === "string" ? content : JSON.stringify(content, null, 2)
-}
-
-function formatDuration(milliseconds: number | undefined): string {
-  if (milliseconds === undefined) return "未记录"
-  if (milliseconds < 1000) return `${milliseconds} ms`
-  return `${(milliseconds / 1000).toFixed(2)} s`
 }
 
 async function loadSurface() {

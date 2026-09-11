@@ -227,7 +227,7 @@ def test_trajectory_builds_one_record_per_event_with_kind_and_status(
     assert records[1].summary == "1 加 1 等于 2。"
     assert records[1].detail.user is not None
     assert records[1].detail.user.input_type == "text"
-    assert records[2].summary == "question · question:1"
+    assert records[2].summary == "question · question:1 · 计算 1 + 1。"
     assert records[2].detail.context is not None
     assert records[3].summary == "test-model · 1 条消息 · surfaceSeq #2"
     assert records[3].status == "complete"
@@ -306,6 +306,25 @@ def test_trajectory_reads_legacy_model_responded_without_raw_content(
     assert response_record.detail.model_response is not None
     assert response_record.detail.model_response.raw_content is None
     assert trajectory.runs[0].steps[0].duration_ms == 29946
+
+
+def test_trajectory_serializes_time_as_utc_with_z_suffix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SQLite 读回的时间会丢时区；API 必须输出带 Z 的 UTC 串。
+
+    否则前端 new Date() 会按本地时间解析，把 UTC 值当成本地时间显示。
+    """
+    naive = datetime(2026, 8, 26, 6, 28, 59, 388518)
+    events = [
+        event(1, "user.message", {"text": "不会", "inputType": "text"}, run_id="run_1"),
+    ]
+    events[0].occurred_at = naive
+    trajectory = build_service(monkeypatch, events).build_trajectory(42)
+
+    payload = trajectory.model_dump(mode="json", by_alias=True)
+    assert payload["events"][0]["occurredAt"] == "2026-08-26T06:28:59.388518Z"
+    assert payload["runs"][0]["startedAt"] == "2026-08-26T06:28:59.388518Z"
 
 
 def test_trajectory_detail_only_carries_the_used_key(

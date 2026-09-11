@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue"
 
+import { formatDateTime } from "../utils/trajectoryTime"
 import type { TrajectoryRecord } from "../types/session-event"
 
 type TimelineMode = "sequence" | "duration"
@@ -61,8 +62,8 @@ function formatSpan(milliseconds: number): string {
 }
 
 function blockLabel(record: TrajectoryRecord): string {
-  const duration = record.durationMs === undefined ? "" : ` · 耗时 ${record.durationMs} ms`
-  return `#${record.eventSeq} ${record.label}${duration}\n${new Date(record.occurredAt).toLocaleString("zh-CN", { hour12: false })}`
+  const duration = typeof record.durationMs === "number" ? ` · 耗时 ${record.durationMs} ms` : ""
+  return `#${record.eventSeq} ${record.label}${duration}\n${formatDateTime(record.occurredAt)}`
 }
 </script>
 

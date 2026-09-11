@@ -32,10 +32,13 @@ from app.schemas.session_projection import (
 from app.services.event_store import EventStore
 
 # 单行摘要的显示上限；超出部分在投影层截断，前端不再二次裁剪。
-SUMMARY_LIMIT = 120
+# 前端账本行首屏可显示约 60 个汉字，再保留「展开」查看全文的余量。
+SUMMARY_LIMIT = 200
 LABEL_LIMIT = 80
 # model.responded 的输出是 AI 判词，摘要只取前若干个标量字段，避免把整个 JSON 压成一行。
 OUTPUT_SUMMARY_FIELDS = 3
+# 上下文摘要里附带的内容预览长度：让账本直接能看到题目/评分点正文的一部分。
+CONTEXT_PREVIEW_LIMIT = 120
 
 KIND_BY_EVENT_TYPE: dict[str, TrajectoryRecordKind] = {
     "session.started": "session",
@@ -94,6 +97,21 @@ def _summarize_output(output: dict[str, object]) -> str:
     if output:
         return f"{len(output)} 个字段"
     return "无输出"
+
+
+def _context_preview(content: str | dict[str, object]) -> str:
+    """上下文摘要在账本里给出一段可直接阅读的正文预览。"""
+    if isinstance(content, str):
+        return _truncate(content, CONTEXT_PREVIEW_LIMIT)
+    parts: list[str] = []
+    for key, value in content.items():
+        rendered = _scalar_text(value)
+        if rendered is None:
+            continue
+        parts.append(f"{key}={rendered}")
+        if len(parts) == OUTPUT_SUMMARY_FIELDS:
+            break
+    return _truncate(" · ".join(parts), CONTEXT_PREVIEW_LIMIT)
 
 
 def _normalize_detail(detail: TrajectoryRecordDetail) -> TrajectoryRecordDetail:
@@ -238,7 +256,11 @@ class TrajectoryService:
             )
         elif event.event_type == "context.added":
             data = ContextAddedData.model_validate(event.data)
-            summary = _truncate(f"{data.kind} · {data.source}", SUMMARY_LIMIT)
+            preview = _context_preview(data.content)
+            summary = _truncate(
+                f"{data.kind} · {data.source}" + (f" · {preview}" if preview else ""),
+                SUMMARY_LIMIT,
+            )
             detail = TrajectoryRecordDetail(
                 context=ContextRecordDetail(
                     kind=data.kind, source=data.source, content=data.content
