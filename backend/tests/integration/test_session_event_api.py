@@ -122,6 +122,26 @@ def test_session_event_projection_apis(settings, monkeypatch) -> None:
     steps = trajectory.json()["runs"][0]["steps"]
     assert [step["kind"] for step in steps] == ["user_input", "model_call", "state_change"]
     assert steps[1]["status"] == "success"
+    records = trajectory.json()["runs"][0]["records"]
+    assert [record["kind"] for record in records] == [
+        "user",
+        "context",
+        "model_request",
+        "model_response",
+        "state_change",
+    ]
+    assert [record["index"] for record in records] == [1, 2, 3, 4, 5]
+    assert records[0]["summary"] == "1 加 1 等于 2。"
+    assert records[1]["summary"] == "question · question:1"
+    assert records[2]["status"] == "complete"
+    assert records[2]["detail"]["modelRequest"]["surfaceSeq"] == 2
+    assert records[3]["status"] == "complete"
+    assert records[3]["durationMs"] == 3
+    assert records[3]["detail"]["modelResponse"]["output"] == {"correctness": "CORRECT"}
+    assert records[4]["summary"] == "AI_EVALUATING → WAIT_STUDENT_ACTION"
+    session_events = trajectory.json()["events"]
+    assert [record["eventSeq"] for record in session_events] == [0, 1, 2, 3, 4, 5]
+    assert session_events[0]["kind"] == "session"
     roots = trace.json()["roots"]
     assert roots[0]["eventType"] == "user.message"
     assert roots[0]["children"][1]["eventType"] == "model.requested"

@@ -18,7 +18,7 @@ data/database/ai_self_explain.db
 | --- | --- | --- |
 | 原始 Event Log | `data/database/ai_self_explain.db` 的 `session_events` 表 | 权威事实，按 `session_id + seq` 排序 |
 | Surface | `backend/app/services/surface.py` | 从 `user.message`、`context.added` 折叠得到 |
-| Trajectory | `backend/app/services/trajectory.py` | 按 `run_id` 分组，生成用户输入、模型调用、状态变化步骤 |
+| Trajectory | `backend/app/services/trajectory.py` | 按 `run_id` 分组，生成三种主步骤 `steps` 和一行一记录的账本 `records` |
 | Trace | `backend/app/services/trace.py` | 按 `parent_event_id` 建立因果树 |
 | 进程诊断日志 | `.env` 中 `LOG_DIR` 指向的 `application.log` | 不是本指南所说的三种投影 |
 
@@ -27,8 +27,8 @@ data/database/ai_self_explain.db
 阶段四查询 API 和前端查看页面现已实现。教师登录后可在会话页点击“查看运行日志”，进入 `/sessions/{session_id}/logs`；后端 API 位于 `/api/sessions/{session_id}/...`。当前可使用以下三种方式：
 
 1. 用 DB Browser for SQLite 等 SQLite 工具查看原始事件。
-2. 在项目虚拟环境中直接调用三个投影服务查看 Surface、Trajectory、Trace。
-3. 通过教师账号使用前端 Trajectory/Trace 页面；页面按 `seq` 读取原始事件详情。
+2. 在项目虚拟环境中直接调用投影服务查看 Surface、Trajectory、Trace。
+3. 通过教师账号使用前端「运行轨迹」页；页面只展示轨迹账本，Surface 通过 `model_request` 记录的「模型上下文」页签按 `surfaceSeq` 调取，Trace 因果关系通过详情面板的父事件 / 直接结果跳转表达。
 
 当前开发数据库已升级到 Alembic revision `20260820_18`，包含 `session_events` 表。旧版本数据库需要先执行 `scripts/dev.ps1` 或 `python -m alembic -c backend/alembic.ini upgrade head`；旧业务记录不会自动回填成新的 Session Event Log。
 
@@ -361,6 +361,43 @@ surface = SurfaceService(database_session).build_surface(session_id, as_of_seq=5
 - `status = success` 表示模型请求收到 `model.responded`，即传输链路成功。即使 `validation = invalid`，Trajectory 仍会显示 `success`；要判断内容校验是否通过，必须展开原始 `model.responded.data.validation`。
 - 只有 `model.requested`、没有直接结果事件时显示 `pending`；结果为 `model.failed` 时显示 `failed`。
 
+### 4.4.1 Trajectory 记录账本投影
+
+`Trajectory.runs[].steps` 只保留三种人读主步骤，会丢掉 `context.added` 和模型输出的内容。同一接口额外返回 `records`（每个运行内，按 `seq` 升序、`index` 从 1 开始）和顶层 `events`（整个会话范围内的同一批记录），供前端轨迹页展示“一行一记录 + 结构化详情”。
+
+每条记录的形状：
+
+| 字段 | 含义 |
+| --- | --- |
+| `index` | 该数组内从 1 开始的渲染序号（`run.records` 与顶层 `events` 各自编号） |
+| `eventSeq` / `eventId` / `eventType` | 事实来源，可用于按 seq 读取原始事件 |
+| `kind` | 记录类型，取值见下表 |
+| `label` | 类型的中文标签 |
+| `summary` | 单行摘要，由投影层截断到 120 字符，前端不再二次裁剪 |
+| `status` | `complete` / `pending` / `failed`，只由 `parentEventId` 指向的结果事件决定 |
+| `durationMs` | 只有 `model.responded` / `model.failed` 有值 |
+| `occurredAt` / `parentEventId` | 时间轴定位与“父事件 / 直接结果”跳转依据 |
+| `detail` | 按 `kind` 填充的结构化详情，键为 `user` / `context` / `modelRequest` / `modelResponse` / `modelError` / `stateChange` / `session` |
+
+事件类型到 `kind` 的映射是封闭的，不新增事件类型：
+
+| eventType | kind | summary 规则 |
+| --- | --- | --- |
+| `session.started` | `session` | `会话开始` |
+| `user.message` | `user` | 学生文本压缩空白后截断 |
+| `context.added` | `context` | `{kind} · {source}` |
+| `model.requested` | `model_request` | `{model} · N 条消息 · surfaceSeq #{n}` |
+| `model.responded` | `model_response` | `output` 中前 3 个标量字段（容器只给出计数） + `{validation}` |
+| `model.failed` | `model_error` | `{errorType} · {message}` |
+| `state.changed` | `state_change` | `{from} → {to}` |
+
+`model.requested` 的 `status` 与 `steps[].status` 不同：这里是 `complete` / `failed` / `pending`，而 `steps` 沿用历史的 `success` / `failed` / `pending`，两者都由同一份“请求 → 直接结果”索引得出。
+
+两个已知的兼容性约定：
+
+- `detail` 只保留本次记录真正使用的那一个键，未使用的键在响应中被剔除。前端按“键是否存在”决定展示哪些详情页签，因此不可输出 `null`。
+- `detail.modelResponse.rawContent` 可能缺省。它是 commit `46e3466` 才加入的展示字段，更早写入的历史 `model.responded` 事件没有它。读取路径只强制校验 `output` 与 `validation`，缺失 `rawContent` 时前端显示“该历史事件未保存模型原始回复”，而不是让整个投影抛异常。
+
 ### 4.5 Trace 真实投影
 
 ```json
@@ -413,29 +450,32 @@ surface = SurfaceService(database_session).build_surface(session_id, as_of_seq=5
 - Trace 只使用 `parent_event_id`，不会因为两个事件时间相近就推断父子关系。
 - `session.started` 没有 `run_id`，因此不会出现在某个 Run 的 Trace 中。
 
-## 5. 三种投影应该怎样配合排查
+## 5. 轨迹页应该怎样排查
 
-推荐按以下顺序查看：
+前端只保留一个「运行轨迹」页（`/sessions/{id}/logs`，教师可见）。Surface 与 Trace 不再是页面入口，而是排查时按需调用的能力：
 
-1. 先看 Trajectory，确认故障属于用户输入、状态转换还是模型调用。
-2. 再看 Trace，确认直接因果关系和缺失的子事件。例如 `model.requested` 没有结果子节点时，模型调用仍在等待或流程异常中断。
-3. 涉及 Prompt 或上下文时，读取 `model.requested.data.surfaceSeq`，再查看对应 `as_of_seq` 的 Surface。
-4. 最后回到原始 Event Log，检查完整 `data`、`event_id`、`parent_event_id` 和准确顺序。
+1. 先看轨迹页的记录账本：按 `kind` 判断故障属于学生输入、状态转换、模型请求还是模型结果。
+2. 只看某一次自讲时，用工具栏的「运行」下拉切换运行；记录数超过 40 条时该运行默认收起，避免一次铺满整屏。
+3. 用时间线色块或搜索框定位记录；点记录后右侧详情面板给出结构化字段和原始 JSON。
+4. 需要看“模型当时看到了什么”时，选中 `model_request` 记录，切到「模型上下文」页签，用该请求的 `surfaceSeq` 重建 Surface。
+5. 需要确认因果链时，用详情面板「概述」页的父事件 / 直接结果跳转，它等价于按 `parentEventId` 走 Trace。
+6. 最后切到「原始 JSON」页签，检查完整 `data`、`eventId`、`parentEventId` 和准确顺序。
 
 常见判断规则：
 
-| 现象 | Trajectory | 原始事件/Trace | 结论 |
+| 现象 | 轨迹记录 | 原始事件 / Surface / Trace | 结论 |
 | --- | --- | --- | --- |
-| 模型正常返回且校验通过 | `success` | `model.responded.validation = valid` | 请求和内容校验均成功 |
-| 模型正常返回但结构不合法 | `success` | `model.responded.validation = invalid` | 传输成功，内容校验失败 |
-| 模型调用明确失败 | `failed` | `model.failed` 包含错误类型和消息 | 查看 `errorType`、`message` |
-| 模型请求没有结果 | `pending` | `model.requested` 无结果子事件 | 可能仍在执行，也可能异常中断；需结合 `application.log` |
-| 模型看到的上下文不对 | 不展示完整上下文 | 用请求的 `surfaceSeq` 重建 Surface | 对照 `model.requested.messages` 判断组装差异 |
+| 模型正常返回且校验通过 | `status = complete`，摘要含 `valid` | `model.responded.validation = valid` | 请求和内容校验均成功 |
+| 模型正常返回但结构不合法 | `status = complete`，摘要含 `invalid` | `model.responded.validation = invalid` | 传输成功，内容校验失败 |
+| 模型调用明确失败 | `kind = model_error`，`status = failed` | `model.failed` 包含错误类型和消息 | 查看 `errorType`、`message` |
+| 模型请求没有结果 | `kind = model_request`，`status = pending` | 没有父事件指向它的结果事件 | 可能仍在执行，也可能异常中断；需结合 `application.log` |
+| 模型看到的上下文不对 | `model_request` 摘要中的 `surfaceSeq #n` | 用该 `surfaceSeq` 重建 Surface | 对照「消息」页签的 `messages` 判断组装差异 |
 
 ## 6. 合理性批判与不足
 
-1. **访问范围仍较窄**：API 和前端入口已可用，但仅教师可访问，且页面只覆盖 Trajectory/Trace 与按 seq 展开的事件详情。学生视图、分页事件浏览和权限细分仍未实现；这些能力需要明确敏感字段策略后再扩展。
-2. **旧数据库不会回填历史事件**：迁移只创建新表并保留新业务写入路径，旧业务记录不会自动变成 Session Event Log。因此升级后只能查看升级后产生的事件，除非另行设计可审计的历史重建规则。
-3. **样本不代表真实模型网络质量**：本指南样本验证了真实业务写入链路和投影规则，但模型客户端由测试替身代替，3 ms 延迟不能用于性能判断。
-4. **时间序列化存在偏差风险**：设计要求 API 输出 UTC `Z`，但当前 SQLite 读取样本中的 `occurred_at` 仍可能没有时区后缀。排查时应以 `seq` 为顺序依据；后续应补充 API 时间格式的专门契约测试。
-5. **Surface 不是模型请求快照的替代品**：Surface 只呈现结构化的消息与上下文；判断模型实际收到什么时，`model.requested.data.messages` 才是最终证据。两者不一致时应按后者调查组装逻辑。
+1. **访问范围仍较窄**：API 和前端入口已可用，但仅教师可访问，页面只覆盖单会话的轨迹账本。学生视图、分页事件浏览和权限细分仍未实现；这些能力需要明确敏感字段策略后再扩展。
+2. **记录账本没有虚拟化**：后端一次性返回整条会话的事件，前端按 200 条窗口渲染尾部并提供「加载更早的记录」。单会话事件量较小，暂不引入虚拟滚动；长会话需要重新评估。
+3. **旧数据库不会回填历史事件**：迁移只创建新表并保留新业务写入路径，旧业务记录不会自动变成 Session Event Log。因此升级后只能查看升级后产生的事件，除非另行设计可审计的历史重建规则。
+4. **样本不代表真实模型网络质量**：本指南样本验证了真实业务写入链路和投影规则，但模型客户端由测试替身代替，3 ms 延迟不能用于性能判断。
+5. **时间序列化存在偏差风险**：设计要求 API 输出 UTC `Z`，但当前 SQLite 读取样本中的 `occurred_at` 仍可能没有时区后缀。排查时应以 `seq` 为顺序依据；后续应补充 API 时间格式的专门契约测试。
+6. **Surface 不是模型请求快照的替代品**：Surface 只呈现结构化的消息与上下文；判断模型实际收到什么时，`model.requested.data.messages` 才是最终证据。两者不一致时应按后者调查组装逻辑。

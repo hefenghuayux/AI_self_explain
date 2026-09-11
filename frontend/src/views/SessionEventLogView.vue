@@ -2,65 +2,104 @@
 import { computed, onMounted, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 
-import {
-  fetchSessionEvent,
-  fetchSessionEvents,
-  fetchSessionSurface,
-  fetchSessionTrace,
-  fetchSessionTrajectory,
-} from "../api/session-events"
-import type {
-  SessionEvent,
-  Surface,
-  Trace,
-  TraceNode,
-  Trajectory,
-  TrajectoryRun,
-  TrajectoryStep,
-} from "../types/session-event"
+import EventDetails from "../components/EventDetails.vue"
+import EventLedger from "../components/EventLedger.vue"
+import EventTimeline from "../components/EventTimeline.vue"
+import { fetchSessionTrajectory } from "../api/session-events"
+import type { Trajectory, TrajectoryRecord } from "../types/session-event"
 
-type ViewMode = "surface" | "trajectory" | "trace"
+/** 账本按窗口渲染，只有点「加载更早的记录」才扩大窗口；默认展示尾部最新记录。 */
+const LEDGER_WINDOW = 200
+/** 超过该记录数时默认收起运行，避免首次进入就铺满整屏。 */
+const AUTO_COLLAPSE_THRESHOLD = 40
 
 const route = useRoute()
 const sessionId = String(route.params.sessionId)
-const viewMode = ref<ViewMode>("trajectory")
 const trajectory = ref<Trajectory>()
-const trace = ref<Trace>()
-const surface = ref<Surface>()
 const selectedRunId = ref("")
-const events = ref<Record<number, SessionEvent>>({})
-const modelResponses = ref<SessionEvent[]>([])
+const selectedSeq = ref<number>()
+const timelineMode = ref<"sequence" | "duration">("sequence")
+const searchQuery = ref("")
+const collapsedRunIds = ref<ReadonlySet<string>>(new Set())
+const ledgerWindow = ref(LEDGER_WINDOW)
 const loading = ref(true)
-const traceLoading = ref(false)
-const surfaceLoading = ref(false)
 const errorMessage = ref("")
-const detailErrors = ref<Record<number, string>>({})
 
-const selectedRun = computed<TrajectoryRun | undefined>(() =>
-  trajectory.value?.runs.find((run) => run.runId === selectedRunId.value),
+const runs = computed(() => trajectory.value?.runs ?? [])
+
+const selectedRun = computed(() =>
+  runs.value.find((run) => run.runId === selectedRunId.value),
+)
+
+const runLabel = computed(() => {
+  const index = runs.value.findIndex((run) => run.runId === selectedRunId.value)
+  return index < 0 ? "当前运行" : `第 ${index + 1} 次运行`
+})
+
+const runRecords = computed<TrajectoryRecord[]>(() => selectedRun.value?.records ?? [])
+
+const visibleRecords = computed<TrajectoryRecord[]>(() =>
+  runRecords.value.slice(Math.max(0, runRecords.value.length - ledgerWindow.value)),
+)
+
+const hasOlderRecords = computed(() => visibleRecords.value.length < runRecords.value.length)
+
+// 选中记录从整个运行里查，而不是当前账本窗口，避免窗口变化把详情面板挤掉。
+const selectedRecord = computed<TrajectoryRecord | undefined>(() =>
+  runRecords.value.find((record) => record.eventSeq === selectedSeq.value),
+)
+
+const runCollapsed = computed(() => collapsedRunIds.value.has(selectedRunId.value))
+
+const collapsibleRuns = computed(() =>
+  runs.value.filter((run) => run.records.length > 1).map((run) => run.runId),
+)
+
+const allRunsCollapsed = computed(
+  () =>
+    collapsibleRuns.value.length > 0 &&
+    collapsibleRuns.value.every((runId) => collapsedRunIds.value.has(runId)),
 )
 
 function displayTime(value: string): string {
   return new Date(value).toLocaleString("zh-CN", { hour12: false })
 }
 
-function stepTitle(step: TrajectoryStep): string {
-  if (step.kind === "user_input") return step.summary
-  if (step.kind === "model_call") return `模型调用（${step.status}）`
-  return `状态变化：${step.from} → ${step.to}`
+function selectRecord(seq: number) {
+  selectedSeq.value = seq
 }
 
-function stepSeqs(step: TrajectoryStep): number[] {
-  if (step.kind === "model_call") return [step.requestSeq, ...(step.resultSeq === undefined ? [] : [step.resultSeq])]
-  return [step.eventSeq]
+function toggleRun(runId: string) {
+  const next = new Set(collapsedRunIds.value)
+  if (next.has(runId)) next.delete(runId)
+  else next.add(runId)
+  collapsedRunIds.value = next
+}
+
+function toggleAllRuns() {
+  collapsedRunIds.value = allRunsCollapsed.value
+    ? new Set()
+    : new Set(collapsibleRuns.value)
+}
+
+function loadOlder(): void {
+  ledgerWindow.value += LEDGER_WINDOW
 }
 
 async function loadTrajectory() {
   loading.value = true
   errorMessage.value = ""
   try {
-    trajectory.value = await fetchSessionTrajectory(sessionId)
-    selectedRunId.value = trajectory.value.runs[0]?.runId ?? ""
+    const result = await fetchSessionTrajectory(sessionId)
+    trajectory.value = result
+    const first = result.runs[0]
+    selectedRunId.value = first?.runId ?? ""
+    selectedSeq.value = undefined
+    ledgerWindow.value = LEDGER_WINDOW
+    collapsedRunIds.value =
+      first !== undefined && first.records.length > AUTO_COLLAPSE_THRESHOLD
+        ? new Set([first.runId])
+        : new Set()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -68,78 +107,14 @@ async function loadTrajectory() {
   }
 }
 
-async function loadTrace() {
-  if (!selectedRunId.value) return
-  traceLoading.value = true
-  errorMessage.value = ""
-  try {
-    trace.value = await fetchSessionTrace(sessionId, selectedRunId.value)
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
-  } finally {
-    traceLoading.value = false
-  }
-}
-
-async function loadSurface() {
-  surfaceLoading.value = true
-  errorMessage.value = ""
-  try {
-    const [surfaceResult, modelResponseEvents] = await Promise.all([
-      fetchSessionSurface(sessionId),
-      loadModelResponseEvents(),
-    ])
-    surface.value = surfaceResult
-    modelResponses.value = modelResponseEvents
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
-  } finally {
-    surfaceLoading.value = false
-  }
-}
-
-async function loadModelResponseEvents(): Promise<SessionEvent[]> {
-  const modelResponseEvents: SessionEvent[] = []
-  let afterSeq = -1
-  while (true) {
-    const page = await fetchSessionEvents(sessionId, afterSeq, 500)
-    modelResponseEvents.push(...page.events.filter((event) => event.eventType === "model.responded"))
-    if (page.events.length < 500) return modelResponseEvents
-    afterSeq = page.nextAfterSeq
-  }
-}
-
-function rawModelContent(event: SessionEvent): string | undefined {
-  const value = event.data.rawContent
-  return typeof value === "string" ? value : undefined
-}
-
-async function showEvent(seq: number) {
-  if (events.value[seq]) return
-  detailErrors.value[seq] = ""
-  try {
-    events.value[seq] = await fetchSessionEvent(sessionId, seq)
-  } catch (error) {
-    detailErrors.value[seq] = error instanceof Error ? error.message : String(error)
-  }
-}
-
-function eventJson(seq: number): string {
-  return JSON.stringify(events.value[seq], null, 2)
-}
-
-function traceLabel(node: TraceNode): string {
-  return `#${node.seq} ${node.eventType}`
-}
-
 onMounted(loadTrajectory)
-watch(viewMode, (mode) => {
-  if (mode === "surface" && !surface.value) void loadSurface()
-  if (mode === "trace") void loadTrace()
-})
+
 watch(selectedRunId, () => {
-  trace.value = undefined
-  if (viewMode.value === "trace") void loadTrace()
+  const records = runRecords.value
+  selectedSeq.value = undefined
+  ledgerWindow.value = LEDGER_WINDOW
+  collapsedRunIds.value =
+    records.length > AUTO_COLLAPSE_THRESHOLD ? new Set([selectedRunId.value]) : new Set()
 })
 </script>
 
@@ -147,9 +122,9 @@ watch(selectedRunId, () => {
   <main class="log-page">
     <header class="log-header">
       <div>
-        <p class="eyebrow">SESSION EVENT LOG</p>
-        <h1>运行日志</h1>
-        <p>session-{{ sessionId }} · 由 Event Log 投影得到</p>
+        <p class="eyebrow">SESSION TRAJECTORY</p>
+        <h1>运行轨迹</h1>
+        <p>session-{{ sessionId }} · 由 Session Event Log 投影得到</p>
       </div>
       <div class="log-actions">
         <RouterLink :to="`/sessions/${sessionId}`">返回会话</RouterLink>
@@ -159,210 +134,108 @@ watch(selectedRunId, () => {
     <p v-if="errorMessage" class="error-state">{{ errorMessage }}</p>
     <p v-if="loading" class="loading-state">正在读取运行轨迹……</p>
 
-    <template v-else>
-      <section class="view-panel" aria-label="日志视图">
-        <div class="view-switch" role="tablist" aria-label="日志投影">
-          <button type="button" :class="{ active: viewMode === 'surface' }" :aria-pressed="viewMode === 'surface'" @click="viewMode = 'surface'">Surface 模型上下文</button>
-          <button type="button" :class="{ active: viewMode === 'trajectory' }" :aria-pressed="viewMode === 'trajectory'" @click="viewMode = 'trajectory'">Trajectory 运行步骤</button>
-          <button type="button" :class="{ active: viewMode === 'trace' }" :aria-pressed="viewMode === 'trace'" @click="viewMode = 'trace'">Trace 因果关系</button>
+    <template v-else-if="runs.length">
+      <section class="toolbar" role="toolbar" aria-label="轨迹工具栏">
+        <div class="toolbar-actions">
+          <label class="run-picker">
+            运行
+            <select v-model="selectedRunId">
+              <option v-for="(run, index) in runs" :key="run.runId" :value="run.runId">
+                第 {{ index + 1 }} 次运行（{{ run.records.length }} 条记录）
+              </option>
+            </select>
+          </label>
+          <label class="mode-toggle">
+            <input v-model="timelineMode" type="radio" value="sequence" />
+            等宽
+          </label>
+          <label class="mode-toggle">
+            <input v-model="timelineMode" type="radio" value="duration" />
+            按时长
+          </label>
+          <button type="button" class="toolbar-button" @click="toggleAllRuns">
+            {{ allRunsCollapsed ? "展开所有运行" : "收起所有运行" }}
+          </button>
         </div>
-        <label class="run-picker">
-          运行
-          <select v-model="selectedRunId" :disabled="!trajectory?.runs.length">
-            <option v-for="run in trajectory?.runs ?? []" :key="run.runId" :value="run.runId">{{ run.runId }}</option>
-          </select>
-        </label>
+        <div class="toolbar-search">
+          <input
+            v-model="searchQuery"
+            type="search"
+            aria-label="搜索轨迹"
+            placeholder="搜索类型、摘要或 #序号"
+          />
+        </div>
       </section>
 
-      <section v-if="viewMode === 'surface'" class="content-section">
-        <p v-if="surfaceLoading" class="loading-state">正在读取模型上下文……</p>
-        <template v-else-if="surface">
-          <div class="surface-summary">
-            <span>投影截止序号</span>
-            <strong>#{{ surface.asOfSeq }}</strong>
-            <span>该视图只包含模型可见的学生消息和上下文，不包含模型请求结果或状态变化。</span>
-          </div>
-          <div class="surface-grid">
-            <section class="surface-panel">
-              <header class="surface-panel-header">
-                <h2>学生消息</h2>
-                <span>{{ surface.messages.length }} 条</span>
-              </header>
-              <p v-if="!surface.messages.length" class="empty-state">当前没有学生消息。</p>
-              <article v-for="message in surface.messages" :key="message.seq" class="surface-message">
-                <div class="surface-item-meta"><strong>{{ message.role }}</strong><span>#{{ message.seq }}</span></div>
-                <p>{{ message.content }}</p>
-              </article>
-            </section>
-            <section class="surface-panel">
-              <header class="surface-panel-header">
-                <h2>上下文</h2>
-                <span>{{ surface.contexts.length }} 条</span>
-              </header>
-              <p v-if="!surface.contexts.length" class="empty-state">当前没有附加上下文。</p>
-              <details v-for="context in surface.contexts" :key="context.seq" class="surface-context" open>
-                <summary><span>{{ context.kind }}</span><small>#{{ context.seq }} · {{ context.source }}</small></summary>
-                <pre>{{ JSON.stringify(context.content, null, 2) }}</pre>
-              </details>
-            </section>
-          </div>
-          <section class="surface-panel model-response-panel">
-            <header class="surface-panel-header">
-              <h2>模型原始回复</h2>
-              <span>{{ modelResponses.length }} 条</span>
-            </header>
-            <p v-if="!modelResponses.length" class="empty-state">当前没有模型回复。</p>
-            <details v-for="response in modelResponses" :key="response.seq" class="model-response" open>
-              <summary>原始内容 <small>#{{ response.seq }}</small></summary>
-              <pre v-if="rawModelContent(response)">{{ rawModelContent(response) }}</pre>
-              <p v-else class="empty-state">该历史事件未保存模型原始回复。</p>
-            </details>
-          </section>
-        </template>
-      </section>
+      <EventTimeline
+        :records="runRecords"
+        :mode="timelineMode"
+        :selected-seq="selectedSeq"
+        @select="selectRecord"
+      />
 
-      <section v-else-if="viewMode === 'trajectory'" class="content-section">
-        <p v-if="!trajectory?.runs.length" class="empty-state">当前会话没有可展示的运行步骤。</p>
-        <template v-else-if="selectedRun">
-          <p class="section-note">开始时间：{{ displayTime(selectedRun.startedAt) }}</p>
-          <ol class="step-list">
-            <li v-for="step in selectedRun.steps" :key="`${step.kind}-${stepSeqs(step).join('-')}`" class="step-item">
-              <div class="step-heading">
-                <strong>{{ stepTitle(step) }}</strong>
-                <span>{{ stepSeqs(step).map((seq) => `#${seq}`).join(' · ') }}</span>
-              </div>
-              <div class="step-meta">
-                <span>{{ step.kind }}</span>
-                <span v-if="step.kind === 'model_call' && step.durationMs !== undefined">耗时 {{ step.durationMs }} ms</span>
-              </div>
-              <details v-for="seq in stepSeqs(step)" :key="seq" class="event-detail" @toggle="showEvent(seq)">
-                <summary>查看原始事件 #{{ seq }}</summary>
-                <p v-if="detailErrors[seq]" class="detail-error">{{ detailErrors[seq] }}</p>
-                <p v-else-if="!events[seq]" class="detail-loading">正在读取事件……</p>
-                <template v-else>
-                  <div class="event-meta"><span>{{ events[seq].eventType }}</span><time>{{ displayTime(events[seq].occurredAt) }}</time></div>
-                  <pre>{{ eventJson(seq) }}</pre>
-                </template>
-              </details>
-            </li>
-          </ol>
-        </template>
-      </section>
+      <p v-if="selectedRun" class="section-note">
+        {{ runLabel }} · 开始时间 {{ displayTime(selectedRun.startedAt) }} ·
+        共 {{ runRecords.length }} 条记录<template v-if="selectedRun.steps.length">
+          ，其中 {{ selectedRun.steps.length }} 个关键步骤</template>
+      </p>
 
-      <section v-else class="content-section">
-        <p v-if="traceLoading" class="loading-state">正在读取因果关系……</p>
-        <p v-else-if="!trace?.roots.length" class="empty-state">当前运行没有可展示的因果节点。</p>
-        <div v-else class="trace-tree"><TraceBranch v-for="node in trace.roots" :key="node.seq" :node="node" :events="events" :detail-errors="detailErrors" @show-event="showEvent" /></div>
-      </section>
+      <div class="trajectory-split" :class="{ 'with-details': selectedRecord !== undefined }">
+        <EventLedger
+          :records="visibleRecords"
+          :run-label="runLabel"
+          :selected-seq="selectedSeq"
+          :collapsed="runCollapsed"
+          :search-query="searchQuery"
+          :has-older-records="hasOlderRecords"
+          @select="selectRecord"
+          @toggle="toggleRun(selectedRunId)"
+          @load-older="loadOlder"
+        />
+        <EventDetails
+          v-if="selectedRecord"
+          :key="selectedRecord.eventSeq"
+          :record="selectedRecord"
+          :session-id="sessionId"
+          :records="visibleRecords"
+          @close="selectedSeq = undefined"
+          @select="selectRecord"
+        />
+      </div>
     </template>
+
+    <p v-else class="empty-state">当前会话没有可展示的运行轨迹。</p>
   </main>
 </template>
 
-<script lang="ts">
-import { defineComponent, h, type PropType, type VNode } from "vue"
-import type { SessionEvent as SessionEventRecord, TraceNode as TraceTreeNode } from "../types/session-event"
-
-const TraceBranch: ReturnType<typeof defineComponent> = defineComponent({
-  name: "TraceBranch",
-  props: {
-    node: { type: Object as PropType<TraceTreeNode>, required: true },
-    events: { type: Object as PropType<Record<number, SessionEventRecord>>, required: true },
-    detailErrors: { type: Object as PropType<Record<number, string>>, required: true },
-  },
-  emits: ["show-event"],
-  setup(props, { emit }): () => VNode {
-    return () => h("details", { class: "trace-node", open: true }, [
-      h("summary", { onClick: () => emit("show-event", props.node.seq) }, [
-        h("strong", `#${props.node.seq} ${props.node.eventType}`),
-        h("span", props.node.children.length ? `${props.node.children.length} 个子事件` : "叶节点"),
-      ]),
-      props.detailErrors[props.node.seq]
-        ? h("p", { class: "detail-error" }, props.detailErrors[props.node.seq])
-        : props.events[props.node.seq]
-          ? h("pre", JSON.stringify(props.events[props.node.seq], null, 2))
-          : h("p", { class: "detail-loading" }, "正在读取事件……"),
-      ...props.node.children.map((child) => h(TraceBranch, {
-        node: child,
-        events: props.events,
-        detailErrors: props.detailErrors,
-        onShowEvent: (seq: number) => emit("show-event", seq),
-      })),
-    ])
-  },
-})
-
-export default defineComponent({
-  name: "SessionEventLogView",
-  components: { TraceBranch },
-})
-</script>
-
 <style scoped>
 .log-page { width: min(100%, var(--content-width)); margin: 0 auto; padding: var(--space-8) var(--space-6) var(--space-12); }
-.log-header, .view-panel, .view-switch, .step-heading, .step-meta, .event-meta { display: flex; align-items: center; gap: var(--space-3); }
-.log-header, .view-panel, .step-heading { justify-content: space-between; }
-.log-header { flex-wrap: wrap; margin-bottom: var(--space-6); }
+.log-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-6); }
 .log-header h1 { margin: var(--space-1) 0; }
 .log-header p { margin: 0; color: var(--color-text-secondary); }
 .eyebrow { color: var(--color-brand-700) !important; font-size: 12px; letter-spacing: .1em; }
 .log-actions a { color: var(--color-brand-700); }
-.view-panel { flex-wrap: wrap; padding-bottom: var(--space-4); border-bottom: 1px solid var(--color-border); }
-.view-switch { flex-wrap: wrap; }
-.view-switch button { min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text-secondary); background: var(--color-surface); cursor: pointer; }
-.view-switch button.active { border-color: var(--color-brand-700); color: var(--color-on-brand); background: var(--color-brand-700); }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.toolbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 .run-picker { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-sm); }
-.run-picker select { min-width: 220px; min-height: 40px; padding: 0 var(--space-2); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface); }
-.content-section { margin-top: var(--space-6); }
-.section-note, .loading-state, .empty-state { color: var(--color-text-muted); }
-.surface-summary { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text-muted); background: var(--color-surface-muted); }
-.surface-summary strong { color: var(--color-brand-700); font-size: var(--font-size-xl); }
-.surface-summary span:last-child { justify-self: end; text-align: right; }
-.surface-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: var(--space-4); margin-top: var(--space-4); }
-.surface-panel { min-width: 0; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
-.surface-panel-header, .surface-item-meta { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
-.surface-panel-header { padding-bottom: var(--space-3); border-bottom: 1px solid var(--color-border); }
-.surface-panel-header h2 { margin: 0; font-size: var(--font-size-lg); }
-.surface-panel-header span, .surface-item-meta span, .surface-context small { color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.surface-message { margin-top: var(--space-3); padding: var(--space-3); border-left: 3px solid var(--color-brand-600); border-radius: var(--radius-sm); background: var(--color-brand-50); }
-.surface-message p { margin: var(--space-2) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.surface-context { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
-.surface-context summary { display: flex; justify-content: space-between; gap: var(--space-3); cursor: pointer; color: var(--color-brand-700); }
-.surface-context summary span { font-weight: 650; }
-.surface-context pre { margin-top: var(--space-3); }
-.model-response-panel { margin-top: var(--space-4); }
-.model-response { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
-.model-response summary { display: flex; justify-content: space-between; gap: var(--space-3); cursor: pointer; color: var(--color-brand-700); }
-.model-response summary small { color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.model-response pre { margin-top: var(--space-3); }
-.step-list { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
-.step-item { padding: var(--space-4); border: 1px solid var(--color-border); border-left: 4px solid var(--color-brand-600); border-radius: var(--radius-md); background: var(--color-surface); }
-.step-heading { align-items: flex-start; }
-.step-heading strong { overflow-wrap: anywhere; }
-.step-heading span, .step-meta, .event-meta { color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.step-meta { margin-top: var(--space-1); flex-wrap: wrap; }
-.event-detail, .trace-node { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
-.event-detail summary, .trace-node summary { cursor: pointer; color: var(--color-brand-700); }
-.event-meta { justify-content: space-between; flex-wrap: wrap; margin: var(--space-3) 0; }
-.event-meta time { color: var(--color-text-muted); }
-pre { max-height: 480px; overflow: auto; margin: 0; padding: var(--space-3); border-radius: var(--radius-sm); color: #e5e7eb; background: #1f2937; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
-.detail-error { padding: var(--space-2); color: var(--color-error-700); background: var(--color-error-100); overflow-wrap: anywhere; }
-.detail-loading { color: var(--color-text-muted); }
-.trace-tree { display: grid; gap: var(--space-3); }
-.trace-node { margin-top: 0; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
-.trace-node > summary { display: flex; justify-content: space-between; gap: var(--space-3); }
-.trace-node > summary span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.trace-node .trace-node { margin-top: var(--space-3); margin-left: var(--space-4); border-left: 3px solid var(--color-brand-100); }
+.run-picker select { min-height: 34px; padding: 0 var(--space-2); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface); font: inherit; }
+.mode-toggle { display: flex; align-items: center; gap: var(--space-1); color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.toolbar-button { min-height: 34px; padding: 0 var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text-secondary); background: var(--color-surface); cursor: pointer; font: inherit; font-size: var(--font-size-sm); }
+.toolbar-button:hover { border-color: var(--color-brand-700); color: var(--color-brand-700); }
+.toolbar-search input { min-width: 240px; min-height: 34px; padding: 0 var(--space-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface); font: inherit; font-size: var(--font-size-sm); }
+.section-note { margin: var(--space-3) 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.trajectory-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); margin-top: var(--space-4); align-items: start; }
+.trajectory-split.with-details { grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); }
+.loading-state, .empty-state { color: var(--color-text-muted); }
 .error-state { padding: var(--space-3); border-radius: var(--radius-md); color: var(--color-error-700); background: var(--color-error-100); overflow-wrap: anywhere; }
+@media (max-width: 960px) {
+  .trajectory-split.with-details { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 640px) {
   .log-page { padding: var(--space-6) var(--space-4) var(--space-8); }
-  .log-header, .view-panel { align-items: flex-start; flex-direction: column; }
-  .view-switch, .view-switch button, .run-picker, .run-picker select { width: 100%; }
-  .view-switch button { text-align: left; }
-  .step-heading { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
-  .surface-summary { grid-template-columns: 1fr auto; }
-  .surface-summary span:last-child { grid-column: span 2; justify-self: start; text-align: left; }
-  .surface-grid { grid-template-columns: 1fr; }
-  .surface-context summary { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
-  .trace-node .trace-node { margin-left: var(--space-2); }
+  .log-header { align-items: flex-start; flex-direction: column; }
+  .toolbar, .toolbar-actions { align-items: stretch; flex-direction: column; }
+  .run-picker, .run-picker select, .toolbar-search input { width: 100%; }
+  .toolbar-search input { min-width: 0; }
 }
 </style>

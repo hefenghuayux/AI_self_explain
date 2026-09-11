@@ -66,11 +66,93 @@ class TrajectoryRun(ProjectionSchema):
     run_id: str
     started_at: datetime
     steps: tuple[TrajectoryStep, ...]
+    records: tuple["TrajectoryRecord", ...]
 
 
 class Trajectory(ProjectionSchema):
     session_id: int
     runs: tuple[TrajectoryRun, ...]
+    events: tuple["TrajectoryRecord", ...]
+
+
+TrajectoryRecordKind = Literal[
+    "session",
+    "user",
+    "context",
+    "model_request",
+    "model_response",
+    "model_error",
+    "state_change",
+]
+
+TrajectoryRecordStatus = Literal["complete", "pending", "failed"]
+
+
+class SessionRecordDetail(ProjectionSchema):
+    pass
+
+
+class UserRecordDetail(ProjectionSchema):
+    text: str
+    input_type: Literal["text", "voice"] = Field(alias="inputType")
+
+
+class ContextRecordDetail(ProjectionSchema):
+    kind: Literal["question", "rubric", "session_state", "memory"]
+    source: str
+    content: str | dict[str, JsonValue]
+
+
+class ModelRequestDetail(ProjectionSchema):
+    provider: str
+    model: str
+    messages: tuple[dict[str, JsonValue], ...]
+    surface_seq: int = Field(alias="surfaceSeq")
+
+
+class ModelResponseDetail(ProjectionSchema):
+    output: dict[str, JsonValue]
+    # rawContent 是 commit 46e3466 才加入的展示字段，更早写入的历史事件没有它。
+    raw_content: str | None = Field(default=None, alias="rawContent")
+    validation: Literal["valid", "invalid"]
+    input_tokens: int | None = Field(default=None, alias="inputTokens")
+    output_tokens: int | None = Field(default=None, alias="outputTokens")
+
+
+class ModelErrorDetail(ProjectionSchema):
+    error_type: str = Field(alias="errorType")
+    message: str
+
+
+class StateChangeDetail(ProjectionSchema):
+    from_: str = Field(alias="from")
+    to: str
+    reason: str
+
+
+class TrajectoryRecordDetail(ProjectionSchema):
+    session: SessionRecordDetail | None = None
+    user: UserRecordDetail | None = None
+    context: ContextRecordDetail | None = None
+    model_request: ModelRequestDetail | None = Field(default=None, alias="modelRequest")
+    model_response: ModelResponseDetail | None = Field(default=None, alias="modelResponse")
+    model_error: ModelErrorDetail | None = Field(default=None, alias="modelError")
+    state_change: StateChangeDetail | None = Field(default=None, alias="stateChange")
+
+
+class TrajectoryRecord(ProjectionSchema):
+    index: int
+    event_seq: int
+    event_id: str
+    event_type: EventType
+    kind: TrajectoryRecordKind
+    label: str
+    summary: str
+    status: TrajectoryRecordStatus = "complete"
+    duration_ms: int | None = None
+    occurred_at: datetime
+    parent_event_id: str | None = None
+    detail: TrajectoryRecordDetail
 
 
 class TraceNode(ProjectionSchema):
