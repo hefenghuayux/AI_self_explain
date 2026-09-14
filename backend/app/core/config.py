@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     ai_base_url: AnyHttpUrl
     ai_api_key: SecretStr
     ai_model: NonEmptyString
+    ai_reasoning_effort: str | None = None
 
     asr_provider: NonEmptyString
     asr_base_url: AnyUrl

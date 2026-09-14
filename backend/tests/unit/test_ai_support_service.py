@@ -49,7 +49,12 @@ def test_support_request_snapshot_separates_main_draft_and_doubt() -> None:
     }
     assert request.blocks.retry_context == {"validationErrors": ["action 不合法"]}
     assert request.blocks.memory_context is None
-    assert request.transport_payload() == request.transport.model_dump(mode="json")
+    payload = request.transport_payload()
+    assert payload["model"] == "test-model"
+    assert payload["response_format"] == {"type": "json_object"}
+    assert payload["messages"] == [
+        msg.model_dump(mode="json") for msg in request.transport.messages
+    ]
     assert "为什么这里使用加法？" in request.transport.messages[0].content
     assert "逐字引用一句" in request.transport.messages[0].content
 

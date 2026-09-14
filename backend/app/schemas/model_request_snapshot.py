@@ -16,6 +16,8 @@ class ModelTransportSnapshot(BaseModel):
     model: str
     messages: list[ModelRequestMessage]
     response_format: dict[str, object]
+    reasoning_effort: str | None = None
+    extra_body: dict[str, object] = Field(default_factory=dict)
 
 
 class ModelRequestBlocks(BaseModel):
@@ -51,4 +53,9 @@ class ModelRequestSnapshot(BaseModel):
         return self.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     def transport_payload(self) -> dict[str, object]:
-        return self.transport.model_dump(mode="json")
+        payload = self.transport.model_dump(
+            mode="json", exclude_none=True, exclude={"extra_body"}
+        )
+        if self.transport.extra_body:
+            payload.update(self.transport.extra_body)
+        return payload

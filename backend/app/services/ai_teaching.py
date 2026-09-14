@@ -18,6 +18,7 @@ from app.schemas.model_request_snapshot import (
 )
 from app.schemas.teaching import TeachingContext, TeachingOutput
 from app.services.ai_evaluation import AIModelClient, AITransportError
+from app.services.ai_reasoning import resolve_reasoning_params
 
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "generate_teaching.md"
 logger = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ class AITeachingService:
             context,
             model=self.settings.ai_model,
             prompt_version=self.settings.prompt_version,
+            reasoning_effort=self.settings.ai_reasoning_effort,
         )
         try:
             model_response = self.client.evaluate(request)
@@ -163,7 +165,8 @@ def validate_teaching_output(
 
 
 def _render_prompt(
-    context: TeachingContext, *, model: str, prompt_version: str
+    context: TeachingContext, *, model: str, prompt_version: str,
+    reasoning_effort: str | None = None,
 ) -> ModelRequestSnapshot:
     template = PROMPT_PATH.read_text(encoding="utf-8")
     prompt = (
@@ -188,6 +191,7 @@ def _render_prompt(
             mode="json", by_alias=True
         ),
     }
+    extra_body = resolve_reasoning_params(model, reasoning_effort)
     return ModelRequestSnapshot(
         purpose="AI_SUPPORT",
         prompt_version=prompt_version,
@@ -202,6 +206,8 @@ def _render_prompt(
             model=model,
             messages=[ModelRequestMessage(role="user", content=prompt)],
             response_format={"type": "json_object"},
+            reasoning_effort=reasoning_effort,
+            extra_body=extra_body,
         ),
         privacy=ModelRequestPrivacy(
             contains_student_content=True,

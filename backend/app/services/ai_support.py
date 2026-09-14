@@ -27,6 +27,7 @@ from app.schemas.support import (
     GuidedAnswerAssessmentOutput,
     SupportRequestOutput,
 )
+from app.services.ai_reasoning import resolve_reasoning_params
 from app.services.ai_evaluation import AIModelClient, AIModelResponse, AITransportError
 from app.services.session_event_log import SessionEventLog
 
@@ -55,6 +56,7 @@ class AISupportService:
         doubt_text: str | None,
         force_current_step: bool,
     ) -> SupportRequestOutput | None:
+        reasoning_effort = self.settings.ai_reasoning_effort
         result = self._generate(
             session=session,
             request_builder=lambda validation_errors: _render_support_prompt(
@@ -66,6 +68,7 @@ class AISupportService:
                 validation_errors=validation_errors,
                 model=self.settings.ai_model,
                 prompt_version=self.settings.prompt_version,
+                reasoning_effort=reasoning_effort,
             ),
             output_type=SupportRequestOutput,
             validator=lambda output: _validate_support_request(output, question.rubric_points),
@@ -80,6 +83,7 @@ class AISupportService:
         support_event: SupportEvent,
         answers: list[GuidedAnswer],
     ) -> GuidedAnswerAssessmentOutput | None:
+        reasoning_effort = self.settings.ai_reasoning_effort
         result = self._generate(
             session=session,
             request_builder=lambda validation_errors: _render_answer_assessment_prompt(
@@ -90,6 +94,7 @@ class AISupportService:
                 validation_errors=validation_errors,
                 model=self.settings.ai_model,
                 prompt_version=self.settings.prompt_version,
+                reasoning_effort=reasoning_effort,
             ),
             output_type=GuidedAnswerAssessmentOutput,
             validator=lambda output: _validate_answer_assessment(output, support_event),
@@ -306,6 +311,7 @@ def _render_support_prompt(
     validation_errors: list[str],
     model: str,
     prompt_version: str,
+    reasoning_effort: str | None = None,
 ) -> ModelRequestSnapshot:
     template = SUPPORT_PROMPT_PATH.read_text(encoding="utf-8")
     question_context = _question_context(question)
@@ -328,6 +334,7 @@ def _render_support_prompt(
         validation_errors=validation_errors,
         model=model,
         prompt=prompt,
+        reasoning_effort=reasoning_effort,
     )
 
 
@@ -340,6 +347,7 @@ def _render_answer_assessment_prompt(
     validation_errors: list[str],
     model: str,
     prompt_version: str,
+    reasoning_effort: str | None = None,
 ) -> ModelRequestSnapshot:
     template = ASSESSMENT_PROMPT_PATH.read_text(encoding="utf-8")
     question_context = _question_context(question)
@@ -362,6 +370,7 @@ def _render_answer_assessment_prompt(
         validation_errors=validation_errors,
         model=model,
         prompt=prompt,
+        reasoning_effort=reasoning_effort,
     )
 
 
@@ -397,7 +406,9 @@ def _model_request(
     validation_errors: list[str],
     model: str,
     prompt: str,
+    reasoning_effort: str | None = None,
 ) -> ModelRequestSnapshot:
+    extra_body = resolve_reasoning_params(model, reasoning_effort)
     return ModelRequestSnapshot(
         purpose=purpose,
         prompt_version=prompt_version,
@@ -412,6 +423,8 @@ def _model_request(
             model=model,
             messages=[ModelRequestMessage(role="user", content=prompt)],
             response_format={"type": "json_object"},
+            reasoning_effort=reasoning_effort,
+            extra_body=extra_body,
         ),
         privacy=ModelRequestPrivacy(
             contains_student_content=True,

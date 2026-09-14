@@ -27,6 +27,7 @@ from app.schemas.model_request_snapshot import (
     ModelRequestSnapshot,
     ModelTransportSnapshot,
 )
+from app.services.ai_reasoning import resolve_reasoning_params
 from app.services.session_event_log import SessionEventLog
 
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "evaluate_explanation.md"
@@ -143,6 +144,7 @@ class AIEvaluationService:
         event_log = SessionEventLog(self.repository.database_session)
 
         for schema_attempt in range(self.settings.ai_schema_max_retries + 1):
+            reasoning_effort = self.settings.ai_reasoning_effort
             request = _render_prompt(
                 question=question,
                 session=session,
@@ -151,6 +153,7 @@ class AIEvaluationService:
                 validation_errors=validation_errors,
                 model=self.settings.ai_model,
                 prompt_version=self.settings.prompt_version,
+                reasoning_effort=reasoning_effort,
             )
             if schema_attempt == 0:
                 event_log.append_contexts(
@@ -367,6 +370,7 @@ def _render_prompt(
     validation_errors: list[str],
     model: str,
     prompt_version: str,
+    reasoning_effort: str | None = None,
 ) -> ModelRequestSnapshot:
     template = PROMPT_PATH.read_text(encoding="utf-8")
     question_context: dict[str, object] = {
@@ -393,6 +397,7 @@ def _render_prompt(
         .replace("{{CONTEXT_JSON}}", json.dumps(transport_context, ensure_ascii=False))
         .replace("{{VALIDATION_ERRORS}}", json.dumps(validation_errors, ensure_ascii=False))
     )
+    extra_body = resolve_reasoning_params(model, reasoning_effort)
     return ModelRequestSnapshot(
         purpose="AI_EVALUATION",
         prompt_version=prompt_version,
@@ -411,6 +416,8 @@ def _render_prompt(
             model=model,
             messages=[ModelRequestMessage(role="user", content=prompt)],
             response_format={"type": "json_object"},
+            reasoning_effort=reasoning_effort,
+            extra_body=extra_body,
         ),
         privacy=ModelRequestPrivacy(
             contains_student_content=True,
