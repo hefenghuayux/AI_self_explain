@@ -30,7 +30,7 @@ async function signOut() {
       </div>
     </div>
   </header>
-  <RouterView />
+  <RouterView :key="$route.fullPath" />
 </template>
 
 <style scoped>
