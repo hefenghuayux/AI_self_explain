@@ -139,8 +139,11 @@ export interface TrajectoryRecord {
   label: string
   /** 账本收起时的单行预览，可能被后端截断成单行。 */
   summary: string
-  /** 展开时展示的完整原文；JSON 内容保留缩进换行。 */
-  fullText: string
+  /**
+   * 展开时展示的完整原文；JSON 内容保留缩进换行。
+   * 标记为可选：后端为缺少该字段的旧版本时前端仍要能展开。
+   */
+  fullText?: string
   status: TrajectoryRecordStatus
   /** 后端显式输出 null 表示该事件类型不记录耗时。 */
   durationMs?: number | null

@@ -205,6 +205,34 @@ describe("SessionEventLogView", () => {
     expect(contextRow.find("pre.record-full").exists()).toBe(false)
   })
 
+  it("后端响应缺少 fullText 时展开仍可用，不因 undefined.length 抛错", async () => {
+    const payload = trajectoryPayload()
+    // 模拟前后端版本不一致：旧后端不会返回 fullText。
+    const records = payload.runs[0].records.map((record) => {
+      const { fullText: _dropped, ...rest } = record
+      return rest as TrajectoryRecord
+    })
+    payload.runs[0].records = records
+    payload.events = records
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(payload))
+    vi.stubGlobal("fetch", fetchMock)
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const wrapper = await mountView()
+    const row = wrapper.findAll("div.record-row")[0]
+    await row.get("button.expand-button").trigger("click")
+    await flushPromises()
+
+    expect(errorSpy).not.toHaveBeenCalled()
+    // 退化成摘要，但展开区必须真的出现。
+    expect(row.find("pre.record-full").text()).toContain("1 加 1 等于 2。")
+    // 明确说明这是降级显示，且不提供复制，避免把被截断的摘要当成全文复制走。
+    expect(row.get(".record-full-size").text()).toContain("后端未返回完整原文")
+    expect(row.find("button.copy-button").exists()).toBe(false)
+
+    errorSpy.mockRestore()
+  })
+
   it("展开区提供复制全文，并显示完整正文长度", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
     vi.stubGlobal("fetch", fetchMock)
@@ -222,7 +250,6 @@ describe("SessionEventLogView", () => {
     expect(contextRow.get(".record-full-size").text()).toBe(
       `${'question · question:1\n{\n  "questionContent": "计算 1 + 1。"\n}'.length} 字符`,
     )
-
     await contextRow.get("button.copy-button").trigger("click")
     await flushPromises()
 

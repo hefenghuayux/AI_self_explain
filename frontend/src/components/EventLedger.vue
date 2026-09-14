@@ -83,10 +83,25 @@ function scopeHint(): string {
 const copiedSeq = ref<number>()
 const copyErrorSeq = ref<number>()
 
+/**
+ * 展开区展示的正文。
+ *
+ * 正常情况下就是后端给的完整原文；当后端是缺少 fullText 的旧版本时退回摘要，
+ * 这样展开至少能看到内容，而不是因为 undefined.length 打断整次渲染。
+ */
+function expandText(record: TrajectoryRecord): string {
+  return record.fullText ?? record.summary
+}
+
+/** 只有拿到完整原文时才提供复制，避免把被截断的摘要当成全文复制走。 */
+function hasFullText(record: TrajectoryRecord): boolean {
+  return typeof record.fullText === "string" && record.fullText !== ""
+}
+
 async function copyFullText(record: TrajectoryRecord) {
   copyErrorSeq.value = undefined
   try {
-    await navigator.clipboard.writeText(record.fullText)
+    await navigator.clipboard.writeText(expandText(record))
     copiedSeq.value = record.eventSeq
   } catch {
     copyErrorSeq.value = record.eventSeq
@@ -164,8 +179,12 @@ async function copyFullText(record: TrajectoryRecord) {
           <!-- 展开区跨两列铺满，直接显示未压缩的完整原文，保留 JSON 缩进与换行。 -->
           <div v-if="isExpanded(record.eventSeq)" class="record-full-block">
             <div class="record-full-bar">
-              <span class="record-full-size">{{ record.fullText.length }} 字符</span>
+              <span v-if="hasFullText(record)" class="record-full-size">
+                {{ expandText(record).length }} 字符
+              </span>
+              <span v-else class="record-full-size">后端未返回完整原文，以下为摘要</span>
               <button
+                v-if="hasFullText(record)"
                 type="button"
                 class="copy-button"
                 :aria-label="`复制记录 #${record.eventSeq} 的全文`"
@@ -175,7 +194,7 @@ async function copyFullText(record: TrajectoryRecord) {
               </button>
               <span v-if="copyErrorSeq === record.eventSeq" class="copy-error">复制失败，请手动选中</span>
             </div>
-            <pre class="record-full">{{ record.fullText }}</pre>
+            <pre class="record-full">{{ expandText(record) }}</pre>
           </div>
         </div>
         <p v-if="scopedRecords.length === 0" class="empty-state">
