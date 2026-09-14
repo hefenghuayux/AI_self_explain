@@ -34,6 +34,7 @@ function trajectoryPayload(): Trajectory {
       kind: "user",
       label: "学生",
       summary: "1 加 1 等于 2。",
+      fullText: "1 加 1 等于 2。",
       status: "complete",
       occurredAt: "2026-08-20T10:00:01Z",
       detail: { user: { text: "1 加 1 等于 2。", inputType: "text" } },
@@ -45,7 +46,8 @@ function trajectoryPayload(): Trajectory {
       eventType: "context.added",
       kind: "context",
       label: "上下文",
-      summary: "question · question:1",
+      summary: 'question · question:1 · { "questionContent": "计算 1 + 1。" }',
+      fullText: 'question · question:1\n{\n  "questionContent": "计算 1 + 1。"\n}',
       status: "complete",
       occurredAt: "2026-08-20T10:00:02Z",
       parentEventId: "evt_1",
@@ -61,6 +63,7 @@ function trajectoryPayload(): Trajectory {
       kind: "model_request",
       label: "模型请求",
       summary: "test-model · 1 条消息 · surfaceSeq #2",
+      fullText: "[user]\n请评价",
       status: "complete",
       occurredAt: "2026-08-20T10:00:03Z",
       parentEventId: "evt_2",
@@ -81,6 +84,7 @@ function trajectoryPayload(): Trajectory {
       kind: "model_response",
       label: "模型回复",
       summary: "correctness=CORRECT · valid",
+      fullText: '{\n  "correctness": "CORRECT",\n  "missingPoints": []\n}',
       status: "complete",
       durationMs: 1200,
       occurredAt: "2026-08-20T10:00:04Z",
@@ -101,6 +105,7 @@ function trajectoryPayload(): Trajectory {
       kind: "state_change",
       label: "状态变化",
       summary: "AI_EVALUATING → WAIT_STUDENT_ACTION",
+      fullText: "AI_EVALUATING → WAIT_STUDENT_ACTION\n原因：done",
       status: "complete",
       occurredAt: "2026-08-20T10:00:05Z",
       parentEventId: "evt_4",
@@ -181,19 +186,35 @@ describe("SessionEventLogView", () => {
     expect(wrapper.find("div.record-row").text()).toContain("未记录")
   })
 
-  it("展开按钮就地显示记录全文", async () => {
+  it("展开后显示未压缩的完整原文，而不是带省略号的摘要", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
     vi.stubGlobal("fetch", fetchMock)
 
     const wrapper = await mountView()
-    const firstRow = wrapper.find("div.record-row")
-    expect(firstRow.find(".expanded-text").exists()).toBe(false)
+    const contextRow = wrapper.findAll("div.record-row")[1]
+    expect(contextRow.find("pre.record-full").exists()).toBe(false)
 
-    await firstRow.get("button.expand-button").trigger("click")
-    expect(firstRow.get(".record-summary.expanded-text").text()).toBe("1 加 1 等于 2。")
+    await contextRow.get("button.expand-button").trigger("click")
 
-    await firstRow.get("button.expand-button").trigger("click")
-    expect(firstRow.find(".expanded-text").exists()).toBe(false)
+    // 完整原文保留 JSON 缩进换行，且不含摘要在截断时追加的省略号。
+    const full = contextRow.get("pre.record-full").text()
+    expect(full).toBe('question · question:1\n{\n  "questionContent": "计算 1 + 1。"\n}')
+    expect(full).not.toContain("…")
+
+    await contextRow.get("button.expand-button").trigger("click")
+    expect(contextRow.find("pre.record-full").exists()).toBe(false)
+  })
+
+  it("模型回复展开后按原始 JSON 换行展示", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const wrapper = await mountView()
+    const responseRow = wrapper.findAll("div.record-row")[2]
+    await responseRow.get("button.expand-button").trigger("click")
+
+    const lines = responseRow.get("pre.record-full").text().split("\n")
+    expect(lines).toEqual(["{", '  "correctness": "CORRECT",', '  "missingPoints": []', "}"])
   })
 
   it("点击记录行后展示结构化详情，并能跳转到父事件", async () => {

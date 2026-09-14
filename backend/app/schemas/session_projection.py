@@ -157,7 +157,9 @@ class TrajectoryRecord(ProjectionSchema):
     event_type: EventType
     kind: TrajectoryRecordKind
     label: str
+    # summary 是账本收起时的单行预览，可能被截断；full_text 是未压缩的完整原文。
     summary: str
+    full_text: str
     status: TrajectoryRecordStatus = "complete"
     duration_ms: int | None = None
     occurred_at: datetime

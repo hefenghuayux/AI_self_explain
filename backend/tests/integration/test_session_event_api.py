@@ -133,12 +133,18 @@ def test_session_event_projection_apis(settings, monkeypatch) -> None:
     assert [record["index"] for record in records] == [1, 2, 3, 4, 5]
     assert records[0]["summary"] == "1 加 1 等于 2。"
     assert records[1]["summary"] == "question · question:1 · 计算 1 + 1。"
+    assert records[1]["fullText"] == "question · question:1\n计算 1 + 1。"
     assert records[2]["status"] == "complete"
     assert records[2]["detail"]["modelRequest"]["surfaceSeq"] == 2
+    assert records[2]["fullText"] == "[user]\n请评价"
     assert records[3]["status"] == "complete"
     assert records[3]["durationMs"] == 3
+    # 有 rawContent 时 fullText 是未压缩的模型原文，摘要才做压缩。
+    assert records[3]["fullText"] == '{"correctness": "CORRECT"}'
+    assert records[3]["summary"] == "correctness=CORRECT · valid"
     assert records[3]["detail"]["modelResponse"]["output"] == {"correctness": "CORRECT"}
     assert records[4]["summary"] == "AI_EVALUATING → WAIT_STUDENT_ACTION"
+    assert records[4]["fullText"] == "AI_EVALUATING → WAIT_STUDENT_ACTION\n原因：done"
     session_events = trajectory.json()["events"]
     assert [record["eventSeq"] for record in session_events] == [0, 1, 2, 3, 4, 5]
     assert session_events[0]["kind"] == "session"

@@ -1,3 +1,4 @@
+import json
 from collections import defaultdict
 
 from sqlalchemy.orm import Session as DatabaseSession
@@ -31,14 +32,13 @@ from app.schemas.session_projection import (
 )
 from app.services.event_store import EventStore
 
-# 单行摘要的显示上限；超出部分在投影层截断，前端不再二次裁剪。
-# 前端账本行首屏可显示约 60 个汉字，再保留「展开」查看全文的余量。
+# 账本收起时单行摘要的显示上限。摘要是压缩过的预览，完整内容另见 fullText。
 SUMMARY_LIMIT = 200
 LABEL_LIMIT = 80
-# model.responded 的输出是 AI 判词，摘要只取前若干个标量字段，避免把整个 JSON 压成一行。
+# 摘要里最多取几个标量字段；容器不参与摘要，避免出现“N 项”这类计数替代品。
 OUTPUT_SUMMARY_FIELDS = 3
-# 上下文摘要里附带的内容预览长度：让账本直接能看到题目/评分点正文的一部分。
-CONTEXT_PREVIEW_LIMIT = 120
+# model.requested 全文展示的消息正文上限；超长提示词只截这一处，避免整条记录不可读。
+MESSAGE_PREVIEW_LIMIT = 4000
 
 KIND_BY_EVENT_TYPE: dict[str, TrajectoryRecordKind] = {
     "session.started": "session",
@@ -68,50 +68,57 @@ def _truncate(text: str, limit: int) -> str:
     return f"{normalized[:limit]}…"
 
 
-def _scalar_text(value: object) -> str | None:
+def _summary_value(value: object) -> str | None:
+    """单行摘要只接受标量；容器交给 fullText 完整展示，不做计数替代。"""
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, str):
         return value
     if isinstance(value, (int, float)):
         return str(value)
-    # list 只用一个计数占位，绝不把容器本身混进标量摘要。
-    if isinstance(value, list):
-        return f"{len(value)} 项"
-    if isinstance(value, dict):
-        return f"{len(value)} 个字段"
     return None
 
 
 def _summarize_output(output: dict[str, object]) -> str:
     parts: list[str] = []
     for key, value in output.items():
-        rendered = _scalar_text(value)
+        rendered = _summary_value(value)
         if rendered is None:
             continue
         parts.append(f"{key}={rendered}")
         if len(parts) == OUTPUT_SUMMARY_FIELDS:
             break
-    if parts:
-        return _truncate(" · ".join(parts), SUMMARY_LIMIT)
-    if output:
-        return f"{len(output)} 个字段"
-    return "无输出"
+    return " · ".join(parts)
 
 
-def _context_preview(content: str | dict[str, object]) -> str:
-    """上下文摘要在账本里给出一段可直接阅读的正文预览。"""
-    if isinstance(content, str):
-        return _truncate(content, CONTEXT_PREVIEW_LIMIT)
-    parts: list[str] = []
-    for key, value in content.items():
-        rendered = _scalar_text(value)
-        if rendered is None:
-            continue
-        parts.append(f"{key}={rendered}")
-        if len(parts) == OUTPUT_SUMMARY_FIELDS:
-            break
-    return _truncate(" · ".join(parts), CONTEXT_PREVIEW_LIMIT)
+def _pretty_json(value: object) -> str:
+    """按 JSON 缩进输出；已经是字符串的内容保持原样，不二次包引号。"""
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False, indent=2)
+
+
+def _model_response_full_text(data: dict[str, object]) -> str:
+    """模型原始回复优先；历史事件没有 rawContent 时退回判词 JSON。
+
+    两者都按原文换行展示，不压成一行，也不改写成“N 个字段”。
+    """
+    raw_content = data.get("rawContent")
+    if isinstance(raw_content, str) and raw_content.strip() != "":
+        return raw_content
+    return _pretty_json(data.get("output"))
+
+
+def _message_full_text(message: dict[str, object]) -> str:
+    role = message.get("role")
+    content = message.get("content")
+    text = content if isinstance(content, str) else _pretty_json(content)
+    if len(text) > MESSAGE_PREVIEW_LIMIT:
+        text = (
+            f"{text[:MESSAGE_PREVIEW_LIMIT]}…"
+            f"（该消息正文超过 {MESSAGE_PREVIEW_LIMIT} 字符，已截断）"
+        )
+    return f"[{role if isinstance(role, str) else 'unknown'}]\n{text}"
 
 
 def _normalize_detail(detail: TrajectoryRecordDetail) -> TrajectoryRecordDetail:
@@ -245,20 +252,22 @@ class TrajectoryService:
         kind = KIND_BY_EVENT_TYPE[event.event_type]
         status: TrajectoryRecordStatus = "complete"
         summary: str
+        full_text: str
         duration_ms: int | None = None
         detail: TrajectoryRecordDetail
 
         if event.event_type == "user.message":
             data = UserMessageData.model_validate(event.data)
+            full_text = data.text
             summary = _truncate(data.text, SUMMARY_LIMIT)
             detail = TrajectoryRecordDetail(
                 user=UserRecordDetail(text=data.text, input_type=data.inputType)
             )
         elif event.event_type == "context.added":
             data = ContextAddedData.model_validate(event.data)
-            preview = _context_preview(data.content)
+            full_text = f"{data.kind} · {data.source}\n{_pretty_json(data.content)}"
             summary = _truncate(
-                f"{data.kind} · {data.source}" + (f" · {preview}" if preview else ""),
+                f"{data.kind} · {data.source} · {' '.join(_pretty_json(data.content).split())}",
                 SUMMARY_LIMIT,
             )
             detail = TrajectoryRecordDetail(
@@ -268,8 +277,10 @@ class TrajectoryService:
             )
         elif event.event_type == "model.requested":
             data = ModelRequestedData.model_validate(event.data)
-            message_count = len(data.messages)
+            messages = tuple(message.model_dump(mode="json") for message in data.messages)
+            message_count = len(messages)
             status = _request_status(event, results_by_request)
+            full_text = "\n\n".join(_message_full_text(message) for message in messages)
             summary = _truncate(
                 f"{data.model} · {message_count} 条消息 · surfaceSeq #{data.surfaceSeq}",
                 SUMMARY_LIMIT,
@@ -278,9 +289,7 @@ class TrajectoryService:
                 model_request=ModelRequestDetail(
                     provider=data.provider,
                     model=data.model,
-                    messages=tuple(
-                        message.model_dump(mode="json") for message in data.messages
-                    ),
+                    messages=messages,
                     surface_seq=data.surfaceSeq,
                 )
             )
@@ -290,10 +299,16 @@ class TrajectoryService:
             validation = (
                 detail.model_response.validation if detail.model_response is not None else "invalid"
             )
-            summary = _truncate(f"{_summarize_output(output)} · {validation}", SUMMARY_LIMIT)
+            full_text = _model_response_full_text(event.data)
+            summary_fields = _summarize_output(output)
+            summary = _truncate(
+                f"{summary_fields} · {validation}" if summary_fields else validation,
+                SUMMARY_LIMIT,
+            )
             duration_ms = _recorded_duration_ms(event.data)
         elif event.event_type == "model.failed":
             data = ModelFailedData.model_validate(event.data)
+            full_text = f"{data.errorType}\n{data.message}"
             summary = _truncate(f"{data.errorType} · {data.message}", SUMMARY_LIMIT)
             status = "failed"
             duration_ms = data.durationMs
@@ -302,6 +317,7 @@ class TrajectoryService:
             )
         elif event.event_type == "state.changed":
             data = StateChangedData.model_validate(event.data)
+            full_text = f"{data.from_} → {data.to}\n原因：{data.reason}"
             summary = _truncate(f"{data.from_} → {data.to}", SUMMARY_LIMIT)
             detail = TrajectoryRecordDetail(
                 state_change=StateChangeDetail(
@@ -309,6 +325,7 @@ class TrajectoryService:
                 )
             )
         else:
+            full_text = "会话开始"
             summary = "会话开始"
             detail = TrajectoryRecordDetail(session=SessionRecordDetail())
 
@@ -320,6 +337,7 @@ class TrajectoryService:
             kind=kind,
             label=LABEL_BY_KIND[kind],
             summary=summary,
+            full_text=full_text,
             status=status,
             duration_ms=duration_ms,
             occurred_at=event.occurred_at,

@@ -130,9 +130,8 @@ function scopeHint(): string {
             <span class="kind-tag" :data-kind="record.kind">{{ record.label }}</span>
           </div>
           <div class="content-cell">
-            <p v-if="isExpanded(record.eventSeq)" class="record-summary expanded-text">{{ record.summary }}</p>
-            <span v-else class="record-summary" :title="record.summary">{{ record.summary }}</span>
-            <span class="record-duration">
+            <span v-if="!isExpanded(record.eventSeq)" class="record-summary" :title="record.summary">{{ record.summary }}</span>
+            <span v-if="!isExpanded(record.eventSeq)" class="record-duration">
               {{ formatDuration(record.durationMs) }}
             </span>
             <span v-if="record.status === 'failed'" class="record-status failed">失败</span>
@@ -148,6 +147,8 @@ function scopeHint(): string {
               {{ isExpanded(record.eventSeq) ? "收起" : "展开" }}
             </button>
           </div>
+          <!-- 展开区跨两列铺满，直接显示未压缩的完整原文，保留 JSON 缩进与换行。 -->
+          <pre v-if="isExpanded(record.eventSeq)" class="record-full">{{ record.fullText }}</pre>
         </div>
         <p v-if="scopedRecords.length === 0" class="empty-state">
           当前范围内没有可展示的记录；可在工具栏切换为「完整」查看模型请求与状态变化。
@@ -187,7 +188,8 @@ function scopeHint(): string {
 .kind-tag[data-kind="model_error"] { background: #dc2626; }
 .kind-tag[data-kind="state_change"] { background: #d97706; }
 .record-summary { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.expanded-text { overflow: visible; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 展开区跨满两列，按原文换行显示完整内容（JSON 缩进因此在界面上保留）。 */
+.record-full { grid-column: 1 / -1; max-height: 480px; overflow: auto; margin: 0; padding: var(--space-3) var(--space-4) var(--space-4); border-top: 1px dashed var(--color-border); color: var(--color-text-primary); background: var(--color-surface); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .record-duration, .record-time { flex: 0 0 auto; color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .record-time { min-width: 68px; text-align: right; }
 .record-status { flex: 0 0 auto; padding: 1px var(--space-2); border-radius: var(--radius-sm); font-size: 12px; }

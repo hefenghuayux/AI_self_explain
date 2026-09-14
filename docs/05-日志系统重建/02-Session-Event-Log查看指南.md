@@ -373,7 +373,8 @@ surface = SurfaceService(database_session).build_surface(session_id, as_of_seq=5
 | `eventSeq` / `eventId` / `eventType` | 事实来源，可用于按 seq 读取原始事件 |
 | `kind` | 记录类型，取值见下表 |
 | `label` | 类型的中文标签 |
-| `summary` | 单行摘要，由投影层截断到 120 字符，前端不再二次裁剪 |
+| `summary` | **账本收起时的单行预览**：压缩空白并截断到 200 字符 |
+| `fullText` | **账本展开时显示的完整原文**：不压缩，JSON 内容保留缩进换行 |
 | `status` | `complete` / `pending` / `failed`，只由 `parentEventId` 指向的结果事件决定 |
 | `durationMs` | 只有 `model.responded` / `model.failed` 有值 |
 | `occurredAt` / `parentEventId` | 时间轴定位与“父事件 / 直接结果”跳转依据 |
@@ -381,17 +382,17 @@ surface = SurfaceService(database_session).build_surface(session_id, as_of_seq=5
 
 事件类型到 `kind` 的映射是封闭的，不新增事件类型：
 
-| eventType | kind | summary 规则 |
-| --- | --- | --- |
-| `session.started` | `session` | `会话开始` |
-| `user.message` | `user` | 学生文本压缩空白后截断 |
-| `context.added` | `context` | `{kind} · {source} · 正文前 120 字符` |
-| `model.requested` | `model_request` | `{model} · N 条消息 · surfaceSeq #{n}` |
-| `model.responded` | `model_response` | `output` 中前 3 个标量字段（容器只给出计数） + `{validation}` |
-| `model.failed` | `model_error` | `{errorType} · {message}` |
-| `state.changed` | `state_change` | `{from} → {to}` |
+| eventType | kind | summary（单行预览） | fullText（完整原文） |
+| --- | --- | --- | --- |
+| `session.started` | `session` | `会话开始` | `会话开始` |
+| `user.message` | `user` | 学生文本压缩空白后截断 | 学生确认文本原文 |
+| `context.added` | `context` | `{kind} · {source} · JSON 压成一行` | `{kind} · {source}` 换行 + 缩进 JSON |
+| `model.requested` | `model_request` | `{model} · N 条消息 · surfaceSeq #{n}` | 每条消息以 `[role]` 开头依次换行排列 |
+| `model.responded` | `model_response` | `output` 前 3 个标量字段（容器不参与） + `{validation}` | 模型原始回复；历史事件缺 `rawContent` 时退回判词 JSON |
+| `model.failed` | `model_error` | `{errorType} · {message}` | `{errorType}` 换行 + `{message}` |
+| `state.changed` | `state_change` | `{from} → {to}` | `{from} → {to}` 换行 + `原因：{reason}` |
 
-摘要上限为 200 字符，前端账本行首屏可显示约 60 个汉字，其余通过行内「展开」按钮就地看全文，或点行在右侧详情面板查看结构化内容。
+摘要**只从标量字段取值**，遇到数组或对象不再生成 `N 项` / `N 个字段` 这类计数替代品——容器内容一律由 `fullText` 完整呈现。`model.requested` 的单条消息正文超过 4000 字符时会在 `fullText` 内截断并注明，这是唯一保留的截断点。
 
 `model.requested` 的 `status` 与 `steps[].status` 不同：这里是 `complete` / `failed` / `pending`，而 `steps` 沿用历史的 `success` / `failed` / `pending`，两者都由同一份“请求 → 直接结果”索引得出。
 
@@ -460,7 +461,7 @@ surface = SurfaceService(database_session).build_surface(session_id, as_of_seq=5
 1. 先看轨迹页的记录账本：按 `kind` 判断故障属于学生输入、状态转换、模型请求还是模型结果。
 2. 账本默认是「精简」范围，只显示上下文、用户与助手（模型）记录；需要看状态变化和模型请求时，点工具栏的「显示完整日志」切换，再点一次回到精简范围。
 3. 只看某一次自讲时，用工具栏的「运行」下拉切换运行；记录数超过 40 条时该运行默认收起，避免一次铺满整屏。
-4. 用时间线色块或搜索框定位记录；行内「展开」按钮就地显示该条摘要全文，点行则在右侧详情面板查看结构化字段和原始 JSON。
+4. 用时间线色块或搜索框定位记录；行内「展开」按钮直接铺开该条的完整原文（JSON 保留缩进换行，模型回复按大模型原始格式展示），点行则在右侧详情面板查看结构化字段。
 5. 需要看“模型当时看到了什么”时，选中 `model_request` 记录，切到「模型上下文」页签，用该请求的 `surfaceSeq` 重建 Surface。
 6. 需要确认因果链时，用详情面板「概述」页的父事件 / 直接结果跳转，它等价于按 `parentEventId` 走 Trace。
 7. 最后切到「原始 JSON」页签，检查完整 `data`、`eventId`、`parentEventId` 和准确顺序。

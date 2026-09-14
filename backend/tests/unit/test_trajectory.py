@@ -225,18 +225,24 @@ def test_trajectory_builds_one_record_per_event_with_kind_and_status(
         "model_request",
     ]
     assert records[1].summary == "1 加 1 等于 2。"
+    assert records[1].full_text == "1 加 1 等于 2。"
     assert records[1].detail.user is not None
     assert records[1].detail.user.input_type == "text"
+    # 该夹具的 content 是纯文本；摘要压缩成一行，fullText 另起一行给出完整原文。
     assert records[2].summary == "question · question:1 · 计算 1 + 1。"
+    assert records[2].full_text == "question · question:1\n计算 1 + 1。"
     assert records[2].detail.context is not None
     assert records[3].summary == "test-model · 1 条消息 · surfaceSeq #2"
+    assert records[3].full_text == "[user]\n请评价"
     assert records[3].status == "complete"
     assert records[3].detail.model_request is not None
     assert records[3].detail.model_request.surface_seq == 2
     assert records[3].detail.model_request.messages == (
         {"role": "user", "content": "请评价"},
     )
-    assert records[4].summary == "correctness=CORRECT · confidence=1 · missingPoints=0 项 · valid"
+    # 容器字段不再压成“N 项”，摘要只保留标量字段。
+    assert records[4].summary == "correctness=CORRECT · confidence=1 · valid"
+    assert records[4].full_text == '{"correctness": "CORRECT"}'
     assert records[4].status == "complete"
     assert records[4].duration_ms == 3
     assert records[4].detail.model_response is not None
@@ -245,12 +251,50 @@ def test_trajectory_builds_one_record_per_event_with_kind_and_status(
     assert records[5].kind == "model_error"
     assert records[5].status == "failed"
     assert records[5].duration_ms == 30000
+    assert records[5].full_text == "TIMEOUT\n超时"
     assert records[5].detail.model_error is not None
     assert records[5].detail.model_error.error_type == "TIMEOUT"
     assert records[6].summary == "AI_EVALUATING → WAIT_STUDENT_ACTION"
+    assert records[6].full_text == "AI_EVALUATING → WAIT_STUDENT_ACTION\n原因：done"
     assert records[6].detail.state_change is not None
     assert records[6].detail.state_change.reason == "done"
     assert records[7].status == "pending"
+
+
+def test_trajectory_full_text_keeps_json_line_breaks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """上下文内容为对象时，摘要压成一行，fullText 保持 JSON 缩进换行。"""
+    events = [
+        event(
+            1,
+            "context.added",
+            {
+                "kind": "question",
+                "source": "question:1",
+                "content": {"questionContent": "计算 1 + 1。", "rubricPoints": ["列出加法过程"]},
+            },
+            run_id="run_1",
+        ),
+    ]
+    trajectory = build_service(monkeypatch, events).build_trajectory(42)
+
+    record = trajectory.events[0]
+    assert record.kind == "context"
+    assert record.summary == (
+        "question · question:1 · "
+        '{ "questionContent": "计算 1 + 1。", "rubricPoints": [ "列出加法过程" ] }'
+    )
+    assert "…" not in record.summary
+    assert record.full_text == (
+        "question · question:1\n"
+        "{\n"
+        '  "questionContent": "计算 1 + 1。",\n'
+        '  "rubricPoints": [\n'
+        '    "列出加法过程"\n'
+        "  ]\n"
+        "}"
+    )
 
 
 def test_trajectory_record_carries_run_scoped_index_and_parent_event(
@@ -302,6 +346,8 @@ def test_trajectory_reads_legacy_model_responded_without_raw_content(
     request_record, response_record = trajectory.events
     assert request_record.status == "complete"
     assert response_record.summary == "correctness=WRONG · valid"
+    # 没有 rawContent 时，全文退回判词 JSON 的缩进形式，而不是“N 个字段”。
+    assert response_record.full_text == '{\n  "correctness": "WRONG"\n}'
     assert response_record.duration_ms == 29946
     assert response_record.detail.model_response is not None
     assert response_record.detail.model_response.raw_content is None
