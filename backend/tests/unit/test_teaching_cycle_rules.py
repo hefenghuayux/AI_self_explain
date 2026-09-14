@@ -1,6 +1,5 @@
 from app.rules.teaching_cycle import (
     completion_type_for,
-    decide_evaluation,
     support_limit_reached,
     update_coverage,
 )
@@ -17,20 +16,6 @@ def test_update_coverage_tracks_new_points_only_for_current_round() -> None:
     assert current == ["评分点 A"]
     assert all_points == ["旧轮评分点", "评分点 A"]
     assert no_progress == 2
-
-
-def test_focused_question_remains_a_counted_teaching_action(settings) -> None:
-    decision = decide_evaluation(
-        next_action="ASK_FOCUSED_QUESTION",
-        no_progress_count=settings.no_progress_limit,
-        settings=settings,
-        solution_exposed=False,
-        round_number=1,
-        support_count_total=0,
-        need_human_reason=None,
-    )
-
-    assert decision.action == "ASK_FOCUSED_QUESTION"
 
 
 def test_support_limits_are_derived_from_settings(settings) -> None:

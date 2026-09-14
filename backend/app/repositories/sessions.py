@@ -35,8 +35,8 @@ from app.rules.teaching_cycle import (
 from app.rules.teaching_decision import TeachingDecision
 from app.schemas.ai_evaluation import AIEvaluationOutput
 from app.schemas.model_request_snapshot import ModelRequestSnapshot
+from app.schemas.merged import MergedTeachingQuestion
 from app.schemas.support import GuidedAnswer, GuidedQuestion
-from app.schemas.teaching import TeachingOutput
 from app.services.audio_storage import AudioCapture, AudioStorage
 from app.services.event_store import EventStore
 from app.services.session_event_log import SessionEventLog
@@ -473,10 +473,11 @@ class SessionRepository:
         session: Session,
         evaluation_id: int,
         decision: TeachingDecision,
-        teaching_output: TeachingOutput | None,
+        content: str | None = None,
+        questions: list[MergedTeachingQuestion] | None = None,
         run_id: str | None = None,
     ) -> tuple[Session, SupportEvent | None]:
-        if decision.should_generate != (teaching_output is not None):
+        if decision.should_generate != (content is not None):
             raise ValueError("教学决策与生成结果不一致")
         before_snapshot = session_snapshot(session)
         session.covered_points_current_round = decision.coverage.current_round
@@ -486,10 +487,11 @@ class SessionRepository:
             session.no_progress_help_request_count = 0
 
         support_event = None
-        if teaching_output is not None:
+        if content is not None:
             if decision.allowed_action is None:
                 raise ValueError("教学生成结果缺少后端允许动作")
-            questions = [GuidedQuestion.model_validate(item) for item in teaching_output.questions]
+            if questions is None:
+                questions = []
             support_event = SupportEvent(
                 session_id=session.id,
                 request_id=current_request_id(),
@@ -497,7 +499,7 @@ class SessionRepository:
                 support_type=decision.allowed_action,
                 round=session.round,
                 status="VALID",
-                content=teaching_output.content,
+                content=content,
                 support_kind="GUIDED_QUESTIONS" if questions else "EVALUATION",
                 main_draft=session.current_draft,
                 doubt_text=None,
@@ -543,38 +545,6 @@ class SessionRepository:
         if support_event is not None:
             self.database_session.refresh(support_event)
         return session, support_event
-
-    def record_teaching_generation_failure(
-        self,
-        *,
-        session: Session,
-        evaluation_id: int,
-        decision: TeachingDecision,
-        run_id: str | None = None,
-    ) -> Session:
-        if not decision.should_generate:
-            raise ValueError("无需生成教学内容的决策不能记录生成失败")
-        before_snapshot = session_snapshot(session)
-        session.covered_points_current_round = decision.coverage.current_round
-        session.covered_points_all = decision.coverage.all_rounds
-        session.no_progress_count = decision.coverage.no_progress_count
-        if decision.coverage.reset_help_request_count:
-            session.no_progress_help_request_count = 0
-        session.status = STATUS_NEED_HUMAN
-        session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
-        session.need_human_reason = "教学生成失败，会话已进入人工处理"
-        session.finished_at = datetime.now(UTC)
-        session.version += 1
-        self._record_transition(
-            session=session,
-            trigger_type="TEACHING_GENERATION_FAILED",
-            before_snapshot=before_snapshot,
-            related_evaluation_id=evaluation_id,
-            run_id=run_id,
-        )
-        self.database_session.commit()
-        self.database_session.refresh(session)
-        return session
 
     def complete_voice_transcription(
         self,

@@ -33,7 +33,7 @@ from app.rules.session_lifecycle import (
     can_submit_student_interruption,
 )
 from app.rules.teaching_decision import decide_teaching
-from app.schemas.ai_evaluation import AIEvaluationOutput, AIEvaluationResponse, covered_point_labels
+from app.schemas.ai_evaluation import AIEvaluationResponse
 from app.schemas.session import (
     AppealInput,
     CreateSessionInput,
@@ -54,10 +54,8 @@ from app.schemas.session import (
 from app.schemas.support import GuidedAnswer, SupportEventResponse
 from app.services.ai_evaluation import AIEvaluationService
 from app.services.ai_support import AISupportService
-from app.services.ai_teaching import AITeachingError, AITeachingService
 from app.services.audio_storage import AudioStorage, AudioStorageError
 from app.services.realtime_asr import ASRServiceError, ASRStreamEvent, RealtimeASRService
-from app.services.teaching_context import TeachingContextService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -276,26 +274,18 @@ def submit_text_attempt(
     if isinstance(evaluation_result, Session):
         return to_session_response(repository, evaluation_result)
 
-    evaluation_output = AIEvaluationOutput.model_validate(evaluation_result)
-    decision_evaluation = evaluation_output.model_copy(
-        update={
-            "covered_points": covered_point_labels(
-                question.rubric_points or [], evaluation_output.covered_points
-            )
-        }
-    )
+    merged_output = evaluation_result.merged_output
     decision = decide_teaching(
-        evaluation=decision_evaluation,
+        merged_output=merged_output,
         session=session,
         settings=request.app.state.settings,
-        evaluation_mode=evaluation_result.evaluation_mode,
+        evaluation_mode=evaluation_result.evaluation_record.evaluation_mode,
     )
     if not decision.should_generate:
         decided_session, _ = repository.apply_teaching_decision(
             session=session,
-            evaluation_id=evaluation_result.id,
+            evaluation_id=evaluation_result.evaluation_record.id,
             decision=decision,
-            teaching_output=None,
             run_id=session_run_id(session.id, attempt.id),
         )
         return to_session_response(
@@ -304,46 +294,16 @@ def submit_text_attempt(
             TeachingNotRequiredResponse(status="NOT_REQUIRED"),
         )
 
-    context = TeachingContextService(database_session).build(
-        question=question,
-        session=session,
-        attempt=attempt,
-        evaluation=evaluation_output,
-        decision=decision,
-    )
-    try:
-        teaching_output = AITeachingService(
-            database_session, request.app.state.settings, request.app.state.ai_http_client
-        ).generate(session=session, context=context)
-    except AITeachingError as error:
-        repository.record_teaching_generation_failure(
-            session=session,
-            evaluation_id=evaluation_result.id,
-            decision=decision,
-            run_id=session_run_id(session.id, attempt.id),
-        )
-        logger.error(
-            "教学生成失败：%s",
-            error,
-            extra={"operation": "generate_teaching", "sessionId": session.id},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={
-                "code": "TEACHING_GENERATION_FAILED",
-                "message": "教学生成失败，会话已进入人工处理",
-                "sessionId": session.id,
-            },
-        ) from error
     decided_session, support_event = repository.apply_teaching_decision(
         session=session,
-        evaluation_id=evaluation_result.id,
+        evaluation_id=evaluation_result.evaluation_record.id,
         decision=decision,
-        teaching_output=teaching_output,
+        content=merged_output.content,
+        questions=merged_output.questions,
         run_id=session_run_id(session.id, attempt.id),
     )
     if support_event is None:
-        raise RuntimeError("教学输出校验成功后缺少支持事件")
+        raise RuntimeError("合并输出校验成功后缺少支持事件")
     return to_session_response(
         repository,
         decided_session,

@@ -39,7 +39,6 @@ def test_rejects_missing_required_configuration(
     ("field", "value"),
     [
         ("first_round_support_limit", "0"),
-        ("no_progress_limit", "-1"),
         ("ai_request_timeout_seconds", "0"),
         ("ai_transport_max_retries", "-1"),
         ("audio_max_size_mib", "0"),

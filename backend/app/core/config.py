@@ -29,7 +29,6 @@ class Settings(BaseSettings):
 
     first_round_support_limit: PositiveInt
     second_round_support_limit: PositiveInt
-    no_progress_limit: PositiveInt
     guided_question_request_limit: PositiveInt
 
     ai_request_timeout_seconds: PositiveFloat

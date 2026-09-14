@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 TEST_ENV = {
     "FIRST_ROUND_SUPPORT_LIMIT": "6",
     "SECOND_ROUND_SUPPORT_LIMIT": "3",
-    "NO_PROGRESS_LIMIT": "2",
     "GUIDED_QUESTION_REQUEST_LIMIT": "2",
     "AI_REQUEST_TIMEOUT_SECONDS": "60",
     "AI_TRANSPORT_MAX_RETRIES": "2",
@@ -94,3 +93,8 @@ def authenticated_test_client(settings: Settings) -> TestClient:
     client = TestClient(create_app(settings))
     client.headers.update({"Authorization": f"Bearer {token}"})
     return client
+
+
+# 禁用 pytest 的 tmpdir 清理钩子（DSH 沙箱下 os.listdir 可能被拒绝）
+def pytest_sessionfinish(session):
+    pass

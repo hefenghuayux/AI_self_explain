@@ -4,24 +4,10 @@ from app.core.config import Settings
 from app.models.session import Session
 from app.rules.teaching_cycle import completion_type_for, support_limit_for, update_coverage
 from app.schemas.ai_evaluation import AIEvaluationOutput
-from app.schemas.teaching import (
-    GeneratedTeachingAction,
-    LearningPhase,
-    ProgressState,
-    SolutionExposure,
-    SupportBudgetState,
-    TeachingMetadata,
-)
+from app.schemas.merged import MergedModelOutput
+from app.schemas.teaching import GeneratedTeachingAction
 
-INITIAL_ACTIONS: dict[tuple[str, str], str] = {
-    ("CORRECT", "COMPLETE"): "COMPLETE",
-    ("CORRECT", "INCOMPLETE"): "ASK_FOCUSED_QUESTION",
-    ("WRONG", "COMPLETE"): "GIVE_CORRECTION",
-    ("WRONG", "INCOMPLETE"): "CORRECT_AND_ASK",
-    ("UNCERTAIN", "COMPLETE"): "NEED_HUMAN",
-    ("UNCERTAIN", "INCOMPLETE"): "NEED_HUMAN",
-}
-COUNTED_GENERATED_ACTIONS = frozenset({"GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"})
+COUNTED_SUPPORT_TYPES = frozenset({"GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"})
 
 
 @dataclass(frozen=True)
@@ -44,32 +30,33 @@ class TeachingDecision:
     expose_solution: bool
     support_count_round_override: int | None
     coverage: CoverageResult
-    metadata: TeachingMetadata
 
 
 def decide_teaching(
     *,
-    evaluation: AIEvaluationOutput,
+    merged_output: MergedModelOutput,
     session: Session,
     settings: Settings,
     evaluation_mode: str = "FULL_RUBRIC",
 ) -> TeachingDecision:
+    """根据合并输出的评价字段和模型给出的教学动作做确定性决策。
+
+    教学动作（追问/提示/纠错）由模型在输出中通过 teachingAction 给出；
+    本轮是否新增评分点仍由后端按 coveredPoints 与
+    coveredPointsCurrentRound 的差集确定，只用于覆盖记录和审计。
+    后端确定性负责：COMPLETED / NEED_HUMAN / 支持上限阻断。
+    """
+    evaluation = _as_evaluation_output(merged_output)
     if evaluation_mode != "FULL_RUBRIC":
-        return _decide_without_rubric(evaluation=evaluation, session=session, settings=settings)
+        return _decide_without_rubric(
+            evaluation=evaluation, session=session, settings=settings
+        )
 
     coverage = _coverage_result(evaluation=evaluation, session=session)
-    action = INITIAL_ACTIONS[(evaluation.correctness, evaluation.completeness)]
 
-    if (
-        action == "ASK_FOCUSED_QUESTION"
-        and coverage.no_progress_count >= settings.no_progress_limit
-    ):
-        action = "GIVE_HINT"
-
-    if action == "COMPLETE":
+    if merged_output.correctness == "CORRECT" and merged_output.completeness == "COMPLETE":
         return _decision(
             session=session,
-            settings=settings,
             coverage=coverage,
             next_status="COMPLETED",
             next_flow_stage="WAIT_STUDENT_ACTION",
@@ -80,24 +67,26 @@ def decide_teaching(
             ),
         )
 
-    if action == "NEED_HUMAN":
-        if evaluation.need_human_reason is None:
+    if merged_output.correctness == "UNCERTAIN":
+        if merged_output.need_human_reason is None:
             raise ValueError("UNCERTAIN 评价缺少人工处理原因")
         return _decision(
             session=session,
-            settings=settings,
             coverage=coverage,
             next_status="IN_PROGRESS",
             next_flow_stage="WAIT_STUDENT_ACTION",
-            need_human_reason=evaluation.need_human_reason,
+            need_human_reason=merged_output.need_human_reason,
         )
 
-    if action in COUNTED_GENERATED_ACTIONS:
+    action = merged_output.teaching_action
+    if action is None:
+        raise ValueError("非终态合并输出缺少 teachingAction")
+
+    if action in COUNTED_SUPPORT_TYPES:
         support_limit = support_limit_for(round_number=session.round, settings=settings)
         if session.support_count_round + 1 >= support_limit:
             return _decision(
                 session=session,
-                settings=settings,
                 coverage=coverage,
                 next_status="STOPPED_LIMIT" if session.round == 2 else "IN_PROGRESS",
                 next_flow_stage="SHOWING_FULL_SOLUTION",
@@ -107,7 +96,6 @@ def decide_teaching(
 
     return _decision(
         session=session,
-        settings=settings,
         coverage=coverage,
         allowed_action=action,
         should_generate=True,
@@ -121,7 +109,6 @@ def _decide_without_rubric(
     if evaluation.correctness == "CORRECT":
         return _decision(
             session=session,
-            settings=settings,
             coverage=coverage,
             next_status="COMPLETED",
             next_flow_stage="WAIT_STUDENT_ACTION",
@@ -135,7 +122,6 @@ def _decide_without_rubric(
     reason = evaluation.need_human_reason or "题目未配置评分点，无法生成可审计的针对性支持"
     return _decision(
         session=session,
-        settings=settings,
         coverage=coverage,
         next_status="IN_PROGRESS",
         next_flow_stage="WAIT_STUDENT_ACTION",
@@ -143,7 +129,9 @@ def _decide_without_rubric(
     )
 
 
-def _coverage_result(*, evaluation: AIEvaluationOutput, session: Session) -> CoverageResult:
+def _coverage_result(
+    *, evaluation: AIEvaluationOutput, session: Session
+) -> CoverageResult:
     if evaluation.correctness == "UNCERTAIN":
         return CoverageResult(
             current_round=list(session.covered_points_current_round),
@@ -172,10 +160,19 @@ def _coverage_result(*, evaluation: AIEvaluationOutput, session: Session) -> Cov
     )
 
 
+def _as_evaluation_output(merged_output: MergedModelOutput) -> AIEvaluationOutput:
+    return AIEvaluationOutput(
+        correctness=merged_output.correctness,
+        completeness=merged_output.completeness,
+        covered_points=merged_output.covered_points,
+        error_evidence=merged_output.error_evidence,
+        need_human_reason=merged_output.need_human_reason,
+    )
+
+
 def _decision(
     *,
     session: Session,
-    settings: Settings,
     coverage: CoverageResult,
     allowed_action: GeneratedTeachingAction | None = None,
     should_generate: bool = False,
@@ -196,40 +193,4 @@ def _decision(
         expose_solution=expose_solution,
         support_count_round_override=support_count_round_override,
         coverage=coverage,
-        metadata=_metadata(session=session, settings=settings, coverage=coverage),
-    )
-
-
-def _metadata(
-    *, session: Session, settings: Settings, coverage: CoverageResult
-) -> TeachingMetadata:
-    remaining = support_limit_for(round_number=session.round, settings=settings) - (
-        session.support_count_round
-    )
-    if remaining <= 0:
-        budget_state: SupportBudgetState = "EXHAUSTED"
-    elif remaining == 1:
-        budget_state = "FINAL_ALLOWED_SUPPORT"
-    elif remaining == 2:
-        budget_state = "APPROACHING_LIMIT"
-    elif session.support_count_round == 0:
-        budget_state = "EARLY"
-    else:
-        budget_state = "NORMAL"
-    learning_phase: LearningPhase = (
-        "REEXPLANATION_AFTER_SOLUTION"
-        if session.round == 2 or session.solution_exposed
-        else "FIRST_ROUND"
-    )
-    progress_state: ProgressState = (
-        "MAKING_PROGRESS" if coverage.newly_covered else "NO_NEW_PROGRESS"
-    )
-    solution_exposure: SolutionExposure = (
-        "ALREADY_SHOWN_DO_NOT_REPEAT" if session.solution_exposed else "FORBIDDEN"
-    )
-    return TeachingMetadata(
-        learning_phase=learning_phase,
-        support_budget_state=budget_state,
-        progress_state=progress_state,
-        solution_exposure=solution_exposure,
     )

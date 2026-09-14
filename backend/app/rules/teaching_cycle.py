@@ -1,17 +1,6 @@
-from dataclasses import dataclass
-
 from app.core.config import Settings
 
 COUNTED_SUPPORT_TYPES = frozenset({"GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"})
-
-
-@dataclass(frozen=True)
-class EvaluationDecision:
-    action: str
-    next_status: str | None = None
-    next_flow_stage: str | None = None
-    completion_type: str | None = None
-    need_human_reason: str | None = None
 
 
 def update_coverage(
@@ -29,39 +18,6 @@ def update_coverage(
         _append_unique(covered_points_all, covered_points),
         next_no_progress_count,
     )
-
-
-def decide_evaluation(
-    *,
-    next_action: str,
-    no_progress_count: int,
-    settings: Settings,
-    solution_exposed: bool,
-    round_number: int,
-    support_count_total: int,
-    need_human_reason: str | None,
-) -> EvaluationDecision:
-    if next_action == "COMPLETE":
-        completion_type = completion_type_for(
-            solution_exposed=solution_exposed,
-            round_number=round_number,
-            support_count_total=support_count_total,
-        )
-        return EvaluationDecision(
-            action="COMPLETE",
-            next_status="COMPLETED",
-            next_flow_stage="WAIT_STUDENT_ACTION",
-            completion_type=completion_type,
-        )
-    if next_action == "NEED_HUMAN":
-        if need_human_reason is None:
-            raise ValueError("NEED_HUMAN 评价缺少具体原因")
-        return EvaluationDecision(
-            action="NEED_HUMAN",
-            next_flow_stage="WAIT_STUDENT_ACTION",
-            need_human_reason=need_human_reason,
-        )
-    return EvaluationDecision(action=next_action)
 
 
 def support_limit_reached(
