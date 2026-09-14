@@ -18,6 +18,8 @@ import {
 import VoiceRecorder from "../components/VoiceRecorder.vue"
 import { fetchQuestion } from "../api/questions"
 import { authUser } from "../stores/auth"
+import submitImage from "../assets/submit.jpg"
+import micImage from "../assets/microphone.jpg"
 import type {
   AIEvaluation,
   InitialChoice,
@@ -241,15 +243,15 @@ const segmentOptions = computed(() => segmentEntries.map((segment) => ({
 const selfExplainCharacterCount = computed(() => selfExplainDraft.value.length)
 const feedbackDetailsOpen = ref(false)
 
-const learningProgressSummary = computed(() => {
-  const rubricPoints = question.value?.rubricPoints ?? []
-  const rubricPointSet = new Set(rubricPoints)
-  const coveredPointCount = new Set(
-    (session.value?.coveredPointsCurrentRound ?? []).filter((point) => rubricPointSet.has(point)),
-  ).size
-  const remainingPointCount = Math.max(rubricPoints.length - coveredPointCount, 0)
-  return `已讲清 ${coveredPointCount} 个关键点，还差 ${remainingPointCount} 个`
-})
+// const learningProgressSummary = computed(() => {
+//   const rubricPoints = question.value?.rubricPoints ?? []
+//   const rubricPointSet = new Set(rubricPoints)
+//   const coveredPointCount = new Set(
+//     (session.value?.coveredPointsCurrentRound ?? []).filter((point) => rubricPointSet.has(point)),
+//   ).size
+//   const remainingPointCount = Math.max(rubricPoints.length - coveredPointCount, 0)
+//   return `已讲清 ${coveredPointCount} 个关键点，还差 ${remainingPointCount} 个`
+// })
 
 const coveredPointNumbers = computed(() => {
   return session.value?.latestEvaluation?.coveredPoints ?? []
@@ -570,15 +572,6 @@ async function respondToSolution(understood: boolean) {
           <h2 id="question-title">题目</h2>
           <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </section>
-        <section class="session-section progress-section" aria-label="本轮学习进度">
-          <div class="session-summary">
-            <div class="summary-item learning-progress-item">
-              <span>本轮学习进度</span>
-              <strong data-testid="learning-progress">{{ learningProgressSummary }}</strong>
-              <small>辅助支持 {{ session.supportCountRound }} 次</small>
-            </div>
-          </div>
-        </section>
         <section v-if="session.latestEvaluation" class="session-section feedback-section" aria-labelledby="feedback-title" aria-live="polite">
           <div class="section-heading feedback-heading"><div><h2 id="feedback-title">最新反馈</h2><p>先看结论，再按需查看评价依据。</p></div></div>
           <div class="feedback-card">
@@ -623,7 +616,7 @@ async function respondToSolution(understood: boolean) {
                   v-model="selfExplainDraft"
                   data-testid="main-draft"
                   type="textarea"
-                  :rows="8"
+                  :rows="5"
                   placeholder="输入题干理解、分析过程或完整自讲"
                   :disabled="submitting || session.flowStage === 'AI_EVALUATING'"
                   aria-label="自讲输入"
@@ -636,15 +629,26 @@ async function respondToSolution(understood: boolean) {
                     && session.flowStage !== 'SHOWING_FULL_SOLUTION'"
                   class="actions self-explain-actions"
                 >
-                  <el-button data-testid="submit-explanation" type="primary" :loading="submitting" :aria-busy="submitting" @click="submitExplanation">{{ submitting ? '正在提交自讲' : '提交自讲' }}</el-button>
-                  <el-button
+                  <button
+                      data-testid="submit-explanation"
+                      class="action-btn submit-btn"
+                      :disabled="submitting || voiceRecording"
+                      @click="submitExplanation"
+                    >
+                      <img :src="submitImage" alt="提交" class="action-btn-icon" />
+                      <span class="action-btn-label">提交</span>
+                    </button>
+                  <button
                     v-if="session.flowStage === 'WAIT_INITIAL_CHOICE'
                       || session.flowStage === 'WAIT_STUDENT_ACTION'"
                     data-testid="start-voice"
+                    class="action-btn voice-btn"
                     :disabled="voiceRecording"
-                    :loading="submitting"
                     @click="startVoiceRecording"
-                  >开始录音</el-button>
+                  >
+                    <img :src="micImage" alt="录音" class="action-btn-icon" />
+                    <span class="action-btn-label">录音</span>
+                  </button>
                   <VoiceRecorder
                     v-if="session.flowStage === 'CAPTURING_INPUT' && !submitting"
                     ref="voiceRecorderRef"
@@ -668,21 +672,22 @@ async function respondToSolution(understood: boolean) {
                       v-model="guidedAnswerText[item.id]"
                       :data-testid="`guided-answer-${item.id}`"
                       type="textarea"
-                      :rows="2"
+                      :rows="5"
                       :disabled="submitting || guidedAnswerSubmitted(item.id)"
                     />
                     <div class="actions">
-                      <el-button
+                      <button
                         :data-testid="`submit-guided-answer-${item.id}`"
-                        type="primary"
-                        :loading="submitting"
+                        class="action-btn submit-btn"
                         :disabled="guidedAnswerSubmitted(item.id)
                           || voiceRecording
+                          || submitting
                           || session.flowStage !== 'WAIT_GUIDED_ANSWERS'"
                         @click="submitGuidedQuestionAnswer(item.id)"
                       >
-                        提交回答
-                      </el-button>
+                        <img :src="submitImage" alt="提交" class="action-btn-icon" />
+                        <span class="action-btn-label">提交</span>
+                      </button>
                       <VoiceRecorder
                         v-if="session.flowStage === 'WAIT_GUIDED_ANSWERS' && !guidedAnswerSubmitted(item.id)"
                         :session-id="sessionId"
@@ -715,20 +720,15 @@ async function respondToSolution(understood: boolean) {
                   :disabled="submitting"
                 />
                 <div class="actions">
-                  <el-button
-                    data-testid="submit-doubt"
-                    type="primary"
-                    :loading="submitting"
-                    :disabled="submitting || voiceRecording || !canSubmitStudentInterruption()"
-                    @click="submitDoubt"
-                  >我有疑问</el-button>
-                  <el-button
-                    v-if="session.flowStage === 'WAIT_INITIAL_CHOICE'"
-                    data-testid="start-voice-doubt"
-                    :disabled="voiceRecording"
-                    :loading="submitting"
-                    @click="startDoubtVoiceRecording"
-                  >开始录音</el-button>
+                    <button
+                      data-testid="submit-doubt"
+                      class="action-btn submit-btn"
+                      :disabled="submitting || voiceRecording || !canSubmitStudentInterruption()"
+                      @click="submitDoubt"
+                    >
+                      <img :src="submitImage" alt="提交" class="action-btn-icon" />
+                      <span class="action-btn-label">提交</span>
+                    </button>
                   <VoiceRecorder
                     v-if="canSubmitStudentInterruption()"
                     ref="doubtVoiceRecorderRef"
@@ -846,14 +846,6 @@ h2 { font-size: var(--font-size-lg); }
 .session-section p { color: var(--color-text-secondary); }
 .section-heading { display: flex; justify-content: space-between; gap: var(--space-4); }
 .section-description, .section-heading p { margin: var(--space-1) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.session-summary { display: flex; width: fit-content; min-width: 180px; overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
-.summary-item { display: flex; min-width: 0; flex-direction: column; padding: var(--space-4); gap: var(--space-1); }
-.summary-item + .summary-item { border-left: 1px solid var(--color-border); }
-.summary-item span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.summary-item strong { font-size: var(--font-size-lg); }
-.learning-progress-item { min-width: min(100%, 360px); }
-.learning-progress-item strong { line-height: 1.5; }
-.learning-progress-item small { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .evaluation-results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .evaluation-result { padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-muted); }
 .evaluation-result span { display: block; color: var(--color-text-muted); font-size: var(--font-size-sm); }
@@ -872,10 +864,23 @@ h2 { font-size: var(--font-size-lg); }
   box-shadow: var(--shadow-md);
 }
 .dialog-pane { min-height: 190px; }
+.action-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.action-btn:hover { border-color: var(--color-brand-600); }
+.action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.action-btn-icon { width: 22px; height: 22px; display: block; }
+.action-btn-label { color: var(--color-text-muted); font-size: 11px; line-height: 1; }
 .draft-meta { display: flex; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.self-explain-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.self-explain-actions .el-button { width: 100%; min-width: 0; }
-.self-explain-actions .el-button:only-child { grid-column: 1 / -1; }
 .guided-question + .guided-question { margin-top: var(--space-4); }
 .guided-question p { margin: 0 0 var(--space-2); color: var(--color-text-primary); font-weight: 600; }
 .guided-question .voice-recorder { margin-top: 0; }
@@ -954,7 +959,7 @@ h2 { font-size: var(--font-size-lg); }
   .question-content { padding: var(--space-4); }
   .dialog-panel { padding: var(--space-4); }
   .draft-meta { align-items: flex-start; flex-direction: column; gap: 0; }
-  .actions .el-button { flex: 1 1 100%; }
+  .actions .el-button, .actions .action-btn { flex: 1 1 100%; }
   .conversation-scroll { height: 480px; }
   .conversation-list { padding: var(--space-3); }
   .conversation-message { width: 100%; max-width: none; }

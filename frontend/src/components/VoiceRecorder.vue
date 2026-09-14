@@ -2,6 +2,7 @@
 import { onBeforeUnmount, ref } from "vue"
 
 import { getAuthToken } from "../stores/auth"
+import micImage from "../assets/microphone.jpg"
 import type { VoiceInputTarget } from "../types/session"
 
 const props = withDefaults(defineProps<{
@@ -166,8 +167,16 @@ defineExpose({ start })
     </div>
     <p v-if="!inline && previewText" class="transcript-preview" aria-live="polite">正在转写：{{ previewText }}</p>
     <div class="actions">
-      <el-button v-if="!recording" :data-testid="startTestId" :disabled="disabled" @click="start">开始录音</el-button>
-      <el-button v-else :data-testid="stopTestId" type="danger" @click="stop">结束录音</el-button>
+      <button
+        :data-testid="recording ? stopTestId : startTestId"
+        class="voice-btn"
+        :class="{ 'is-recording': recording }"
+        :disabled="disabled"
+        @click="recording ? stop() : start()"
+      >
+        <img :src="micImage" alt="录音" class="voice-btn-icon" />
+        <span class="voice-btn-label">录音</span>
+      </button>
     </div>
   </section>
 </template>
@@ -183,5 +192,25 @@ defineExpose({ start })
 .actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
 .voice-recorder.is-inline { margin-top: 0; padding: 0; border: 0; background: transparent; }
 .voice-recorder.is-inline .actions { margin-top: 0; }
+.voice-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.voice-btn:hover { border-color: var(--color-brand-600); }
+.voice-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.voice-btn.is-recording {
+  border-color: var(--color-error-700);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-error-700) 20%, transparent);
+}
+.voice-btn-icon { width: 22px; height: 22px; display: block; }
+.voice-btn-label { color: var(--color-text-muted); font-size: 11px; line-height: 1; }
 @media (max-width: 640px) { .actions .el-button { width: 100%; } }
 </style>
