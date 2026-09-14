@@ -18,8 +18,6 @@ import {
 import VoiceRecorder from "../components/VoiceRecorder.vue"
 import { fetchQuestion } from "../api/questions"
 import { authUser } from "../stores/auth"
-import submitImage from "../assets/submit.jpg"
-import micImage from "../assets/microphone.jpg"
 import type {
   AIEvaluation,
   InitialChoice,
@@ -629,26 +627,20 @@ async function respondToSolution(understood: boolean) {
                     && session.flowStage !== 'SHOWING_FULL_SOLUTION'"
                   class="actions self-explain-actions"
                 >
-                  <button
+                  <el-button
                       data-testid="submit-explanation"
-                      class="action-btn submit-btn"
+                      type="primary"
                       :disabled="submitting || voiceRecording"
+                      :loading="submitting"
                       @click="submitExplanation"
-                    >
-                      <img :src="submitImage" alt="提交" class="action-btn-icon" />
-                      <span class="action-btn-label">提交</span>
-                    </button>
-                  <button
+                    >提交</el-button>
+                  <el-button
                     v-if="session.flowStage === 'WAIT_INITIAL_CHOICE'
                       || session.flowStage === 'WAIT_STUDENT_ACTION'"
                     data-testid="start-voice"
-                    class="action-btn voice-btn"
                     :disabled="voiceRecording"
                     @click="startVoiceRecording"
-                  >
-                    <img :src="micImage" alt="录音" class="action-btn-icon" />
-                    <span class="action-btn-label">录音</span>
-                  </button>
+                  >录音</el-button>
                   <VoiceRecorder
                     v-if="session.flowStage === 'CAPTURING_INPUT' && !submitting"
                     ref="voiceRecorderRef"
@@ -676,18 +668,15 @@ async function respondToSolution(understood: boolean) {
                       :disabled="submitting || guidedAnswerSubmitted(item.id)"
                     />
                     <div class="actions">
-                      <button
+                      <el-button
                         :data-testid="`submit-guided-answer-${item.id}`"
-                        class="action-btn submit-btn"
+                        type="primary"
+                        :loading="submitting"
                         :disabled="guidedAnswerSubmitted(item.id)
                           || voiceRecording
-                          || submitting
                           || session.flowStage !== 'WAIT_GUIDED_ANSWERS'"
                         @click="submitGuidedQuestionAnswer(item.id)"
-                      >
-                        <img :src="submitImage" alt="提交" class="action-btn-icon" />
-                        <span class="action-btn-label">提交</span>
-                      </button>
+                      >提交</el-button>
                       <VoiceRecorder
                         v-if="session.flowStage === 'WAIT_GUIDED_ANSWERS' && !guidedAnswerSubmitted(item.id)"
                         :session-id="sessionId"
@@ -720,15 +709,13 @@ async function respondToSolution(understood: boolean) {
                   :disabled="submitting"
                 />
                 <div class="actions">
-                    <button
+                    <el-button
                       data-testid="submit-doubt"
-                      class="action-btn submit-btn"
+                      type="primary"
+                      :loading="submitting"
                       :disabled="submitting || voiceRecording || !canSubmitStudentInterruption()"
                       @click="submitDoubt"
-                    >
-                      <img :src="submitImage" alt="提交" class="action-btn-icon" />
-                      <span class="action-btn-label">提交</span>
-                    </button>
+                    >提交</el-button>
                   <VoiceRecorder
                     v-if="canSubmitStudentInterruption()"
                     ref="doubtVoiceRecorderRef"
@@ -864,22 +851,6 @@ h2 { font-size: var(--font-size-lg); }
   box-shadow: var(--shadow-md);
 }
 .dialog-pane { min-height: 190px; }
-.action-btn {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  cursor: pointer;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-.action-btn:hover { border-color: var(--color-brand-600); }
-.action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.action-btn-icon { width: 22px; height: 22px; display: block; }
-.action-btn-label { color: var(--color-text-muted); font-size: 11px; line-height: 1; }
 .draft-meta { display: flex; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .guided-question + .guided-question { margin-top: var(--space-4); }
 .guided-question p { margin: 0 0 var(--space-2); color: var(--color-text-primary); font-weight: 600; }
@@ -959,7 +930,7 @@ h2 { font-size: var(--font-size-lg); }
   .question-content { padding: var(--space-4); }
   .dialog-panel { padding: var(--space-4); }
   .draft-meta { align-items: flex-start; flex-direction: column; gap: 0; }
-  .actions .el-button, .actions .action-btn { flex: 1 1 100%; }
+  .actions .el-button { flex: 1 1 100%; }
   .conversation-scroll { height: 480px; }
   .conversation-list { padding: var(--space-3); }
   .conversation-message { width: 100%; max-width: none; }
