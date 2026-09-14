@@ -9,7 +9,7 @@ from app.schemas.session_projection import (
     TrajectoryRecord,
     UserInputStep,
 )
-from app.services.trajectory import TrajectoryService
+from app.services.trajectory import MESSAGE_PREVIEW_LIMIT, TrajectoryService
 
 BASE_TIME = datetime(2026, 8, 20, 10, 20, tzinfo=UTC)
 
@@ -294,6 +294,58 @@ def test_trajectory_full_text_keeps_json_line_breaks(
         '    "列出加法过程"\n'
         "  ]\n"
         "}"
+    )
+
+
+def test_trajectory_keeps_long_prompt_until_three_ten_thousand_chars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """3 万字符以内的提示词必须完整保留，不再按 4000 字符截断。"""
+    body = "提示词正文" * 2_000  # 10 000 字符
+    events = [
+        event(
+            1,
+            "model.requested",
+            {
+                "provider": "test-ai",
+                "model": "test-model",
+                "messages": [{"role": "system", "content": body}],
+                "surfaceSeq": 0,
+            },
+            run_id="run_1",
+        ),
+    ]
+    trajectory = build_service(monkeypatch, events).build_trajectory(42)
+
+    full_text = trajectory.events[0].full_text
+    assert full_text == f"[system]\n{body}"
+    assert "…" not in full_text
+    assert "已截断" not in full_text
+
+
+def test_trajectory_truncates_message_beyond_limit_with_stated_length(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = "x" * (MESSAGE_PREVIEW_LIMIT + 500)
+    events = [
+        event(
+            1,
+            "model.requested",
+            {
+                "provider": "test-ai",
+                "model": "test-model",
+                "messages": [{"role": "system", "content": body}],
+                "surfaceSeq": 0,
+            },
+            run_id="run_1",
+        ),
+    ]
+    trajectory = build_service(monkeypatch, events).build_trajectory(42)
+
+    full_text = trajectory.events[0].full_text
+    assert full_text.startswith(f"[system]\n{'x' * MESSAGE_PREVIEW_LIMIT}…")
+    assert full_text.endswith(
+        f"（原始正文共 {len(body)} 字符，已截断到 {MESSAGE_PREVIEW_LIMIT} 字符）"
     )
 
 

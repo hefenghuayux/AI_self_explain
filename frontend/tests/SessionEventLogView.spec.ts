@@ -205,6 +205,31 @@ describe("SessionEventLogView", () => {
     expect(contextRow.find("pre.record-full").exists()).toBe(false)
   })
 
+  it("展开区提供复制全文，并显示完整正文长度", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
+    vi.stubGlobal("fetch", fetchMock)
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    })
+
+    const wrapper = await mountView()
+    const contextRow = wrapper.findAll("div.record-row")[1]
+    await contextRow.get("button.expand-button").trigger("click")
+
+    // 长度按完整原文统计，不是被截断的摘要。
+    expect(contextRow.get(".record-full-size").text()).toBe(
+      `${'question · question:1\n{\n  "questionContent": "计算 1 + 1。"\n}'.length} 字符`,
+    )
+
+    await contextRow.get("button.copy-button").trigger("click")
+    await flushPromises()
+
+    expect(writeText).toHaveBeenCalledWith('question · question:1\n{\n  "questionContent": "计算 1 + 1。"\n}')
+    expect(contextRow.get("button.copy-button").text()).toBe("已复制")
+  })
+
   it("模型回复展开后按原始 JSON 换行展示", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
     vi.stubGlobal("fetch", fetchMock)

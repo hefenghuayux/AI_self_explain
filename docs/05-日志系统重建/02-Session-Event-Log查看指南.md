@@ -392,7 +392,9 @@ surface = SurfaceService(database_session).build_surface(session_id, as_of_seq=5
 | `model.failed` | `model_error` | `{errorType} · {message}` | `{errorType}` 换行 + `{message}` |
 | `state.changed` | `state_change` | `{from} → {to}` | `{from} → {to}` 换行 + `原因：{reason}` |
 
-摘要**只从标量字段取值**，遇到数组或对象不再生成 `N 项` / `N 个字段` 这类计数替代品——容器内容一律由 `fullText` 完整呈现。`model.requested` 的单条消息正文超过 4000 字符时会在 `fullText` 内截断并注明，这是唯一保留的截断点。
+摘要**只从标量字段取值**，遇到数组或对象不再生成 `N 项` / `N 个字段` 这类计数替代品——容器内容一律由 `fullText` 完整呈现。
+
+`fullText` 有一个上限：`model.requested` 的单条消息正文超过 3 万字符时在该条内截断，并在正文末尾注明原始长度。当前真实数据中最长的一条提示词为 3771 字符（旧上限 4000 字符只差 229 字符就会触发截断），因此 3 万字符对所有已写入的会话都等于不截断。展开区自带「复制全文」按钮与 60vh 内的滚动，超长正文不会撑爆页面。
 
 `model.requested` 的 `status` 与 `steps[].status` 不同：这里是 `complete` / `failed` / `pending`，而 `steps` 沿用历史的 `success` / `failed` / `pending`，两者都由同一份“请求 → 直接结果”索引得出。
 
@@ -461,7 +463,7 @@ surface = SurfaceService(database_session).build_surface(session_id, as_of_seq=5
 1. 先看轨迹页的记录账本：按 `kind` 判断故障属于学生输入、状态转换、模型请求还是模型结果。
 2. 账本默认是「精简」范围，只显示上下文、用户与助手（模型）记录；需要看状态变化和模型请求时，点工具栏的「显示完整日志」切换，再点一次回到精简范围。
 3. 只看某一次自讲时，用工具栏的「运行」下拉切换运行；记录数超过 40 条时该运行默认收起，避免一次铺满整屏。
-4. 用时间线色块或搜索框定位记录；行内「展开」按钮直接铺开该条的完整原文（JSON 保留缩进换行，模型回复按大模型原始格式展示），点行则在右侧详情面板查看结构化字段。
+4. 用时间线色块或搜索框定位记录；行内「展开」按钮直接铺开该条的完整原文（JSON 保留缩进换行，模型回复按大模型原始格式展示），展开区右上角可「复制全文」，点行则在右侧详情面板查看结构化字段。
 5. 需要看“模型当时看到了什么”时，选中 `model_request` 记录，切到「模型上下文」页签，用该请求的 `surfaceSeq` 重建 Surface。
 6. 需要确认因果链时，用详情面板「概述」页的父事件 / 直接结果跳转，它等价于按 `parentEventId` 走 Trace。
 7. 最后切到「原始 JSON」页签，检查完整 `data`、`eventId`、`parentEventId` 和准确顺序。
@@ -486,3 +488,4 @@ surface = SurfaceService(database_session).build_surface(session_id, as_of_seq=5
 5. **样本不代表真实模型网络质量**：本指南样本验证了真实业务写入链路和投影规则，但模型客户端由测试替身代替，3 ms 延迟不能用于性能判断。
 6. **时间序列化已有契约但没有专门测试**：`ProjectionSchema._serialize_utc` 修复了历史时区丢失问题，但当前只有单元级断言隐式覆盖；应补一条 API 时间格式的契约测试，锁定“必须带 `Z`”。
 7. **Surface 不是模型请求快照的替代品**：Surface 只呈现结构化的消息与上下文；判断模型实际收到什么时，`model.requested.data.messages` 才是最终证据。两者不一致时应按后者调查组装逻辑。
+8. **3 万字符上限是经验值而非契约**：它让当前所有数据都能完整展示（现有最长提示词 3771 字符），但单条消息超过 3 万字符时仍会截断。触发时应改为按需加载或让前端直接读取 `/events/{seq}` 的原始 `data`，而不是继续抬高这个常量。另外 `fullText` 会把整条提示词写进 `/trajectory` 响应，会话极长时响应体会随之增大，属于已知取舍。

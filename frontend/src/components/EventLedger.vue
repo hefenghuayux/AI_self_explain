@@ -78,6 +78,20 @@ function toggleExpand(seq: number) {
 function scopeHint(): string {
   return `${scopedRecords.value.length} / ${props.records.length} 条记录可见`
 }
+
+/** 3 万字符级的正文靠人工选中复制不现实，展开区提供复制全文。 */
+const copiedSeq = ref<number>()
+const copyErrorSeq = ref<number>()
+
+async function copyFullText(record: TrajectoryRecord) {
+  copyErrorSeq.value = undefined
+  try {
+    await navigator.clipboard.writeText(record.fullText)
+    copiedSeq.value = record.eventSeq
+  } catch {
+    copyErrorSeq.value = record.eventSeq
+  }
+}
 </script>
 
 <template>
@@ -148,7 +162,21 @@ function scopeHint(): string {
             </button>
           </div>
           <!-- 展开区跨两列铺满，直接显示未压缩的完整原文，保留 JSON 缩进与换行。 -->
-          <pre v-if="isExpanded(record.eventSeq)" class="record-full">{{ record.fullText }}</pre>
+          <div v-if="isExpanded(record.eventSeq)" class="record-full-block">
+            <div class="record-full-bar">
+              <span class="record-full-size">{{ record.fullText.length }} 字符</span>
+              <button
+                type="button"
+                class="copy-button"
+                :aria-label="`复制记录 #${record.eventSeq} 的全文`"
+                @click.stop="copyFullText(record)"
+              >
+                {{ copiedSeq === record.eventSeq ? "已复制" : "复制全文" }}
+              </button>
+              <span v-if="copyErrorSeq === record.eventSeq" class="copy-error">复制失败，请手动选中</span>
+            </div>
+            <pre class="record-full">{{ record.fullText }}</pre>
+          </div>
         </div>
         <p v-if="scopedRecords.length === 0" class="empty-state">
           当前范围内没有可展示的记录；可在工具栏切换为「完整」查看模型请求与状态变化。
@@ -188,8 +216,14 @@ function scopeHint(): string {
 .kind-tag[data-kind="model_error"] { background: #dc2626; }
 .kind-tag[data-kind="state_change"] { background: #d97706; }
 .record-summary { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 展开区跨满两列，按原文换行显示完整内容（JSON 缩进因此在界面上保留）。 */
-.record-full { grid-column: 1 / -1; max-height: 480px; overflow: auto; margin: 0; padding: var(--space-3) var(--space-4) var(--space-4); border-top: 1px dashed var(--color-border); color: var(--color-text-primary); background: var(--color-surface); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 展开区跨满两列；正文按原文换行，超出视口高度时在区内滚动，不淹没整页。 */
+.record-full-block { grid-column: 1 / -1; border-top: 1px dashed var(--color-border); }
+.record-full-bar { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3); padding: var(--space-2) var(--space-4) 0; }
+.record-full-size { margin-right: auto; color: var(--color-text-muted); font-size: 12px; }
+.copy-button { padding: 1px var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-secondary); background: var(--color-surface); cursor: pointer; font: inherit; font-size: 12px; }
+.copy-button:hover { border-color: var(--color-brand-700); color: var(--color-brand-700); }
+.copy-error { color: var(--color-error-700); font-size: 12px; }
+.record-full { max-height: 60vh; overflow: auto; margin: 0; padding: var(--space-2) var(--space-4) var(--space-4); color: var(--color-text-primary); background: var(--color-surface); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .record-duration, .record-time { flex: 0 0 auto; color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .record-time { min-width: 68px; text-align: right; }
 .record-status { flex: 0 0 auto; padding: 1px var(--space-2); border-radius: var(--radius-sm); font-size: 12px; }

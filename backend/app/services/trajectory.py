@@ -37,8 +37,9 @@ SUMMARY_LIMIT = 200
 LABEL_LIMIT = 80
 # 摘要里最多取几个标量字段；容器不参与摘要，避免出现“N 项”这类计数替代品。
 OUTPUT_SUMMARY_FIELDS = 3
-# model.requested 全文展示的消息正文上限；超长提示词只截这一处，避免整条记录不可读。
-MESSAGE_PREVIEW_LIMIT = 4000
+# model.requested 全文展示的单条消息上限。3 万字符足以完整容纳当前最长提示词，
+# 超出时截断并在正文内注明原始长度；前端展开区另有复制全文与折叠，不会撑爆页面。
+MESSAGE_PREVIEW_LIMIT = 30_000
 
 KIND_BY_EVENT_TYPE: dict[str, TrajectoryRecordKind] = {
     "session.started": "session",
@@ -110,13 +111,14 @@ def _model_response_full_text(data: dict[str, object]) -> str:
 
 
 def _message_full_text(message: dict[str, object]) -> str:
+    """消息正文按原文完整展示；只有超过 3 万字符才截断，并注明原有长度。"""
     role = message.get("role")
     content = message.get("content")
     text = content if isinstance(content, str) else _pretty_json(content)
     if len(text) > MESSAGE_PREVIEW_LIMIT:
         text = (
-            f"{text[:MESSAGE_PREVIEW_LIMIT]}…"
-            f"（该消息正文超过 {MESSAGE_PREVIEW_LIMIT} 字符，已截断）"
+            f"{text[:MESSAGE_PREVIEW_LIMIT]}…\n"
+            f"（原始正文共 {len(text)} 字符，已截断到 {MESSAGE_PREVIEW_LIMIT} 字符）"
         )
     return f"[{role if isinstance(role, str) else 'unknown'}]\n{text}"
 
