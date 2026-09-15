@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from app.schemas.question import QuestionSchema, RequiredText, to_camel_case
 
@@ -12,6 +12,14 @@ SupportAction = Literal[
     "SIMPLE_DOUBT_ANSWER",
     "REFUSE_FULL_SOLUTION",
     "CURRENT_STEP_ANSWER",
+]
+SupportReason = Literal[
+    "表达与输入问题",
+    "题意理解问题",
+    "知识理解与回忆问题",
+    "知识应用问题",
+    "执行错误",
+    "原因未明",
 ]
 
 
@@ -31,6 +39,9 @@ class SupportRequestOutput(QuestionSchema):
 
     action: SupportAction
     covered_points: list[RequiredText]
+    main_reason: SupportReason = Field(alias="main_reason")
+    other_reasons: list[SupportReason] = Field(alias="other_reasons")
+    judge_reason: RequiredText = Field(alias="judge_reason")
     content: RequiredText
     questions: list[GuidedQuestion]
 
@@ -51,6 +62,9 @@ class GuidedAnswerAssessmentOutput(QuestionSchema):
     )
 
     results: list[GuidedAnswerResult]
+    main_reason: SupportReason = Field(alias="main_reason")
+    other_reasons: list[SupportReason] = Field(alias="other_reasons")
+    judge_reason: RequiredText = Field(alias="judge_reason")
     content: RequiredText
 
 

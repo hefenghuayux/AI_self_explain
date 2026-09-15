@@ -403,6 +403,7 @@ def _render_prompt(
         key: value for key, value in question_context.items() if key != "outputSchema"
     }
     transport_context.update(user_input)
+    transport_context["taskType"] = "EXPLANATION"
     prompt = (
         template.replace("{{JSON_SCHEMA}}", json.dumps(schema, ensure_ascii=False))
         .replace("{{CONTEXT_JSON}}", json.dumps(transport_context, ensure_ascii=False))
@@ -416,6 +417,7 @@ def _render_prompt(
             system_instructions=template,
             question_context=question_context,
             session_context={
+                "taskType": "EXPLANATION",
                 "round": session.round,
                 "supportCountRound": session.support_count_round,
                 "coveredPointsCurrentRound": session.covered_points_current_round,

@@ -316,6 +316,7 @@ def _render_support_prompt(
     template = SUPPORT_PROMPT_PATH.read_text(encoding="utf-8")
     question_context = _question_context(question)
     session_context = _session_context(session)
+    session_context["taskType"] = "HELP"
     user_input = {
         "mainDraft": main_draft,
         "doubtText": doubt_text,
@@ -352,6 +353,7 @@ def _render_answer_assessment_prompt(
     template = ASSESSMENT_PROMPT_PATH.read_text(encoding="utf-8")
     question_context = _question_context(question)
     session_context = _session_context(session)
+    session_context["taskType"] = "GUIDED_ANSWER"
     user_input = {
         "mainDraft": support_event.main_draft,
         "questions": support_event.guided_questions,
