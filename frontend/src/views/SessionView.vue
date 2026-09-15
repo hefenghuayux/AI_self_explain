@@ -255,6 +255,17 @@ const coveredPointNumbers = computed(() => {
   return session.value?.latestEvaluation?.coveredPoints ?? []
 })
 
+const hasFollowUpContent = computed(
+  () => Boolean(session.value?.latestSupport?.followUpContent),
+)
+
+const feedbackHeading = computed(() => {
+  if (hasFollowUpContent.value && !session.value?.latestEvaluation) {
+    return { title: "整合引导", description: "结合子问题答案，继续完成整道题的推理。" }
+  }
+  return { title: "最新反馈", description: "先看结论，再按需查看评价依据。" }
+})
+
 function evaluationClass(value: string) {
   if (value === "CORRECT" || value === "COMPLETE") return "is-positive"
   if (value === "WRONG") return "is-negative"
@@ -570,17 +581,19 @@ async function respondToSolution(understood: boolean) {
           <h2 id="question-title">题目</h2>
           <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </section>
-        <section v-if="session.latestEvaluation" class="session-section feedback-section" aria-labelledby="feedback-title" aria-live="polite">
-          <div class="section-heading feedback-heading"><div><h2 id="feedback-title">最新反馈</h2><p>先看结论，再按需查看评价依据。</p></div></div>
+        <section v-if="session.latestEvaluation || hasFollowUpContent" class="session-section feedback-section" aria-labelledby="feedback-title" aria-live="polite">
+          <div class="section-heading feedback-heading"><div><h2 id="feedback-title">{{ feedbackHeading.title }}</h2><p>{{ feedbackHeading.description }}</p></div></div>
           <div class="feedback-card">
+            <template v-if="session.latestEvaluation">
             <div class="evaluation-results">
               <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.correctness)"><span>正确性</span><strong>{{ correctnessLabels[session.latestEvaluation.correctness] }}</strong></div>
               <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.completeness)"><span>完整性</span><strong>{{ completenessLabels[session.latestEvaluation.completeness] }}</strong></div>
             </div>
             <p v-if="coveredPointNumbers.length" class="covered-points">已覆盖评分点：{{ coveredPointNumbers.join('、') }}</p>
-            <p v-if="session.latestSupport?.content" class="feedback-next-step"><strong>下一步：</strong>{{ session.latestSupport.content }}</p>
+            </template>
+            <p v-if="session.latestSupport?.content || hasFollowUpContent" class="feedback-next-step"><strong>下一步：</strong>{{ hasFollowUpContent ? session.latestSupport?.followUpContent : session.latestSupport?.content }}</p>
             <el-button
-              v-if="session.latestEvaluation.errorEvidence.length"
+              v-if="session.latestEvaluation?.errorEvidence.length"
               class="feedback-toggle"
               text
               type="primary"
@@ -588,7 +601,7 @@ async function respondToSolution(understood: boolean) {
               aria-controls="feedback-details"
               @click="feedbackDetailsOpen = !feedbackDetailsOpen"
             >{{ feedbackDetailsOpen ? '收起评价依据' : '查看评价依据' }}</el-button>
-            <div v-if="feedbackDetailsOpen && session.latestEvaluation.errorEvidence.length" id="feedback-details" class="feedback-details">
+            <div v-if="feedbackDetailsOpen && session.latestEvaluation?.errorEvidence.length" id="feedback-details" class="feedback-details">
               <article v-for="(evidence, index) in session.latestEvaluation.errorEvidence" :key="`${evidence.locationDescription}-${index}`" class="feedback-evidence">
                 <h3>需要调整的地方</h3>
                 <p><strong>你的表达：</strong>{{ evidence.quote }}</p>
