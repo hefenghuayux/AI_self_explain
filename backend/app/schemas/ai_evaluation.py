@@ -5,7 +5,7 @@ from pydantic import ConfigDict, field_validator, model_validator
 
 from app.schemas.question import QuestionSchema, RequiredText, to_camel_case
 
-Correctness = Literal["CORRECT", "WRONG", "UNCERTAIN"]
+Correctness = Literal["CORRECT", "WRONG"]
 Completeness = Literal["COMPLETE", "INCOMPLETE"]
 
 
@@ -35,7 +35,6 @@ class AIEvaluationOutput(QuestionSchema):
     completeness: Completeness
     covered_points: list[int]
     error_evidence: list[ErrorEvidence]
-    need_human_reason: RequiredText | None
 
     @model_validator(mode="before")
     @classmethod
@@ -53,7 +52,6 @@ class AIEvaluationResponse(QuestionSchema):
     completeness: Completeness
     covered_points: list[int]
     error_evidence: list[ErrorEvidence]
-    need_human_reason: str | None
     prompt_version: str
     model_provider: str
     model_name: str
@@ -88,12 +86,6 @@ def validate_evaluation_relationships(
         errors.append("coveredPoints 不能包含重复评分点")
     if not covered_points <= expected_points:
         errors.append("coveredPoints 必须是题目评分点编号")
-    if evaluation.correctness == "UNCERTAIN":
-        if evaluation.need_human_reason is None:
-            errors.append("correctness 为 UNCERTAIN 时 needHumanReason 必填")
-    elif evaluation.need_human_reason is not None:
-        errors.append("correctness 不是 UNCERTAIN 时 needHumanReason 必须为空")
-
     for evidence in evaluation.error_evidence:
         if evidence.quote not in confirmed_text:
             errors.append("errorEvidence.quote 必须是 confirmedText 中的原文片段")

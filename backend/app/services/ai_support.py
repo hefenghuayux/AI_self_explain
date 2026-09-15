@@ -27,8 +27,8 @@ from app.schemas.support import (
     GuidedAnswerAssessmentOutput,
     SupportRequestOutput,
 )
-from app.services.ai_reasoning import resolve_reasoning_params
 from app.services.ai_evaluation import AIModelClient, AIModelResponse, AITransportError
+from app.services.ai_reasoning import resolve_reasoning_params
 from app.services.session_event_log import SessionEventLog
 
 SUPPORT_PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "generate_support.md"
@@ -441,6 +441,15 @@ def _validate_support_request(output: SupportRequestOutput, rubric_points: list[
     expected_points = set(rubric_points)
     if not covered_points <= expected_points:
         return ["coveredPoints 必须来自题目评分点"]
+    no_reason = output.action == "REFUSE_FULL_SOLUTION"
+    if no_reason and (
+        output.main_reason is not None
+        or output.other_reasons
+        or output.judge_reason is not None
+    ):
+        return ["拒绝完整答案时不能返回困难原因"]
+    if not no_reason and (output.main_reason is None or output.judge_reason is None):
+        return ["非拒答支持必须返回具体困难原因和判断依据"]
     if output.action == "GUIDED_QUESTIONS" and not output.questions:
         return ["GUIDED_QUESTIONS 必须提供至少一个子问题"]
     if output.action != "GUIDED_QUESTIONS" and output.questions:
@@ -458,4 +467,13 @@ def _validate_answer_assessment(
     result_ids = [item.question_id for item in output.results]
     if set(result_ids) != expected_ids or len(result_ids) != len(expected_ids):
         return ["子问题评估结果必须与已发送问题一一对应"]
+    all_correct = all(item.result == "CORRECT" for item in output.results)
+    if all_correct and (
+        output.main_reason is not None
+        or output.other_reasons
+        or output.judge_reason is not None
+    ):
+        return ["子问题全部答对时不能返回困难原因"]
+    if not all_correct and (output.main_reason is None or output.judge_reason is None):
+        return ["存在错误或不完整作答时必须返回具体困难原因和判断依据"]
     return []

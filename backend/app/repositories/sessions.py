@@ -34,8 +34,8 @@ from app.rules.teaching_cycle import (
 )
 from app.rules.teaching_decision import TeachingDecision
 from app.schemas.ai_evaluation import AIEvaluationOutput
-from app.schemas.model_request_snapshot import ModelRequestSnapshot
 from app.schemas.merged import MergedTeachingQuestion
+from app.schemas.model_request_snapshot import ModelRequestSnapshot
 from app.schemas.support import GuidedAnswer, GuidedQuestion
 from app.services.audio_storage import AudioCapture, AudioStorage
 from app.services.event_store import EventStore
@@ -200,6 +200,7 @@ class SessionRepository:
             .where(
                 AIEvaluation.session_id == session_id,
                 AIEvaluation.validation_status == "VALID",
+                AIEvaluation.correctness.in_(("CORRECT", "WRONG")),
             )
             .order_by(AIEvaluation.id.desc())
         )
@@ -262,6 +263,7 @@ class SessionRepository:
             .where(
                 AIEvaluation.session_id == session_id,
                 AIEvaluation.validation_status == "VALID",
+                AIEvaluation.correctness.in_(("CORRECT", "WRONG")),
             )
             .order_by(AIEvaluation.created_at, AIEvaluation.id)
         )
@@ -273,9 +275,6 @@ class SessionRepository:
             elif evaluation.correctness == "CORRECT" and evaluation.completeness == "COMPLETE":
                 content = "回答正确且完整。"
                 action = "COMPLETE"
-            elif evaluation.correctness == "UNCERTAIN":
-                content = "本次评价需要人工复核。"
-                action = "NEED_HUMAN"
             else:
                 content = "本次自讲评价已完成。"
                 action = None
@@ -1249,7 +1248,6 @@ class SessionRepository:
             error_evidence=[item.model_dump() for item in evaluation.error_evidence]
             if evaluation is not None
             else None,
-            need_human_reason=evaluation.need_human_reason if evaluation is not None else None,
             evaluation_mode=evaluation_mode,
             prompt_version=prompt_version,
             model_provider=model_provider,

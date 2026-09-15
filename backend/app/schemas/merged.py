@@ -10,7 +10,6 @@ from app.schemas.ai_evaluation import (
     validate_evaluation_relationships,
 )
 from app.schemas.question import QuestionSchema, RequiredText, to_camel_case
-from app.schemas.teaching import GeneratedTeachingAction
 
 MergedTeachingAction = Literal[
     "ASK_FOCUSED_QUESTION",
@@ -24,7 +23,6 @@ Reason = Literal[
     "知识理解与回忆问题",
     "知识应用问题",
     "执行错误",
-    "原因未明",
 ]
 
 
@@ -47,8 +45,7 @@ class MergedModelOutput(QuestionSchema):
     - 有进展且不完整 → 追问（ASK_FOCUSED_QUESTION / CORRECT_AND_ASK）
     - 无进展 → 提示（GIVE_HINT），不以新增评分点作为判断依据
     - 有错误 → 纠错（GIVE_CORRECTION）
-    correctness = CORRECT + COMPLETE，或 UNCERTAIN 时，
-    teachingAction / content / questions 均应为空。
+    correctness = CORRECT + COMPLETE 时，原因、teachingAction、content、questions 均应为空。
     """
 
     model_config = ConfigDict(
@@ -62,11 +59,10 @@ class MergedModelOutput(QuestionSchema):
     completeness: Completeness
     covered_points: list[int]
     error_evidence: list[ErrorEvidence]
-    need_human_reason: RequiredText | None
     has_progress: StrictBool
-    main_reason: Reason
+    main_reason: Reason | None
     other_reasons: list[Reason] = Field(default_factory=list)
-    judge_reason: RequiredText
+    judge_reason: RequiredText | None
     teaching_action: MergedTeachingAction | None = None
     content: str | None = None
     questions: list[MergedTeachingQuestion] = Field(default_factory=list)
@@ -102,16 +98,25 @@ def validate_merged_output(
         )
     )
     terminal = output.correctness == "CORRECT" and output.completeness == "COMPLETE"
-    uncertain = output.correctness == "UNCERTAIN"
-    if not terminal and not uncertain:
+    if not terminal:
         if output.teaching_action is None:
             errors.append("非终态评价必须返回 teachingAction")
-    if (terminal or uncertain) and output.teaching_action is not None:
-        errors.append("终态或不确定评价不能返回 teachingAction")
-    if (terminal or uncertain) and output.content is not None:
-        errors.append("终态或不确定评价不能返回教学 content")
-    if (terminal or uncertain) and output.questions:
-        errors.append("终态或不确定评价不能返回教学 questions")
+        if output.main_reason is None:
+            errors.append("非终态评价必须返回具体 main_reason")
+        if output.judge_reason is None:
+            errors.append("非终态评价必须返回 judge_reason")
+    if terminal and output.main_reason is not None:
+        errors.append("终态评价不能返回 main_reason")
+    if terminal and output.other_reasons:
+        errors.append("终态评价不能返回 other_reasons")
+    if terminal and output.judge_reason is not None:
+        errors.append("终态评价不能返回 judge_reason")
+    if terminal and output.teaching_action is not None:
+        errors.append("终态评价不能返回 teachingAction")
+    if terminal and output.content is not None:
+        errors.append("终态评价不能返回教学 content")
+    if terminal and output.questions:
+        errors.append("终态评价不能返回教学 questions")
     if output.teaching_action in {"ASK_FOCUSED_QUESTION", "CORRECT_AND_ASK"}:
         if len(output.questions) != 1:
             errors.append("追问或纠错后追问必须恰好返回一个子问题")
@@ -126,5 +131,4 @@ def _as_evaluation_output(output: MergedModelOutput) -> AIEvaluationOutput:
         completeness=output.completeness,
         covered_points=output.covered_points,
         error_evidence=output.error_evidence,
-        need_human_reason=output.need_human_reason,
     )

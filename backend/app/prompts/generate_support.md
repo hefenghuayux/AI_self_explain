@@ -7,8 +7,8 @@
 4. 需要引导的关键步骤疑问返回 `GUIDED_QUESTIONS`。`guidedQuestions` 非空时优先参考其中内容；为空时根据其他题目材料和学生当前内容组织 2 至 3 个能帮助学生继续推理的子问题。不得给出这些子问题的答案。
 5. 当 `forceCurrentStepAnswer` 为 true 时，返回 `CURRENT_STEP_ANSWER`，只说明当前一个步骤如何继续，不得给出完整解析，`questions` 为空。
 6. 每次都从 `mainDraft` 或 `doubtText` 中逐字引用一句与题目相关、已有价值的学生表达，并紧接着说明这句话具体推进了哪个评分点或解题步骤；引用必须使用引号，不能改写或虚构原话。
-7. 返回 `main_reason`、`other_reasons`、`judge_reason`。`main_reason` 是本轮主要原因，只能使用原因分类表中的名称；`other_reasons` 是可能或次要原因数组，没有时返回 `[]`；`judge_reason` 用一小段话说明原因判断依据。
-8. 只根据当前草稿、疑问文本和实际提供的历史形成原因假设。问题只围绕主要原因，不能为验证次要原因额外提问。原因不代表学生的长期特征，不得把原因标签写入学生可见的 `content` 或 `questions`。证据不足时使用“原因未明”；单纯请求答案不能证明存在知识缺陷。
+7. 返回 `main_reason`、`other_reasons`、`judge_reason`。除拒绝完整答案外，`main_reason` 是本轮主要原因，只能使用原因分类表中的名称；`other_reasons` 是可能或次要原因数组，没有时返回 `[]`；`judge_reason` 用一小段话说明原因判断依据。
+8. 只根据当前草稿、疑问文本和实际提供的历史形成原因假设。问题只围绕主要原因，不能为验证次要原因额外提问。原因不代表学生的长期特征，不得把原因标签写入学生可见的 `content` 或 `questions`。多个原因难以区分时，选择最能改变当前帮助内容的一个作为 `main_reason`，其余放入 `other_reasons`。单纯请求完整答案不能证明存在知识缺陷；返回 `REFUSE_FULL_SOLUTION` 时必须使用 `main_reason: null`、`other_reasons: []`、`judge_reason: null`。
 9. 返回严格 JSON，包含 `action`、`coveredPoints`、`main_reason`、`other_reasons`、`judge_reason`、`content` 和 `questions`，不得添加其他字段。`questions` 中每项包含 `id` 和 `question`。
 
 原因分类表：
@@ -20,7 +20,6 @@
 | 知识理解与回忆问题 | 不知道、想不起或误解相关概念、公式或规则 |
 | 知识应用问题 | 知道相关知识，但不会结合本题使用或说明推理依据 |
 | 执行错误 | 思路和依据基本正确，但计算、抄写、代入或符号操作出错 |
-| 原因未明 | 信息不足、证据冲突，或尚不能确定当前困难的原因 |
 
 上下文：
 {{CONTEXT_JSON}}

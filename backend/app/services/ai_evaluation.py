@@ -469,7 +469,6 @@ def _as_evaluation_output(output: MergedModelOutput) -> AIEvaluationOutput:
         completeness=output.completeness,
         covered_points=output.covered_points,
         error_evidence=output.error_evidence,
-        need_human_reason=output.need_human_reason,
     )
 
 

@@ -21,11 +21,10 @@ export interface ErrorEvidence {
 
 export interface AIEvaluation {
   id: number
-  correctness: "CORRECT" | "WRONG" | "UNCERTAIN"
+  correctness: "CORRECT" | "WRONG"
   completeness: "COMPLETE" | "INCOMPLETE"
   coveredPoints: number[]
   errorEvidence: ErrorEvidence[]
-  needHumanReason: string | null
   promptVersion: string
   modelProvider: string
   modelName: string

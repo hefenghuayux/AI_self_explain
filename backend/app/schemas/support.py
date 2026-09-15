@@ -19,7 +19,6 @@ SupportReason = Literal[
     "知识理解与回忆问题",
     "知识应用问题",
     "执行错误",
-    "原因未明",
 ]
 
 
@@ -39,9 +38,9 @@ class SupportRequestOutput(QuestionSchema):
 
     action: SupportAction
     covered_points: list[RequiredText]
-    main_reason: SupportReason = Field(alias="main_reason")
-    other_reasons: list[SupportReason] = Field(alias="other_reasons")
-    judge_reason: RequiredText = Field(alias="judge_reason")
+    main_reason: SupportReason | None = Field(alias="main_reason")
+    other_reasons: list[SupportReason] = Field(default_factory=list, alias="other_reasons")
+    judge_reason: RequiredText | None = Field(alias="judge_reason")
     content: RequiredText
     questions: list[GuidedQuestion]
 
@@ -62,9 +61,9 @@ class GuidedAnswerAssessmentOutput(QuestionSchema):
     )
 
     results: list[GuidedAnswerResult]
-    main_reason: SupportReason = Field(alias="main_reason")
-    other_reasons: list[SupportReason] = Field(alias="other_reasons")
-    judge_reason: RequiredText = Field(alias="judge_reason")
+    main_reason: SupportReason | None = Field(alias="main_reason")
+    other_reasons: list[SupportReason] = Field(default_factory=list, alias="other_reasons")
+    judge_reason: RequiredText | None = Field(alias="judge_reason")
     content: RequiredText
 
 

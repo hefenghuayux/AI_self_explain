@@ -6,9 +6,8 @@
 
 ## 第一步：评价
 
-- `correctness`：`CORRECT`（正确）、`WRONG`（有错误）、`UNCERTAIN`（无法可靠判断）
+- `correctness`：`CORRECT`（正确）、`WRONG`（有错误）
 - `completeness`：`COMPLETE`（完整覆盖全部评分点）、`INCOMPLETE`（存在缺失）
-- `correctness = UNCERTAIN` 时必须填写非空的 `needHumanReason`；其他正确性下必须为 `null`
 
 评价依据写入评价字段，面向学生的帮助写入教学字段。
 
@@ -18,19 +17,19 @@
 
 ### 原因
 
-填写本轮当前卡点的一个主要原因到 `main_reason`，只能使用以下名称之一：`表达与输入问题`、`题意理解问题`、`知识理解与回忆问题`、`知识应用问题`、`执行错误`、`原因未明`。将其他可能或次要原因填入 `other_reasons`，没有时返回 `[]`。`judge_reason` 用一小段话说明依据。原因是本轮可修正的假设，不是学生的长期标签。终态和 `UNCERTAIN` 仍必须填写这些字段，但不得生成教学内容。
+非终态时，填写本轮当前卡点的一个主要原因到 `main_reason`，只能使用以下名称之一：`表达与输入问题`、`题意理解问题`、`知识理解与回忆问题`、`知识应用问题`、`执行错误`。将其他可能或次要原因填入 `other_reasons`，没有时返回 `[]`。`judge_reason` 用一小段话说明依据。原因是本轮可修正的假设，不是学生的长期标签。多个原因难以区分时，选择最能改变下一步教学内容的一个作为 `main_reason`，其余放入 `other_reasons`。`CORRECT + COMPLETE` 时必须返回 `main_reason: null`、`other_reasons: []`、`judge_reason: null`，且不得生成教学内容。
 
 ### 如何判断是否有解题进展
 
 返回布尔值 `hasProgress`。根据历史自讲和当前确认文本判断是否出现有效的新推理、纠正错误、补充依据或合理的替代解法。
 
-首次自讲没有历史时，只要提出了与本题有关的有效推理就视为有进展；只表达疑问或不知道、机械复述已有内容，不算进展。结合 `progressContext.previousTeaching` 区分学生自己的推理与提示复述。完成和无法可靠判断时仍填写 `hasProgress`，但优先执行终态或不确定评价规则。
+首次自讲没有历史时，只要提出了与本题有关的有效推理就视为有进展；只表达疑问或不知道、机械复述已有内容，不算进展。结合 `progressContext.previousTeaching` 区分学生自己的推理与提示复述。完成时仍填写 `hasProgress`，但优先执行终态规则。
 
 ### 动作选择表
 
 | 判断顺序 | teachingAction | content | questions |
 |---|---|---|---|
-| `CORRECT + COMPLETE` 或 `UNCERTAIN` | `null` | `null` | `[]` |
+| `CORRECT + COMPLETE` | `null` | `null` | `[]` |
 | `hasProgress = false` | `GIVE_HINT` | 提示正文 | `[]` |
 | `WRONG` | `GIVE_CORRECTION` | 纠错正文 | `[]` |
 | `INCOMPLETE` | `ASK_FOCUSED_QUESTION` | 聚焦追问正文 | 恰好一个问题 |
@@ -51,19 +50,18 @@
 
 ### 原因假设（可选推理框架）
 
-生成教学内容前，先根据学生原文、评价结果和已有历史确定 `main_reason`，再列出可选的 `other_reasons` 并填写 `judge_reason`。原因只用于本轮内容组织，不能作为长期标签。证据不足时使用"原因未明"，不得强行归因。
+生成教学内容前，先根据学生原文、评价结果和已有历史确定 `main_reason`，再列出可选的 `other_reasons` 并填写 `judge_reason`。原因只用于本轮内容组织，不能作为长期标签。证据有限时仍需选择当前最值得验证、最能改变下一步教学内容的具体原因，并在 `judge_reason` 中说明证据限制。
 
 - 表达与输入问题：理解正确但表达遗漏或文本含义不清 → 先请学生补充或确认原意
 - 题意理解问题：误解或遗漏条件 → 请学生复述相关条件
 - 知识理解与回忆问题：不知道或误解概念 → 最小问题确认或正反例区分
 - 知识应用问题：知道知识但不会用于本题 → 说明条件与知识的联系
 - 执行错误：计算、抄写等操作出错 → 请学生对出错局部重算核对
-- 原因未明：信息不足或证据冲突 → 最小澄清问题
 
 ### 错误处理
 
 - 若提供了上一轮校验错误，必须保留符合学生文本的正确性、完整性和评分点判断，只修正结构或关系错误
-- 不能为了通过校验随意改成 `UNCERTAIN`
+- 不能为了通过校验随意改变正确性、完整性或原因判断
 
 JSON Schema：
 {{JSON_SCHEMA}}

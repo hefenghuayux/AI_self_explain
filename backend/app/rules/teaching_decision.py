@@ -44,7 +44,7 @@ def decide_teaching(
     教学动作（追问/提示/纠错）由模型在输出中通过 teachingAction 给出；
     本轮是否新增评分点仍由后端按 coveredPoints 与
     coveredPointsCurrentRound 的差集确定，只用于覆盖记录和审计。
-    后端确定性负责：COMPLETED / NEED_HUMAN / 支持上限阻断。
+    后端确定性负责：COMPLETED / 支持上限阻断。
     """
     evaluation = _as_evaluation_output(merged_output)
     if evaluation_mode != "FULL_RUBRIC":
@@ -65,17 +65,6 @@ def decide_teaching(
                 round_number=session.round,
                 support_count_total=session.support_count_total,
             ),
-        )
-
-    if merged_output.correctness == "UNCERTAIN":
-        if merged_output.need_human_reason is None:
-            raise ValueError("UNCERTAIN 评价缺少人工处理原因")
-        return _decision(
-            session=session,
-            coverage=coverage,
-            next_status="IN_PROGRESS",
-            next_flow_stage="WAIT_STUDENT_ACTION",
-            need_human_reason=merged_output.need_human_reason,
         )
 
     action = merged_output.teaching_action
@@ -119,27 +108,18 @@ def _decide_without_rubric(
             ),
         )
 
-    reason = evaluation.need_human_reason or "题目未配置评分点，无法生成可审计的针对性支持"
     return _decision(
         session=session,
         coverage=coverage,
         next_status="IN_PROGRESS",
         next_flow_stage="WAIT_STUDENT_ACTION",
-        need_human_reason=reason,
+        need_human_reason="题目未配置评分点，无法生成可审计的针对性支持",
     )
 
 
 def _coverage_result(
     *, evaluation: AIEvaluationOutput, session: Session
 ) -> CoverageResult:
-    if evaluation.correctness == "UNCERTAIN":
-        return CoverageResult(
-            current_round=list(session.covered_points_current_round),
-            all_rounds=list(session.covered_points_all),
-            newly_covered=[],
-            no_progress_count=session.no_progress_count,
-            reset_help_request_count=False,
-        )
     newly_covered = [
         point
         for point in evaluation.covered_points
@@ -166,7 +146,6 @@ def _as_evaluation_output(merged_output: MergedModelOutput) -> AIEvaluationOutpu
         completeness=merged_output.completeness,
         covered_points=merged_output.covered_points,
         error_evidence=merged_output.error_evidence,
-        need_human_reason=merged_output.need_human_reason,
     )
 
 
