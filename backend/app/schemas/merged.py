@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, StrictBool, model_validator
 
 from app.schemas.ai_evaluation import (
     AIEvaluationOutput,
@@ -17,6 +17,14 @@ MergedTeachingAction = Literal[
     "GIVE_HINT",
     "GIVE_CORRECTION",
     "CORRECT_AND_ASK",
+]
+Reason = Literal[
+    "表达与输入问题",
+    "题意理解问题",
+    "知识理解与回忆问题",
+    "知识应用问题",
+    "执行错误",
+    "原因未明",
 ]
 
 
@@ -35,9 +43,9 @@ class MergedTeachingQuestion(QuestionSchema):
 class MergedModelOutput(QuestionSchema):
     """评价 + 教学一次调用的合并输出。
 
-    teachingAction 由大模型根据“是否有新增评分点”等上下文自行判断：
-    - 有新评分点且不完整 → 追问（ASK_FOCUSED_QUESTION / CORRECT_AND_ASK）
-    - 无新评分点 → 提示（GIVE_HINT）
+    teachingAction 由大模型根据学生原文和历史判断的 hasProgress 选择：
+    - 有进展且不完整 → 追问（ASK_FOCUSED_QUESTION / CORRECT_AND_ASK）
+    - 无进展 → 提示（GIVE_HINT），不以新增评分点作为判断依据
     - 有错误 → 纠错（GIVE_CORRECTION）
     correctness = CORRECT + COMPLETE，或 UNCERTAIN 时，
     teachingAction / content / questions 均应为空。
@@ -55,6 +63,10 @@ class MergedModelOutput(QuestionSchema):
     covered_points: list[int]
     error_evidence: list[ErrorEvidence]
     need_human_reason: RequiredText | None
+    has_progress: StrictBool
+    main_reason: Reason
+    other_reasons: list[Reason] = Field(default_factory=list)
+    judge_reason: RequiredText
     teaching_action: MergedTeachingAction | None = None
     content: str | None = None
     questions: list[MergedTeachingQuestion] = Field(default_factory=list)
@@ -91,6 +103,9 @@ def validate_merged_output(
     )
     terminal = output.correctness == "CORRECT" and output.completeness == "COMPLETE"
     uncertain = output.correctness == "UNCERTAIN"
+    if not terminal and not uncertain:
+        if output.teaching_action is None:
+            errors.append("非终态评价必须返回 teachingAction")
     if (terminal or uncertain) and output.teaching_action is not None:
         errors.append("终态或不确定评价不能返回 teachingAction")
     if (terminal or uncertain) and output.content is not None:
