@@ -25,7 +25,6 @@ def session() -> Session:
     return Session(
         round=1,
         support_count_round=2,
-        covered_points_current_round=["正确计算加法"],
     )
 
 

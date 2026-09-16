@@ -126,8 +126,6 @@ class SessionResponse(QuestionSchema):
     solution_exposed: bool
     completion_type: str | None
     need_human_reason: str | None
-    covered_points_current_round: list[str]
-    covered_points_all: list[str]
     current_draft: str
     paused_from_stage: FlowStage | None
     version: int

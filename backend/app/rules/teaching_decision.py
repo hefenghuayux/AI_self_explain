@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from app.core.config import Settings
 from app.models.session import Session
-from app.rules.teaching_cycle import completion_type_for, support_limit_for, update_coverage
+from app.rules.teaching_cycle import completion_type_for, support_limit_for
 from app.schemas.ai_evaluation import AIEvaluationOutput
 from app.schemas.teaching import GeneratedTeachingAction
 
@@ -11,9 +11,6 @@ COUNTED_SUPPORT_TYPES = frozenset({"GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_
 
 @dataclass(frozen=True)
 class CoverageResult:
-    current_round: list[str]
-    all_rounds: list[str]
-    newly_covered: list[str]
     no_progress_count: int
     reset_help_request_count: bool
 
@@ -37,12 +34,10 @@ def decide_teaching(
     session: Session,
     settings: Settings,
     evaluation_mode: str = "FULL_RUBRIC",
-    rubric_points: list[str] | None = None,
 ) -> TeachingDecision:
-    coverage = _coverage_result(
-        evaluation=evaluation,
-        session=session,
-        rubric_points=rubric_points or [],
+    coverage = CoverageResult(
+        no_progress_count=0 if evaluation.has_progress else session.no_progress_count + 1,
+        reset_help_request_count=False,
     )
     if evaluation.correctness == "CORRECT" and evaluation.completeness == "COMPLETE":
         return _decision(
@@ -93,34 +88,6 @@ def _action_for(evaluation: AIEvaluationOutput) -> GeneratedTeachingAction:
     if evaluation.correctness == "WRONG":
         return "GIVE_CORRECTION"
     return "ASK_FOCUSED_QUESTION"
-
-
-def _coverage_result(
-    *, evaluation: AIEvaluationOutput, session: Session, rubric_points: list[str]
-) -> CoverageResult:
-    covered_points = [
-        rubric_points[index - 1]
-        for index in evaluation.covered_points
-        if 0 < index <= len(rubric_points)
-    ]
-    newly_covered = [
-        point
-        for point in covered_points
-        if point not in set(session.covered_points_current_round)
-    ]
-    current_round, all_rounds, _ = update_coverage(
-        covered_points=covered_points,
-        covered_points_current_round=session.covered_points_current_round,
-        covered_points_all=session.covered_points_all,
-        no_progress_count=session.no_progress_count,
-    )
-    return CoverageResult(
-        current_round=current_round,
-        all_rounds=all_rounds,
-        newly_covered=newly_covered,
-        no_progress_count=0 if evaluation.has_progress else session.no_progress_count + 1,
-        reset_help_request_count=False,
-    )
 
 
 def _decision(

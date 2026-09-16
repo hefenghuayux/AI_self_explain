@@ -45,8 +45,6 @@ class Session(Base):
     solution_exposed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     completion_type: Mapped[str | None] = mapped_column(String(30))
     need_human_reason: Mapped[str | None] = mapped_column(Text)
-    covered_points_current_round: Mapped[list[str]] = mapped_column(JSON, nullable=False)
-    covered_points_all: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     current_draft: Mapped[str] = mapped_column(Text, nullable=False, default="")
     last_support_draft: Mapped[str] = mapped_column(Text, nullable=False, default="")
     paused_from_stage: Mapped[str | None] = mapped_column(String(40))

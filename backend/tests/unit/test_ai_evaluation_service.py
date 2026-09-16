@@ -39,7 +39,7 @@ def test_ai_model_client_uses_configured_chat_completions_protocol(settings) -> 
             guided_questions=[],
             full_solution="1+1=2",
         ),
-        session=Session(round=1, support_count_round=0, covered_points_current_round=[]),
+        session=Session(round=1, support_count_round=0),
         attempt=ExplanationAttempt(confirmed_text="两个一相加等于二。"),
         schema={"type": "object", "additionalProperties": False},
         validation_errors=[],
@@ -75,7 +75,6 @@ def test_evaluation_snapshot_separates_session_state_from_transport_prompt() -> 
     session = Session(
         round=2,
         support_count_round=3,
-        covered_points_current_round=["不应进入评价上下文"],
     )
     attempt = ExplanationAttempt(confirmed_text="两个一相加等于二。")
 
@@ -93,7 +92,6 @@ def test_evaluation_snapshot_separates_session_state_from_transport_prompt() -> 
     assert '"confirmedText": "两个一相加等于二。"' in prompt
     assert '"round"' not in prompt
     assert '"supportCountRound"' not in prompt
-    assert '"coveredPointsCurrentRound"' not in prompt
     assert request.blocks.session_context == {
         "taskType": "EXPLANATION",
         "progressContext": {
@@ -102,7 +100,6 @@ def test_evaluation_snapshot_separates_session_state_from_transport_prompt() -> 
         },
         "round": 2,
         "supportCountRound": 3,
-        "coveredPointsCurrentRound": ["不应进入评价上下文"],
     }
     assert request.blocks.user_input == {"confirmedText": "两个一相加等于二。"}
     assert request.blocks.memory_context is None

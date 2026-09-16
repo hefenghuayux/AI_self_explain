@@ -74,8 +74,6 @@ def session_snapshot(session: Session) -> dict[str, object]:
         "solutionExposed": session.solution_exposed,
         "completionType": session.completion_type,
         "needHumanReason": session.need_human_reason,
-        "coveredPointsCurrentRound": session.covered_points_current_round,
-        "coveredPointsAll": session.covered_points_all,
         "currentDraft": session.current_draft,
         "version": session.version,
         "pausedFromStage": session.paused_from_stage,
@@ -109,8 +107,6 @@ class SessionRepository:
             no_progress_count=0,
             no_progress_help_request_count=0,
             solution_exposed=False,
-            covered_points_current_round=[],
-            covered_points_all=[],
             current_draft="",
             last_support_draft="",
             version=0,
@@ -478,8 +474,6 @@ class SessionRepository:
         if decision.should_generate != (teaching_output is not None):
             raise ValueError("教学决策与生成结果不一致")
         before_snapshot = session_snapshot(session)
-        session.covered_points_current_round = decision.coverage.current_round
-        session.covered_points_all = decision.coverage.all_rounds
         session.no_progress_count = decision.coverage.no_progress_count
         if decision.coverage.reset_help_request_count:
             session.no_progress_help_request_count = 0
@@ -554,8 +548,6 @@ class SessionRepository:
         if not decision.should_generate:
             raise ValueError("无需生成教学内容的决策不能记录生成失败")
         before_snapshot = session_snapshot(session)
-        session.covered_points_current_round = decision.coverage.current_round
-        session.covered_points_all = decision.coverage.all_rounds
         session.no_progress_count = decision.coverage.no_progress_count
         session.status = STATUS_IN_PROGRESS
         session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
@@ -1148,7 +1140,6 @@ class SessionRepository:
             session.support_count_round = 0
             session.no_progress_count = 0
             session.no_progress_help_request_count = 0
-            session.covered_points_current_round = []
             session.flow_stage = FLOW_STAGE_CAPTURING_INPUT
             trigger_type = "UNDERSTOOD_FIRST_SOLUTION"
         else:
@@ -1229,10 +1220,6 @@ class SessionRepository:
             external_call_record_id=external_call_record_id,
             correctness=evaluation.correctness if evaluation is not None else None,
             completeness=evaluation.completeness if evaluation is not None else None,
-            covered_points=evaluation.covered_points if evaluation is not None else None,
-            error_evidence=[item.model_dump() for item in evaluation.error_evidence]
-            if evaluation is not None
-            else None,
             evaluation_mode=evaluation_mode,
             prompt_version=prompt_version,
             model_provider=model_provider,

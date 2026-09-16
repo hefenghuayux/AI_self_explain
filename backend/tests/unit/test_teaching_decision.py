@@ -11,7 +11,6 @@ def evaluation(
     correctness: str,
     completeness: str,
     *,
-    covered_points: list[int] | None = None,
     has_progress: bool = True,
 ) -> AIEvaluationOutput:
     terminal = correctness == "CORRECT" and completeness == "COMPLETE"
@@ -19,8 +18,6 @@ def evaluation(
         {
             "correctness": correctness,
             "completeness": completeness,
-            "coveredPoints": covered_points or [],
-            "errorEvidence": [],
             "hasProgress": has_progress,
             "mainReason": None if terminal else "知识应用问题",
             "otherReasons": [],
@@ -37,8 +34,6 @@ def session(**updates: object) -> Session:
         "no_progress_count": 0,
         "no_progress_help_request_count": 0,
         "solution_exposed": False,
-        "covered_points_current_round": [],
-        "covered_points_all": [],
     }
     values.update(updates)
     return Session(**values)
@@ -65,25 +60,21 @@ def test_teaching_action_is_selected_by_deterministic_priority(
         evaluation=evaluation(
             correctness,
             completeness,
-            covered_points=[1],
             has_progress=has_progress,
         ),
         session=session(),
         settings=settings,
-        rubric_points=RUBRIC_POINTS,
     )
 
     assert decision.allowed_action == expected_action
     assert decision.should_generate is True
-    assert decision.coverage.newly_covered == ["评分点 A"]
 
 
 def test_complete_decision_is_deterministic_and_skips_generation(settings) -> None:
     decision = decide_teaching(
-        evaluation=evaluation("CORRECT", "COMPLETE", covered_points=[1]),
+        evaluation=evaluation("CORRECT", "COMPLETE"),
         session=session(support_count_total=1),
         settings=settings,
-        rubric_points=RUBRIC_POINTS,
     )
 
     assert decision.allowed_action is None
@@ -125,13 +116,11 @@ def test_has_progress_controls_no_progress_count(settings) -> None:
         evaluation=evaluation("CORRECT", "INCOMPLETE", has_progress=True),
         session=session(no_progress_count=2),
         settings=settings,
-        rubric_points=RUBRIC_POINTS,
     )
     stalled = decide_teaching(
         evaluation=evaluation("CORRECT", "INCOMPLETE", has_progress=False),
         session=session(no_progress_count=2),
         settings=settings,
-        rubric_points=RUBRIC_POINTS,
     )
 
     assert progressed.coverage.no_progress_count == 0
@@ -154,7 +143,6 @@ def test_counted_action_hits_limit_before_generation(
         evaluation=evaluation("WRONG", "COMPLETE"),
         session=session(round=round_number, support_count_round=limit - 1),
         settings=settings,
-        rubric_points=RUBRIC_POINTS,
     )
 
     assert decision.should_generate is False

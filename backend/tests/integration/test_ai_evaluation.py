@@ -49,8 +49,6 @@ def valid_evaluation_content() -> str:
         {
             "correctness": "CORRECT",
             "completeness": "INCOMPLETE",
-            "coveredPoints": [1],
-            "errorEvidence": [],
             "hasProgress": True,
             "mainReason": "知识应用问题",
             "otherReasons": [],
@@ -155,7 +153,6 @@ def test_valid_evaluation_and_generated_teaching_are_saved(
             return AIModelResponse("{\"choices\": []}", focused_teaching_content(), 10)
         prompt = request.transport.messages[0].content
         schema = request.blocks.question_context["outputSchema"]
-        assert 1 in schema["properties"]["coveredPoints"]["items"]["enum"]
         assert "我先计算 1 加 1。" in prompt
         assert "两个 1 合起来是多少？" in prompt
         return AIModelResponse("{\"choices\": []}", valid_evaluation_content(), 12)
@@ -182,7 +179,7 @@ def test_valid_evaluation_and_generated_teaching_are_saved(
         with engine.connect() as connection:
             evaluation = connection.execute(
                 text(
-                    "SELECT validation_status, covered_points, validation_errors "
+                    "SELECT validation_status, validation_errors "
                     "FROM ai_evaluations"
                 )
             ).mappings().one()
@@ -196,7 +193,6 @@ def test_valid_evaluation_and_generated_teaching_are_saved(
     finally:
         engine.dispose()
     assert evaluation["validation_status"] == "VALID"
-    assert json.loads(evaluation["covered_points"]) == [1]
     assert json.loads(evaluation["validation_errors"]) == []
     assert dict(call) == {
         "provider": "test-ai",
@@ -218,9 +214,7 @@ def test_schema_retry_exhaustion_requests_human_review_without_support_count(
         {
             "correctness": "CORRECT",
             "completeness": "INCOMPLETE",
-            "coveredPoints": ["正确计算加法"],
             "missingPoints": ["得出结果 2"],
-            "errorEvidence": [],
             "feedback": "请补充结果。",
             "confidence": 1,
             "nextAction": "GIVE_HINT",
@@ -262,8 +256,6 @@ def test_unknown_evaluation_requests_review_and_keeps_self_explanation_open(
         {
             "correctness": "UNKNOWN",
             "completeness": "INCOMPLETE",
-            "coveredPoints": [1],
-            "errorEvidence": [],
             "hasProgress": True,
             "mainReason": "知识应用问题",
             "otherReasons": [],
@@ -288,7 +280,6 @@ def test_unknown_evaluation_requests_review_and_keeps_self_explanation_open(
     assert saved_session["flowStage"] == "WAIT_STUDENT_ACTION"
     assert saved_session["supportCountRound"] == 0
     assert saved_session["supportCountTotal"] == 0
-    assert saved_session["coveredPointsCurrentRound"] == []
     assert "AI 结构化评价" in saved_session["needHumanReason"]
     assert saved_session["latestEvaluation"] is None
     assert saved_session["teachingGeneration"] is None
@@ -303,16 +294,10 @@ def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
         {
             "correctness": "CORRECT",
             "completeness": "INCOMPLETE",
-            "coveredPoints": [
-                "令 y = 0 求得 x = 3，并写出 A(3, 0)。",
-                "令 x = 0 求得 y = 6，并写出 B(0, 6)。",
-                "利用直角三角形面积公式计算出 S三角形AOB = 9。",
-            ],
             "missingPoints": [
                 "用 OP = |t| 建立 3|t| = 6 的面积方程。",
                 "得到 P(2, 0) 和 P(-2, 0) 两个坐标。",
             ],
-            "errorEvidence": [],
             "feedback": "第三问可使用 OP = |t| 列面积方程。",
             "confidence": 1,
             "nextAction": "GIVE_HINT",
@@ -328,16 +313,10 @@ def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
         {
             "correctness": "CORRECT",
             "completeness": "INCOMPLETE",
-            "coveredPoints": [
-                "令 y = 0 求得 x = 3，并写出 A(3, 0)。",
-                "令 x = 0 求得 y = 6，并写出 B(0, 6)。",
-                "利用直角三角形面积公式计算出 S三角形AOB = 9。",
-            ],
             "missingPoints": [
                 "用 OP = |t| 建立 3|t| = 6 的面积方程。",
                 "得到 P(2, 0) 和 P(-2, 0) 两个坐标。",
             ],
-            "errorEvidence": [],
             "hasProgress": True,
             "mainReason": "知识应用问题",
             "otherReasons": [],
@@ -410,8 +389,6 @@ def test_complete_evaluation_sets_completion_with_deterministic_label(
         {
             "correctness": "CORRECT",
             "completeness": "COMPLETE",
-            "coveredPoints": [1, 2],
-            "errorEvidence": [],
             "hasProgress": True,
             "mainReason": None,
             "otherReasons": [],
@@ -528,7 +505,6 @@ def test_teaching_failure_keeps_evaluation_without_support_side_effects(
     assert current.status_code == 200
     assert current.json()["status"] == "IN_PROGRESS"
     assert current.json()["flowStage"] == "WAIT_STUDENT_ACTION"
-    assert current.json()["coveredPointsCurrentRound"] == ["正确计算加法"]
     assert current.json()["supportCountRound"] == 0
     assert current.json()["supportCountTotal"] == 0
     assert current.json()["latestEvaluation"]["correctness"] == "CORRECT"

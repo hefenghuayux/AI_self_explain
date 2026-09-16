@@ -65,9 +65,7 @@ def test_timeline_persists_visible_feedback_and_hides_structured_details(
                 {
                     "correctness": "WRONG",
                         "completeness": "COMPLETE",
-                    "coveredPoints": ["正确计算加法", "得出结果 2"],
                     "missingPoints": [],
-                    "errorEvidence": [],
                     "confidence": 1,
                     "needHumanReason": None,
                 }
@@ -120,7 +118,6 @@ def test_timeline_persists_visible_feedback_and_hides_structured_details(
             "createdAt": first_items[1]["createdAt"],
         }
     ]
-    assert "coveredPoints" not in first_items[1]
     assert appealed_timeline.status_code == 200
     assert appeal_response.json()["status"] == "IN_PROGRESS"
     assert appeal_response.json()["flowStage"] == "WAIT_STUDENT_ACTION"

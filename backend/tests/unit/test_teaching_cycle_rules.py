@@ -1,21 +1,7 @@
 from app.rules.teaching_cycle import (
     completion_type_for,
     support_limit_reached,
-    update_coverage,
 )
-
-
-def test_update_coverage_tracks_new_points_only_for_current_round() -> None:
-    current, all_points, no_progress = update_coverage(
-        covered_points=["评分点 A"],
-        covered_points_current_round=["评分点 A"],
-        covered_points_all=["旧轮评分点"],
-        no_progress_count=1,
-    )
-
-    assert current == ["评分点 A"]
-    assert all_points == ["旧轮评分点", "评分点 A"]
-    assert no_progress == 2
 
 
 def test_support_limits_are_derived_from_settings(settings) -> None:

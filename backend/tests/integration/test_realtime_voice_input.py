@@ -90,8 +90,8 @@ def test_realtime_voice_transcript_returns_to_editable_draft_without_confirmatio
             raw_response='{"choices": []}',
             content=(
                 '{"correctness":"CORRECT","completeness":"INCOMPLETE",'
-                '"coveredPoints":["正确计算加法"],"missingPoints":["得出结果 2"],'
-                '"errorEvidence":[],"confidence":1,"needHumanReason":null}'
+                '"missingPoints":["得出结果 2"],'
+                '"confidence":1,"needHumanReason":null}'
             ),
             duration_ms=1,
         )
@@ -256,7 +256,7 @@ def test_doubt_voice_draft_is_submitted_by_the_original_doubt_action(
         return AIModelResponse(
             raw_response='{"choices": []}',
             content=(
-                '{"action":"SIMPLE_DOUBT_ANSWER","coveredPoints":[],'
+                '{"action":"SIMPLE_DOUBT_ANSWER",'
                 '"missingPoints":["正确计算加法","得出结果 2"],'
                 '"content":"请先说明相加的两个量。","questions":[]}'
             ),
