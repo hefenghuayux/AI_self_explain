@@ -6,6 +6,7 @@ from pathlib import Path
 
 import httpx
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session as DatabaseSession
 
 from app.core.config import Settings
@@ -14,6 +15,7 @@ from app.models.explanation_attempt import ExplanationAttempt
 from app.models.external_call_record import ExternalCallRecord
 from app.models.question import Question
 from app.models.session import Session
+from app.models.support_event import SupportEvent
 from app.repositories.sessions import SessionRepository, session_run_id
 from app.schemas.ai_evaluation import AIEvaluationOutput
 from app.schemas.merged import (
@@ -150,6 +152,34 @@ class AIEvaluationService:
         run_id = session_run_id(session.id, attempt.id)
         event_log = SessionEventLog(self.repository.database_session)
 
+        previous_attempts = self.repository.database_session.scalars(
+            select(ExplanationAttempt)
+            .where(
+                ExplanationAttempt.session_id == session.id,
+                ExplanationAttempt.round == session.round,
+                ExplanationAttempt.id < attempt.id,
+                ExplanationAttempt.id.in_(select(AIEvaluation.attempt_id)),
+            )
+            .order_by(ExplanationAttempt.id)
+        ).all()
+        previous_support = self.repository.database_session.scalars(
+            select(SupportEvent)
+            .where(SupportEvent.session_id == session.id, SupportEvent.round == session.round)
+            .order_by(SupportEvent.id)
+        ).all()
+        progress_context = {
+            "previousExplanations": [item.confirmed_text for item in previous_attempts],
+            "previousTeaching": [
+                {
+                    "content": item.content,
+                    "questions": item.guided_questions,
+                    "answers": item.guided_answers,
+                    "followUpContent": item.follow_up_content,
+                }
+                for item in previous_support
+            ],
+        }
+
         for schema_attempt in range(self.settings.ai_schema_max_retries + 1):
             reasoning_effort = self.settings.ai_reasoning_effort
             request = _render_prompt(
@@ -161,6 +191,7 @@ class AIEvaluationService:
                 model=self.settings.ai_model,
                 prompt_version=self.settings.prompt_version,
                 reasoning_effort=reasoning_effort,
+                progress_context=progress_context,
             )
             if schema_attempt == 0:
                 event_log.append_contexts(
@@ -382,6 +413,7 @@ def _render_prompt(
     model: str,
     prompt_version: str,
     reasoning_effort: str | None = None,
+    progress_context: dict[str, object] | None = None,
 ) -> ModelRequestSnapshot:
     template = PROMPT_PATH.read_text(encoding="utf-8")
     question_context: dict[str, object] = {
@@ -404,6 +436,9 @@ def _render_prompt(
     }
     transport_context.update(user_input)
     transport_context["taskType"] = "EXPLANATION"
+    transport_context["progressContext"] = progress_context or {
+        "previousExplanations": [], "previousTeaching": []
+    }
     prompt = (
         template.replace("{{JSON_SCHEMA}}", json.dumps(schema, ensure_ascii=False))
         .replace("{{CONTEXT_JSON}}", json.dumps(transport_context, ensure_ascii=False))
@@ -418,6 +453,7 @@ def _render_prompt(
             question_context=question_context,
             session_context={
                 "taskType": "EXPLANATION",
+                "progressContext": transport_context["progressContext"],
                 "round": session.round,
                 "supportCountRound": session.support_count_round,
                 "coveredPointsCurrentRound": session.covered_points_current_round,

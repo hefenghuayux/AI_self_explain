@@ -1,0 +1,501 @@
+--- a/backend/app/prompts/generate_support.md
++++ b/backend/app/prompts/generate_support.md
+@@ -1,15 +1,13 @@
+ 你是 AI 自讲 Demo 的疑问支持生成器。后端在上下文中传入 `taskType = HELP`，你只能处理本次疑问支持任务，不能自行选择或切换任务类型。只有上下文中由后端明确提供的评价或动作才能视为已确定；未提供的评价不能假定已经完成。状态、计数和阈值由后端控制。
+ 
++本任务不判断解题进展，不输出评分点或进展字段，不根据历史求助次数切换动作。直接回应当前疑问。
++
+ 要求：
+-1. `coveredPoints` 必须原样引用已覆盖的评分点，不能包含题目中不存在的评分点。
+-2. 学生请求完整答案时，返回 `REFUSE_FULL_SOLUTION`，`content` 说明只能提供局部帮助，`questions` 为空；不得泄露完整解析。
+-3. 明确疑问若只是简单知识点，返回 `SIMPLE_DOUBT_ANSWER` 并直接回答，`questions` 为空。
+-4. 需要引导的关键步骤疑问返回 `GUIDED_QUESTIONS`。`guidedQuestions` 非空时优先参考其中内容；为空时根据其他题目材料和学生当前内容组织 2 至 3 个能帮助学生继续推理的子问题。不得给出这些子问题的答案。
+-5. 当 `forceCurrentStepAnswer` 为 true 时，返回 `CURRENT_STEP_ANSWER`，只说明当前一个步骤如何继续，不得给出完整解析，`questions` 为空。
+-6. 每次都从 `mainDraft` 或 `doubtText` 中逐字引用一句与题目相关、已有价值的学生表达，并紧接着说明这句话具体推进了哪个评分点或解题步骤；引用必须使用引号，不能改写或虚构原话。
+-7. 返回 `main_reason`、`other_reasons`、`judge_reason`。`main_reason` 是本轮主要原因，只能使用原因分类表中的名称；`other_reasons` 是可能或次要原因数组，没有时返回 `[]`；`judge_reason` 用一小段话说明原因判断依据。
+-8. 只根据当前草稿、疑问文本和实际提供的历史形成原因假设。问题只围绕主要原因，不能为验证次要原因额外提问。原因不代表学生的长期特征，不得把原因标签写入学生可见的 `content` 或 `questions`。证据不足时使用“原因未明”；单纯请求答案不能证明存在知识缺陷。
+-9. 返回严格 JSON，包含 `action`、`coveredPoints`、`main_reason`、`other_reasons`、`judge_reason`、`content` 和 `questions`，不得添加其他字段。`questions` 中每项包含 `id` 和 `question`。
++1. 学生请求完整答案时，返回 `REFUSE_FULL_SOLUTION`，`content` 说明只能提供局部帮助，`questions` 为空；不得泄露完整解析。
++2. 明确疑问若只是简单知识点，返回 `SIMPLE_DOUBT_ANSWER` 并直接回答，`questions` 为空。
++3. 需要引导的关键步骤疑问返回 `GUIDED_QUESTIONS`。`guidedQuestions` 非空时优先参考其中内容；为空时根据其他题目材料和学生当前内容组织 2 至 3 个能帮助学生继续推理的子问题。不得给出这些子问题的答案。
++4. 返回严格 JSON，包含 `action`、`main_reason`、`other_reasons`、`judge_reason`、`content` 和 `questions`，不得添加其他字段。`main_reason` 是本轮主要原因，只能使用原因分类表中的名称；`other_reasons` 是可能或次要原因数组，没有时返回 `[]`；`judge_reason` 用一小段话说明原因判断依据。`questions` 中每项包含 `id` 和 `question`。
++5. 只根据当前草稿、疑问文本和实际提供的历史形成原因假设。问题只围绕主要原因，不能为验证次要原因额外提问。原因不代表学生的长期特征，不得把原因标签写入学生可见的 `content` 或 `questions`。证据不足时使用“原因未明”；单纯请求答案不能证明存在知识缺陷。
+ 
+ 原因分类表：
+ 
+--- a/backend/app/prompts/evaluate_explanation.md
++++ b/backend/app/prompts/evaluate_explanation.md
+@@ -12,28 +12,30 @@
+ - `errorEvidence`：当学生存在明确错误时，`quote` 必须逐字引用学生确认文本；并填写错误位置、原因和下一步思考方向
+ - `correctness = UNCERTAIN` 时必须填写非空的 `needHumanReason`；其他正确性下必须为 `null`
+ 
+-你只负责判断正确性、完整性、评分点覆盖和错误证据。不要输出评价之外的解释。
++评价依据写入评价字段，面向学生的帮助写入教学字段。
+ 
+ ## 第二步：教学内容生成
+ 
+-根据评价结果和是否产生新增评分点来决定 `teachingAction`、`content` 和 `questions`。
++根据评价结果和是否有解题进展来决定 `teachingAction`、`content` 和 `questions`。
+ 
+-### 如何判断是否产生新增评分点
++### 如何判断是否有解题进展
+ 
+-上下文中的 `coveredPointsCurrentRound` 是学生本轮已覆盖的评分点。你输出的 `coveredPoints` 中如果有不在 `coveredPointsCurrentRound` 中的点，即为“有新点”；否则为“无新点”。
++返回布尔值 `hasProgress`。根据 `progressContext.previousExplanations` 和当前确认文本，每次重新判断是否出现有效的新推理、纠正错误、补充依据或合理的替代解法；不能用 `coveredPoints` 差集判断进展，也不能因解法不在评分点列表中而否定进展。评分点只用于整题评价和审计。
++
++首次自讲没有历史时，只要提出了与本题有关的有效推理就视为有进展；只表达疑问或不知道、机械复述已有内容，不算进展。结合 `progressContext.previousTeaching` 区分学生自己的推理与提示复述。完成和无法可靠判断时仍填写 `hasProgress`，但优先执行终态或不确定评价规则。
+ 
+ ### 动作选择表
+ 
+-| 评价结果 | 有无新点 | teachingAction | content | questions |
++| 评价结果 | 有无进展 | teachingAction | content | questions |
+ |---|---|---|---|---|
+ | CORRECT + COMPLETE | — | `null` | `null` | `[]` |
+ | UNCERTAIN | — | `null` | `null` | `[]` |
+-| CORRECT + INCOMPLETE | 有新点 | `ASK_FOCUSED_QUESTION` | 聚焦追问正文 | 恰好一个问题 |
+-| CORRECT + INCOMPLETE | 无新点 | `GIVE_HINT` | 提示正文 | `[]` |
+-| WRONG + COMPLETE | 有新点 | `GIVE_CORRECTION` | 纠错正文 | `[]` |
+-| WRONG + COMPLETE | 无新点 | `GIVE_HINT` | 提示正文 | `[]` |
+-| WRONG + INCOMPLETE | 有新点 | `CORRECT_AND_ASK` | 纠错+追问正文 | 恰好一个问题 |
+-| WRONG + INCOMPLETE | 无新点 | `GIVE_HINT` | 提示正文 | `[]` |
++| CORRECT + INCOMPLETE | 有进展 | `ASK_FOCUSED_QUESTION` | 聚焦追问正文 | 恰好一个问题 |
++| CORRECT + INCOMPLETE | 无进展 | `GIVE_HINT` | 提示正文 | `[]` |
++| WRONG + COMPLETE | 有进展 | `GIVE_CORRECTION` | 纠错正文 | `[]` |
++| WRONG + COMPLETE | 无进展 | `GIVE_HINT` | 提示正文 | `[]` |
++| WRONG + INCOMPLETE | 有进展 | `CORRECT_AND_ASK` | 纠错+追问正文 | 恰好一个问题 |
++| WRONG + INCOMPLETE | 无进展 | `GIVE_HINT` | 提示正文 | `[]` |
+ 
+ ### 教学内容约束
+ 
+--- a/backend/app/schemas/support.py
++++ b/backend/app/schemas/support.py
+@@ -11,7 +11,6 @@
+     "GUIDED_QUESTIONS",
+     "SIMPLE_DOUBT_ANSWER",
+     "REFUSE_FULL_SOLUTION",
+-    "CURRENT_STEP_ANSWER",
+ ]
+ SupportReason = Literal[
+     "表达与输入问题",
+@@ -38,7 +37,6 @@
+     )
+ 
+     action: SupportAction
+-    covered_points: list[RequiredText]
+     main_reason: SupportReason = Field(alias="main_reason")
+     other_reasons: list[SupportReason] = Field(alias="other_reasons")
+     judge_reason: RequiredText = Field(alias="judge_reason")
+--- a/backend/app/schemas/merged.py
++++ b/backend/app/schemas/merged.py
+@@ -1,6 +1,6 @@
+ from typing import Literal
+ 
+-from pydantic import ConfigDict, Field, model_validator
++from pydantic import ConfigDict, Field, StrictBool, model_validator
+ 
+ from app.schemas.ai_evaluation import (
+     AIEvaluationOutput,
+@@ -35,9 +35,9 @@
+ class MergedModelOutput(QuestionSchema):
+     """评价 + 教学一次调用的合并输出。
+ 
+-    teachingAction 由大模型根据“是否有新增评分点”等上下文自行判断：
+-    - 有新评分点且不完整 → 追问（ASK_FOCUSED_QUESTION / CORRECT_AND_ASK）
+-    - 无新评分点 → 提示（GIVE_HINT）
++    teachingAction 由大模型根据学生原文和历史判断的 hasProgress 选择：
++    - 有进展且不完整 → 追问（ASK_FOCUSED_QUESTION / CORRECT_AND_ASK）
++    - 无进展 → 提示（GIVE_HINT），不以新增评分点作为判断依据
+     - 有错误 → 纠错（GIVE_CORRECTION）
+     correctness = CORRECT + COMPLETE，或 UNCERTAIN 时，
+     teachingAction / content / questions 均应为空。
+@@ -55,6 +55,7 @@
+     covered_points: list[int]
+     error_evidence: list[ErrorEvidence]
+     need_human_reason: RequiredText | None
++    has_progress: StrictBool
+     teaching_action: MergedTeachingAction | None = None
+     content: str | None = None
+     questions: list[MergedTeachingQuestion] = Field(default_factory=list)
+@@ -91,6 +92,11 @@
+     )
+     terminal = output.correctness == "CORRECT" and output.completeness == "COMPLETE"
+     uncertain = output.correctness == "UNCERTAIN"
++    if not terminal and not uncertain:
++        if not output.has_progress and output.teaching_action != "GIVE_HINT":
++            errors.append("无进展时 teachingAction 必须为 GIVE_HINT")
++        if output.teaching_action is None:
++            errors.append("非终态评价必须返回 teachingAction")
+     if (terminal or uncertain) and output.teaching_action is not None:
+         errors.append("终态或不确定评价不能返回 teachingAction")
+     if (terminal or uncertain) and output.content is not None:
+--- a/backend/app/services/ai_support.py
++++ b/backend/app/services/ai_support.py
+@@ -54,7 +54,6 @@
+         session: Session,
+         main_draft: str,
+         doubt_text: str | None,
+-        force_current_step: bool,
+     ) -> SupportRequestOutput | None:
+         reasoning_effort = self.settings.ai_reasoning_effort
+         result = self._generate(
+@@ -64,14 +63,13 @@
+                 session=session,
+                 main_draft=main_draft,
+                 doubt_text=doubt_text,
+-                force_current_step=force_current_step,
+                 validation_errors=validation_errors,
+                 model=self.settings.ai_model,
+                 prompt_version=self.settings.prompt_version,
+                 reasoning_effort=reasoning_effort,
+             ),
+             output_type=SupportRequestOutput,
+-            validator=lambda output: _validate_support_request(output, question.rubric_points),
++            validator=_validate_support_request,
+         )
+         return result
+ 
+@@ -307,7 +305,6 @@
+     session: Session,
+     main_draft: str,
+     doubt_text: str | None,
+-    force_current_step: bool,
+     validation_errors: list[str],
+     model: str,
+     prompt_version: str,
+@@ -320,7 +317,6 @@
+     user_input = {
+         "mainDraft": main_draft,
+         "doubtText": doubt_text,
+-        "forceCurrentStepAnswer": force_current_step,
+     }
+     context = {**question_context, **session_context, **user_input}
+     prompt = template.replace("{{CONTEXT_JSON}}", json.dumps(context, ensure_ascii=False))
+@@ -393,7 +389,6 @@
+     return {
+         "round": session.round,
+         "supportCountRound": session.support_count_round,
+-        "coveredPointsCurrentRound": session.covered_points_current_round,
+     }
+ 
+ 
+@@ -436,11 +431,7 @@
+     )
+ 
+ 
+-def _validate_support_request(output: SupportRequestOutput, rubric_points: list[str]) -> list[str]:
+-    covered_points = set(output.covered_points)
+-    expected_points = set(rubric_points)
+-    if not covered_points <= expected_points:
+-        return ["coveredPoints 必须来自题目评分点"]
++def _validate_support_request(output: SupportRequestOutput) -> list[str]:
+     if output.action == "GUIDED_QUESTIONS" and not output.questions:
+         return ["GUIDED_QUESTIONS 必须提供至少一个子问题"]
+     if output.action != "GUIDED_QUESTIONS" and output.questions:
+--- a/backend/app/services/ai_evaluation.py
++++ b/backend/app/services/ai_evaluation.py
+@@ -6,6 +6,7 @@
+ 
+ import httpx
+ from pydantic import ValidationError
++from sqlalchemy import select
+ from sqlalchemy.orm import Session as DatabaseSession
+ 
+ from app.core.config import Settings
+@@ -14,6 +15,7 @@
+ from app.models.external_call_record import ExternalCallRecord
+ from app.models.question import Question
+ from app.models.session import Session
++from app.models.support_event import SupportEvent
+ from app.repositories.sessions import SessionRepository, session_run_id
+ from app.schemas.ai_evaluation import AIEvaluationOutput
+ from app.schemas.merged import (
+@@ -150,6 +152,34 @@
+         run_id = session_run_id(session.id, attempt.id)
+         event_log = SessionEventLog(self.repository.database_session)
+ 
++        previous_attempts = self.repository.database_session.scalars(
++            select(ExplanationAttempt)
++            .where(
++                ExplanationAttempt.session_id == session.id,
++                ExplanationAttempt.round == session.round,
++                ExplanationAttempt.id < attempt.id,
++                ExplanationAttempt.id.in_(select(AIEvaluation.attempt_id)),
++            )
++            .order_by(ExplanationAttempt.id)
++        ).all()
++        previous_support = self.repository.database_session.scalars(
++            select(SupportEvent)
++            .where(SupportEvent.session_id == session.id, SupportEvent.round == session.round)
++            .order_by(SupportEvent.id)
++        ).all()
++        progress_context = {
++            "previousExplanations": [item.confirmed_text for item in previous_attempts],
++            "previousTeaching": [
++                {
++                    "content": item.content,
++                    "questions": item.guided_questions,
++                    "answers": item.guided_answers,
++                    "followUpContent": item.follow_up_content,
++                }
++                for item in previous_support
++            ],
++        }
++
+         for schema_attempt in range(self.settings.ai_schema_max_retries + 1):
+             reasoning_effort = self.settings.ai_reasoning_effort
+             request = _render_prompt(
+@@ -161,6 +191,7 @@
+                 model=self.settings.ai_model,
+                 prompt_version=self.settings.prompt_version,
+                 reasoning_effort=reasoning_effort,
++                progress_context=progress_context,
+             )
+             if schema_attempt == 0:
+                 event_log.append_contexts(
+@@ -382,6 +413,7 @@
+     model: str,
+     prompt_version: str,
+     reasoning_effort: str | None = None,
++    progress_context: dict[str, object] | None = None,
+ ) -> ModelRequestSnapshot:
+     template = PROMPT_PATH.read_text(encoding="utf-8")
+     question_context: dict[str, object] = {
+@@ -404,6 +436,9 @@
+     }
+     transport_context.update(user_input)
+     transport_context["taskType"] = "EXPLANATION"
++    transport_context["progressContext"] = progress_context or {
++        "previousExplanations": [], "previousTeaching": []
++    }
+     prompt = (
+         template.replace("{{JSON_SCHEMA}}", json.dumps(schema, ensure_ascii=False))
+         .replace("{{CONTEXT_JSON}}", json.dumps(transport_context, ensure_ascii=False))
+@@ -418,6 +453,7 @@
+             question_context=question_context,
+             session_context={
+                 "taskType": "EXPLANATION",
++                "progressContext": transport_context["progressContext"],
+                 "round": session.round,
+                 "supportCountRound": session.support_count_round,
+                 "coveredPointsCurrentRound": session.covered_points_current_round,
+--- a/backend/app/api/sessions.py
++++ b/backend/app/api/sessions.py
+@@ -364,14 +364,11 @@
+         session=session,
+         main_draft=action_input.main_draft,
+         doubt_text=None,
+-        force_current_step=False,
+     )
+     if output is None:
+         return to_session_response(repository, session)
+     generated_session = apply_support_request_output(
+         repository=repository,
+-        support_service=support_service,
+-        question=question,
+         session=session,
+         main_draft=action_input.main_draft,
+         doubt_text=None,
+@@ -421,14 +418,11 @@
+         session=session,
+         main_draft=action_input.main_draft,
+         doubt_text=action_input.doubt_text,
+-        force_current_step=False,
+     )
+     if output is None:
+         return to_session_response(repository, session)
+     generated_session = apply_support_request_output(
+         repository=repository,
+-        support_service=support_service,
+-        question=question,
+         session=session,
+         main_draft=action_input.main_draft,
+         doubt_text=action_input.doubt_text,
+@@ -891,8 +885,6 @@
+ def apply_support_request_output(
+     *,
+     repository: SessionRepository,
+-    support_service: AISupportService,
+-    question: Question,
+     session: Session,
+     main_draft: str,
+     doubt_text: str | None,
+@@ -915,43 +907,8 @@
+             support_kind="SIMPLE_DOUBT",
+             settings=settings,
+         )
+-    if output.action == "CURRENT_STEP_ANSWER":
+-        return repository.record_direct_help(
+-            session=session,
+-            main_draft=main_draft,
+-            doubt_text=doubt_text,
+-            content=output.content,
+-            support_kind="CURRENT_STEP",
+-            settings=settings,
+-        )
+     if output.action != "GUIDED_QUESTIONS":
+         raise RuntimeError(f"不支持的教学支持动作：{output.action}")
+-    force_current_step = repository.record_help_progress(
+-        session=session,
+-        main_draft=main_draft,
+-        covered_points=output.covered_points,
+-        settings=settings,
+-    )
+-    if force_current_step:
+-        step_output = support_service.generate_request(
+-            question=question,
+-            session=session,
+-            main_draft=main_draft,
+-            doubt_text=doubt_text,
+-            force_current_step=True,
+-        )
+-        if step_output is None:
+-            return session
+-        if step_output.action != "CURRENT_STEP_ANSWER":
+-            raise RuntimeError("AI 未按确定性规则生成当前步骤答案")
+-        return repository.record_direct_help(
+-            session=session,
+-            main_draft=main_draft,
+-            doubt_text=doubt_text,
+-            content=step_output.content,
+-            support_kind="CURRENT_STEP",
+-            settings=settings,
+-        )
+     return repository.record_guided_questions(
+         session=session,
+         main_draft=main_draft,
+--- a/backend/app/repositories/sessions.py
++++ b/backend/app/repositories/sessions.py
+@@ -30,7 +30,6 @@
+     COUNTED_SUPPORT_TYPES,
+     support_limit_for,
+     support_limit_reached,
+-    update_coverage,
+ )
+ from app.rules.teaching_decision import TeachingDecision
+ from app.schemas.ai_evaluation import AIEvaluationOutput
+@@ -823,49 +822,6 @@
+         self.database_session.refresh(session)
+         return session
+ 
+-    def record_help_progress(
+-        self,
+-        *,
+-        session: Session,
+-        main_draft: str,
+-        covered_points: list[str],
+-        settings: Settings,
+-    ) -> bool:
+-        """记录本次求助前的草稿进展，并返回是否应给出当前步骤答案。"""
+-        before_snapshot = session_snapshot(session)
+-        normalized_draft = _normalize_draft(main_draft)
+-        previous_draft = _normalize_draft(session.last_support_draft)
+-        new_points: set[str] = set()
+-        session.current_draft = main_draft
+-        if normalized_draft and normalized_draft != previous_draft:
+-            new_points = set(covered_points) - set(session.covered_points_current_round)
+-            (
+-                session.covered_points_current_round,
+-                session.covered_points_all,
+-                session.no_progress_count,
+-            ) = update_coverage(
+-                covered_points=covered_points,
+-                covered_points_current_round=session.covered_points_current_round,
+-                covered_points_all=session.covered_points_all,
+-                no_progress_count=session.no_progress_count,
+-            )
+-        else:
+-            session.no_progress_count += 1
+-        session.last_support_draft = main_draft
+-        if new_points:
+-            session.no_progress_help_request_count = 0
+-        else:
+-            session.no_progress_help_request_count += 1
+-        session.version += 1
+-        self._record_transition(
+-            session=session,
+-            trigger_type="ASSESS_HELP_PROGRESS",
+-            before_snapshot=before_snapshot,
+-        )
+-        self.database_session.commit()
+-        self.database_session.refresh(session)
+-        return session.no_progress_help_request_count > settings.guided_question_request_limit
+-
+     def record_support_submission(
+         self,
+         *,
+@@ -1432,7 +1388,3 @@
+         event_order,
+         str(item["id"]),
+     )
+-
+-
+-def _normalize_draft(value: str) -> str:
+-    return "\n".join(line.strip() for line in value.replace("\r\n", "\n").split("\n")).strip()
+--- a/backend/app/rules/teaching_decision.py
++++ b/backend/app/rules/teaching_decision.py
+@@ -42,17 +42,20 @@
+     """根据合并输出的评价字段和模型给出的教学动作做确定性决策。
+ 
+     教学动作（追问/提示/纠错）由模型在输出中通过 teachingAction 给出；
+-    本轮是否新增评分点仍由后端按 coveredPoints 与
+-    coveredPointsCurrentRound 的差集确定，只用于覆盖记录和审计。
++    进展由模型的 hasProgress 判断，后端据此更新无进展计数。
++    评分点差集只用于覆盖记录和审计，不决定进展或教学动作。
+     后端确定性负责：COMPLETED / NEED_HUMAN / 支持上限阻断。
+     """
+     evaluation = _as_evaluation_output(merged_output)
+     if evaluation_mode != "FULL_RUBRIC":
+         return _decide_without_rubric(
+-            evaluation=evaluation, session=session, settings=settings
++            evaluation=evaluation, session=session, settings=settings,
++            has_progress=merged_output.has_progress,
+         )
+ 
+-    coverage = _coverage_result(evaluation=evaluation, session=session)
++    coverage = _coverage_result(
++        evaluation=evaluation, session=session, has_progress=merged_output.has_progress
++    )
+ 
+     if merged_output.correctness == "CORRECT" and merged_output.completeness == "COMPLETE":
+         return _decision(
+@@ -103,9 +106,9 @@
+ 
+ 
+ def _decide_without_rubric(
+-    *, evaluation: AIEvaluationOutput, session: Session, settings: Settings
++    *, evaluation: AIEvaluationOutput, session: Session, settings: Settings, has_progress: bool
+ ) -> TeachingDecision:
+-    coverage = _coverage_result(evaluation=evaluation, session=session)
++    coverage = _coverage_result(evaluation=evaluation, session=session, has_progress=has_progress)
+     if evaluation.correctness == "CORRECT":
+         return _decision(
+             session=session,
+@@ -130,7 +133,7 @@
+ 
+ 
+ def _coverage_result(
+-    *, evaluation: AIEvaluationOutput, session: Session
++    *, evaluation: AIEvaluationOutput, session: Session, has_progress: bool
+ ) -> CoverageResult:
+     if evaluation.correctness == "UNCERTAIN":
+         return CoverageResult(
+@@ -145,7 +148,7 @@
+         for point in evaluation.covered_points
+         if point not in set(session.covered_points_current_round)
+     ]
+-    current_round, all_rounds, no_progress_count = update_coverage(
++    current_round, all_rounds, _ = update_coverage(
+         covered_points=evaluation.covered_points,
+         covered_points_current_round=session.covered_points_current_round,
+         covered_points_all=session.covered_points_all,
+@@ -155,8 +158,8 @@
+         current_round=current_round,
+         all_rounds=all_rounds,
+         newly_covered=newly_covered,
+-        no_progress_count=no_progress_count,
+-        reset_help_request_count=bool(newly_covered),
++        no_progress_count=0 if has_progress else session.no_progress_count + 1,
++        reset_help_request_count=False,
+     )
+ 
+ 

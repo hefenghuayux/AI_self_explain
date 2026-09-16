@@ -1,0 +1,14 @@
+{
+  "extends": "../frontend/tsconfig.app.json",
+  "compilerOptions": {
+    "composite": false,
+    "tsBuildInfoFile": "./tsconfig.frontend-src.tsbuildinfo",
+    "types": []
+  },
+  "include": [
+    "../frontend/src/**/*.ts",
+    "../frontend/src/**/*.tsx",
+    "../frontend/src/**/*.vue"
+  ],
+  "exclude": ["../frontend/tests"]
+}

@@ -1,0 +1,735 @@
+Science & Education (2025) 34:877–892
+https://doi.org/10.1007/s11191-024-00530-2
+SI: EPISTEMIC INSIGHT & ARTIFICIAL INTELLIGENCE
+A Review on the Use of Large Language Models as Virtual
+Tutors
+Silvia García-Méndez 1 · Francisco de Arriba-Pérez 1 ·
+María del Carmen Somoza-López 2
+Accepted: 26 April 2024 / Published online: 18 May 2024
+© The Author(s) 2024
+Abstract
+Transformer architectures contribute to managing long-term dependencies for natural lan-
+guage processing, representing one of the most recent changes in the ﬁeld. These architectures
+are the basis of the innovative, cutting-edge large language models (LLMs) that have pro-
+duced a huge buzz in several ﬁelds and industrial sectors, among the ones education stands
+out. Accordingly, these generative artiﬁcial intelligence-based solutions have directed the
+change in techniques and the evolution in educational methods and contents, along with
+network infrastructure, towards high-quality learning. Given the popularity of LLMs, this
+review seeks to provide a comprehensive overview of those solutions designed speciﬁcally
+to generate and evaluate educational materials and which involve students and teachers in
+their design or experimental plan. To the best of our knowledge, this is the ﬁrst review of
+educational applications (e.g., student assessment) of LLMs. As expected, the most common
+role of these systems is as virtual tutors for automatic question generation. Moreover, the
+most popular models are GPT-3 and BERT. However, due to the continuous launch of new
+generative models, new works are expected to be published shortly.
+1 Introduction
+Artiﬁcial intelligence (AI) refers to the synthetic capabilities of computer science applications
+to perform tasks that usually require human intelligence (e.g., adaptation, learning, reasoning)
+(Sarker, 2022; Cooper, 2023). The recent technological advancements within the AI ﬁeld have
+led to relevant changes in business and research, the economy, and society (i.e., mega-trends)
+that are predicted to continue (Estigarribia et al., 2022; Haluza & Jungwirth, 2023;R a s a
+et al., 2023).
+B Silvia García-Méndez
+sgarcia@gti.uvigo.es
+Francisco de Arriba-Pérez
+farriba@gti.uvigo.es
+María del Carmen Somoza-López
+carmensomoza@uvigo.gal
+1 Information Technologies Group, atlanTTic, University of Vigo, Vigo, Spain
+2 Applied Mathematics I Department, University of Vigo, Vigo, Spain
+123
+878 S. García-Méndez et al.
+The most relevant change that perfectly exempliﬁes the impact of the mega-trends above is
+the transformer architectures that contribute to managing long-term dependencies for natural
+language processing (NLP) (Tay et al., 2023). They are the basis of the innovative, cutting-
+edge large language models (LLMs) that have produced a huge buzz in several ﬁelds and
+industrial sectors (MacNeil et al., 2022a). In this line, ChatGPT achieved more than 1 million
+users within the ﬁrst 5 days of its release.
+1 Accordingly, LLMs have been used in economy and
+ﬁnance (Alshater, 2022), journalism (Pavlik,2023), medicine (O’Connor & ChatGPT,2023),
+and education (Sallam, 2023), among others. However, as other technological advancements,
+LLMs have experienced the community’s resistance, a common evolutionary and social
+psychology phenomenon (Tobore, 2019).
+Regarding the learning ﬁeld, during the twenty-ﬁrst century, education has experienced
+a profound change in methods and content. Speciﬁcally, a ﬂexible and multidisciplinary
+environment is sought, where the student can actively participate in their learning process,
+promoting more autonomous and ubiquitous studying thanks to AI advancements (Baidoo-
+Anu & Ansah, 2023;L ie ta l . ,2023). The scientiﬁc community has researched the use of AI
+techniques like machine learning (ML) models for training purposes ever since their incep-
+tion (Hochberg et al.,2018; Talan,2021; Huang & Qiao, 2022), causing progressive advances
+towards autonomous high-quality learning (Han, 2018; Demircioglu et al., 2022). Mainly, AI
+has driven the technological transition in this ﬁeld regarding the instructional applications,
+contents, platforms, resources, techniques, tools, and network infrastructure (Roll & Wylie,
+2016). This transition also involves changes in the leading roles of the education systems,
+teachers, and students since this new digital education environment requires new digital com-
+petencies and reasoning patterns (Jensen et al., 2018; Zhou et al., 2023). However, although
+promising, the advances offered by AI are still far from becoming a standardized tool in the
+educational ﬁeld due to its early state and the need for training in using these solutions to
+take the most advantage of them.
+Of particular interest is the impact of those applications that leverage LLMs, framed
+within the generative AI ﬁeld and based on ML techniques. They enable hands-on learning
+and are common practice in the classroom nowadays. Compared to previous AI solutions
+and traditional methodologies, which focused primarily on modifying the textual input using
+correction, paraphrasing, and sentence completion techniques, LLMs generate on-the-ﬂy
+human-like utterances, hence its popularity, especially among students and teachers (Rudolph
+et al., 2023). Current advanced LLMs can enhance pedagogical practice and provide person-
+alized assessment and tutoring (Sok & Heng, 2023). Consideration should be given to the
+cooperation between LLMs-based systems and humans, provided the experience and scien-
+tiﬁc knowledge along with the capabilities of the human-agents for creativity and emotional
+intelligence (Zhang et al., 2020; Korteling et al., 2021). Note that these AI-based systems
+present advantages in speciﬁc educational tasks as self-learning tools and virtual tutors.
+Speciﬁcally, they enable automatic answer grading (Ahmed et al., 2022), explanation gen-
+eration (Humphry & Fuller, 2023), question generation (Bhat et al., 2022), and problem
+resolution (Zong & Krishnamachari, 2022). Furthermore, when used for text summarization
+(Phillips et al., 2022), they help synthesize content and improve the student’s abstraction
+capabilities. Their use as learning software in virtual assistants is highly relevant to ﬂexible
+learning (Wang et al., 2022; Y amaoka et al.,2022). Furthermore, their language intelligence
+capabilities make them an appropriate tool for code correction (MacNeil et al., 2022b).
+1 Available at https://twitter.com/gdb/status/1599683104142430208 , April 2024.
+123
+A Review on the Use of Large Language Models... 879
+More in detail, LLMs are trained with massive textual data sets to create human-like utter-
+ances. They perform a wide variety of NLP taking advantage of ﬁne-tuning and pre-training
+pipelines (Kasneci et al., 2023). Note the relevance of both the pre-training and prompt engi-
+neering development. The ﬁrst concept refers to training LLMs with miscellaneous large
+data sets, while the second refers to speciﬁc ﬁne-tuning on a particular task (Kasneci et al.,
+2023). Consequently, the quality of the LLMs output highly depends on the input data and
+prompt designed, aka prompt engineering (Cooper, 2023). The latter technique ranges from
+zero-shot learning, widely popular when applied to LLMs (Russe et al., 2024), to few-shot
+learning. Note that the model follows task instructions in zero-shot learning since the end-
+user provides no examples. In contrast, in few-shot learning, the model learns from the
+demonstrations available (i.e., few-shot text prompts).
+Among the most popular LLMs, BERT (Devlin et al., 2019), GPT-3 (Brown et al.,
+2020), GPT-3.5
+2,G P T - 43, and T5 (Raffel et al., 2020) deserve attention. BERT (Bidirec-
+tional Encoder Representations from Transformers) was released by Google in October 2018
+(slightly after GTP-1 dated June 2018). It is a pre-trained transformer-based encoder model
+that can be ﬁne-tuned on speciﬁc NLP tasks such as named entity recognition (NER), question
+answering, and sentence classiﬁcation. Moreover, GPT-3, GPT-3.5, and GPT-4 (generative
+pre-trained transformer) models were released by OpenAI in 2020, 2022, and 2023, respec-
+tively. More in detail, GPT-4 is already deployed in ChatGPT application, which compared
+to other LLMs can generate context-aligned responses and interact naturally with the end-
+users as a peer. This model goes beyond producing reports and translating assessments by
+creating source code (Haleem et al., 2022) and responding to complex questions posed by
+the students in real time (George et al., 2023). It can also show creativity to some extent
+in writing (Baidoo-Anu & Ansah, 2023). T5 (Text-to-text Transfer Transformer) model was
+released by Google following the encoder-decoder transformer architecture in 2020. Even
+though its conﬁguration is similar to BERT, it differs in some steps of the pipeline, like
+pre-normalization (Pipalia et al., 2020).
+Given the widespread of AI-based solutions in our everyday lives and particularly the
+popularity of advanced NLP-based chatbots for learning purposes to generate and evaluate
+educational materials, this review seeks to provide a comprehensive overview of the sys-
+tems that exploit LLMs and were explicitly designed for educational purposes (i.e., virtual
+tutors for question generation and assessment). Thus, involving students or teachers at the
+design or evaluation levels, excluding those works in which the application of the solution for
+educational use cases was feasible but not initially designed for that purpose. The ultimate
+objective is to promote the advancement of these existing solutions in a collaborative envi-
+ronment between academia (i.e., researchers and developers) and end-users (i.e., students and
+teachers). To the best of our knowledge, this is the ﬁrst review in this regard. Note that there
+exist few review works that focused on speciﬁc related ﬁelds such as health care education
+(Sallam, 2023) or speciﬁc features like the responsible and ethical use of LLMs (Mhlanga,
+2023) and their impact on academic integrity (Perkins, 2023).
+The rest of this paper is organized as follows. Section2 describes the methods and materials
+used in the review. Section 3 presents the discussion on the selected relevant works. Finally,
+Section 4 concludes the article and details future research.
+2 Available at https://platform.openai.com/docs/models/gpt-3-5 ,a sr e f e r r e dt ot h etext-davinci-003
+and GPT-3.5-turbo models, April 2024.
+3 Available at https://platform.openai.com/docs/models/gpt-4 , April 2024.
+123
+880 S. García-Méndez et al.
+Fig. 1 Review pipeline
+2 Methodology
+The review methodology followed is composed of two steps: (i) data gathering (Section 2.1)
+and ( ii) screening and eligibility criteria (Section 2.2). Figure 1 details the methods and
+material used. More in detail, this review aims to gather knowledge to answer the following
+research questions:
+ RQ1: Which solutions based on LLMs are being developed (e.g., for assessment tasks)
+(i.e., excluding multidisciplinary solutions that were not speciﬁcally intended for learning
+assistance)?
+ RQ2: Which educational solutions based on LLMs involved students or teachers at any
+level of the development process (e.g., design, evaluation)?
+2.1 Data Gathering
+The data were extracted using Google Scholar 4 with two search queries, specially designed
+to gather works within the educational ﬁeld that leverage LLMs:
+1. "education" AND "student" AND ("large language model" OR
+"GPT-3" OR "GPT-3.5" OR "GPT-4" OR "ChatGPT") -"review"
+2. "education" OR "student" AND ("large language model" OR
+"GPT-3" OR "GPT-3.5" OR "GPT-4" OR "ChatGPT") -"review"
+Both queries have been restricted temporally since 2020, and the second query was applied
+to the title content exclusively. Note that duplicated elements and works that do not use LLMs
+or do not indicate which model is exploited were not considered. The same applies to the
+works that assess the performance of LLMs. In the end, 342 records were identiﬁed.
+2.2 Screening and Eligibility Criteria
+This process was designed to identify works within the ﬁeld of study that were written in
+English while at the same time discarding theoretical and review contributions (i.e., those
+that do not propose an LLM-based solution but review existing solutions or hypothesize on
+the impact of LLMs for educational purposes). The manual screening based on the above
+eligibility criteria resulted in 29 records. Note that this process distinguishes between pub-
+lished articles and conferences from pre-printed and non-peer-reviewed records. The criteria
+for selection and exclusion are presented in Table 1.
+4 Available at https://scholar.google.com, April 2024.
+123
+A Review on the Use of Large Language Models... 881
+Table 1 Criteria for selection and
+exclusion Criteria Description
+Publication date Before 2020
+After 2020
+Writing language Not in English
+English
+Scope General
+Educational purpose
+Type of contribution Theoretical or review
+Virtual tutor proposal
+Language intelligence Not involving LLMs
+Involving LLMs
+Figures 2 and 3 detail the distribution of the LLMs used and applications in the works
+selected. Firstly, the most popular model is BERT, followed by GPT-3, T5, and GPT-3.5.
+The low representativeness of the last GPT model contrasts with its popularity. The latter is
+due to the fact that the data gathering corresponds to the ﬁrst quarter of 2023, that is, shortly
+after it was released. Thus, new works exploiting it are expected to be published shortly.
+Furthermore, the most common tasks these models perform in the selected works are as
+virtual assistants and question generation, as shown in Fig. 3, followed by answer grading
+and code explanation/correction. Note that most works were published in 2022, with few
+records in 2021, showing a growth trend in 2023.
+Fig. 2 Distribution of the LLMs in the records selected
+123
+882 S. García-Méndez et al.
+Fig. 3 Distribution of the tasks in the records selected (AG answer grading, CE code explanation, EG explana-
+tion generation, LS learning software, PR problem resolution, QG question generation, TS text summarization,
+V A virtual assistant)
+3 Analysis and Discussion
+Table 2 lists the articles published in journals and the proceedings of conferences, taking
+into account their application, the model used, and code and data availability. Note that just
+the works by Liu et al. ( 2022); Mendoza et al. ( 2022); Tyen et al. ( 2022); Zong & Krishna-
+machari (2022); Humphry & Fuller (2023); Nasution (2023) provide enough information for
+reproducibility, while Bhat et al. ( 2022) ;E s s e le ta l .(2022); Mendoza et al. ( 2022); Moore
+et al. ( 2022); Phillips et al. ( 2022); Y amaoka et al. (2022); Nasution ( 2023) involved either
+teachers or students in the design or experimental plan.
+Regarding answer grading applications, Ahmed et al. (2022) used the BERT model. They
+exploited a modiﬁed version of the model based on triplets and the Siamese network, specially
+designed to generate sentences through semantically meaningful embeddings. The data set
+used is the one presented by Mohler & Mihalcea ( 2009). The authors applied the question
+demoting technique as part of the preprocessing, thus removing from the answer those words
+also contained in the question. The authors performed the experiments with two different
+combinations of input data: ( i) the reference and student answers and ( ii) the concatenation
+of the question and the reference answer, plus the answer provided by the student. Evaluation
+metrics include Pearson’s correlation coefﬁcient (PCC) and root mean square error (RMSE).
+The results are approximately 0.8 PCC and 0.7 RMSE. Moore et al. (2022) presented another
+answer grading solution based on GPT-3. Unlike Ahmed et al. ( 2022), the input data were
+gathered from an introductory chemistry course at the university level with almost 150 stu-
+dents. Moreover, the GPT-3 model was trained with the LearningQ data set (Chen et al.,
+2018), as in Bhat et al. ( 2022). Based on the assessment of the questions posed to experts in
+the chemistry ﬁeld, the model was able to correctly evaluate 32% of the questions.
+Few works exist on code explanation and general explanation generation, learning soft-
+ware, and problem resolution. Firstly, MacNeil et al. ( 2022b) proposed a GPT-3-based
+123
+A Review on the Use of Large Language Models... 883
+Table 2 Selected articles published in journals or presented at conferences
+Application Authorship Model Code/data
+availability
+Answer grading Ahmed et al. ( 2022)B E R T N o
+Moore et al. ( 2022) GPT-3 No
+Code explanation MacNeil et al. ( 2022b) GPT-3 No
+Explanation generation Humphry & Fuller ( 2023) GPT-3.5 Y es
+Learning software Y amaoka et al. ( 2022) GPT-3 No
+Problem resolution Zong & Krishnamachari ( 2022) GPT-3 Y es
+Question generation Bhat et al. ( 2022) GPT-3 & T5 No
+Dijkstra et al. ( 2022) GPT-3 No
+Sharma et al. ( 2022)T 5 N o
+Nasution (2023) GPT-3.5 Y es
+Text summarization Phillips et al. ( 2022) GPT-3 No
+Prihar et al. ( 2022) BERT, SBERT, and
+MathBERT
+No
+Virtual assistant Sophia & Jacob ( 2021) Dialogﬂow No
+Baha et al. ( 2022) CamemBERT No
+Calabrese et al. ( 2022)D e B E R T a N o
+Essel et al. ( 2022) FlowXO No
+Liu et al. ( 2022)R o B E R T a Y e s
+DistillBERT Y es
+Mahajan (2022)R o B E R T a N o
+Mendoza et al. ( 2022) Dialogﬂow Y es
+Topsakal & Topsakal (2022) GPT-3.5 No
+Tyen et al. (2022)R o B E R T a Y e s
+Wang et al. (2022)B E R T , A l B E R T , a n d
+DistilBERT
+No
+solution for code explanation based on 700 prompts. Note that it does not identify or correct
+errors. The main functionalities of the system encompass ( i) execution tracing, ( ii) identi-
+fying and explaining common bugs, and ( iii) output prediction. However, no results were
+provided. Humphry & Fuller ( 2023) proposed a solution based on GPT-3.5 to write con-
+clusion statements about chemistry laboratory experiments. The evaluation of the solution
+relied on a discussion of features like readability and orthographic correctness of the gen-
+erated text. Unlike the works above, which focused on textual input data, Y amaoka et al.
+(2022) used the GPT-3 model to exploit social media data, particularly from Instagram, for
+learning purposes. The proposed pipeline comprises ( i) detecting the relevant objects in the
+images, ( ii) extracting keywords to generate sentences related to those keywords, and ( iii)
+providing linguist information about the words that composed the sentence. The ultimate
+objective was to acquire new vocabulary. The experiments consisted of a small pilot study
+with three students from Osaka Metropolitan University. The only results reported were the
+average of unknown words, 2.2 in the generated sentences. Finally, Zong & Krishnamachari
+(2022) used GPT-3 to identify and generate math problems involving systems of two lin-
+ear equations. The experiments consisted of ( i) problem classiﬁcation into ﬁve categories,
+(ii) equation extraction from word problems, and ( iii) generation of similar exercises. The
+123
+884 S. García-Méndez et al.
+authors prepared the input data ad hoc. The accuracy of the results obtained in each of the
+three tasks above was 75% (averaging the ﬁve categories); 80% (with ﬁne-tuning), and 60%
+(also averaging the ﬁve categories), respectively.
+Regarding question generation, several representative examples were found in the liter-
+ature. Bhat et al. ( 2022) used both GPT-3 and T5 models, GPT-3 for question generation
+combined with a concept hierarchy extraction model, and T5 for the evaluation in terms of
+learning usefulness of the generated questions. The input data consisted of textual learn-
+ing materials from a university data science course. More in detail, the concept hierarchy
+extraction method exploited the MOOCCubeX pipeline (Y u et al.,2021), which extracts key
+concepts following a semi-supervised approach. Note that evaluation also involved computing
+the information score metric and manual assessment by human annotators. The experimental
+results obtained with the LearningQ data set (Chen et al., 2018) show that almost 75% of the
+generated questions were considered useful by the GPT-3 model, with an agreement slightly
+higher than 65% when compared to manual evaluation. Similarly, Dijkstra et al. (2022) created
+EduQuiz with GPT-3, a multi-choice quiz generator for reading comprehension exploiting the
+EQG-RACE data set
+5 (Jia et al., 2021). The authors evaluated the performance of EduQuiz
+using standard metrics, BLEU-4, ROUGE-l, and METEOR. Results attained 36.11, 11.61,
+and 25.42 for these metrics, respectively. Additionally, Sharma et al. ( 2022) proposed a
+ﬁne-tuning pipeline composed of context recognition and paraphrasing, ﬁltering irrelevant
+output, and translation to other languages for question generation at different levels using the
+T5 model. The authors used the data set by Mohler et al. ( 2011) (an updated version of the
+data set used in Ahmed et al. (2022)). The evaluation metrics computed were BLUE (Papineni
+et al., 2002) and METEOR (Lavie & Agarwal, 2007). The results for the two metrics above
+were 0.52 and 57.66, respectively. Thus, compared with the question generation solution by
+Dijkstra et al. ( 2022), Sharma et al. ( 2022) obtained a more competitive METEOR value.
+Ultimately, Nasution (2023) used GPT-3.5 for question generation. To assess the generated
+questions’ reliability or internal consistency, the Cronbach’s alpha coefﬁcient (Taber, 2018)
+was computed, resulting in 0.65. Answers from a survey performed to almost 300 students
+show that 79% of the generated questions were relevant, 72% were moderately clear, and
+71% were of enough depth.
+In contrast, Phillips et al. ( 2022) used GPT-3 to create summaries of students’ chats
+in collaborative learning. Moreover, this solution detected confusion and frustration in the
+student’s utterances. Input data was gathered from secondary school students in an ecosystem
+game. The authors brieﬂy discussed how the system could provide advantageous knowledge
+to teachers about their interaction in a collaborative learning environment, but no further
+analysis or results were provided. Conversely, Prihar et al. (2022) proposed a learning assistant
+based on the BERT model and its variations (i.e., SBERT and MathBERT) to generate support
+messages from chat logs obtained from fundamental interactions between a live UPchieve
+tutor available at the ASSISTments learning platform and the students. Even though 75%
+of the generated messages were identiﬁed as relevant by manual human evaluation, these
+messages had a negative impact on the student’s learning process, as the authors explained.
+The most common application uses LLMs as virtual assistants. Sophia & Jacob ( 2021)
+created EDUBOT exploiting Dialogﬂow. Its main limitation lies in the basic language under-
+standing capabilities (i.e., low variability in the responses provided), particularly regarding the
+user’s emotions. Baha et al. (2022) developed Edu-Chatbot exploiting the Xatkit framework.
+The system comprises an encoder based on CamemBERT and a decoding module for student
+intent recognition. Unfortunately, the intent classiﬁcation decoder is based on a pre-deﬁned
+5 Available at https://github.com/jemmryx/EQG-RACE , April 2024.
+123
+A Review on the Use of Large Language Models... 885
+set of recognized actions (e.g., simple questions, animations, videos, and quizzes). Thus, the
+language intelligence of the solution is limited. Furthermore, no evaluation was performed.
+Calabrese et al. ( 2022) presented a virtual assistant prototype for Massive Online Open
+Courses (MOOCs). Their objective was to reduce the teaching load and maintain the quality
+of learning. Thus, its architecture allows the teacher to intervene in those questions that have
+not been resolved satisfactorily. More in detail, they used a personalized version of BERT. The
+questions answered by the teacher are included in an additional document and allow the BERT
+model to be improved. In contrast, Essel et al. ( 2022) involved 68 undergraduate students in
+evaluating the solution developed using FlowXO and integrated into WhatsApp. Qualitative
+evaluation on the end-user’s preferences of the virtual assistant instead of traditional interac-
+tion approaches with the teachers reached 58.8%. Additionally, Liu et al. ( 2022)p r e s e n t e d
+a virtual assistant for online courses to resolve general and repetitive doubts about content
+and teaching materials. This system incorporates a sentiment analysis module to analyze the
+response’s satisfaction based on the student’s dialogue. They used two ﬁne-tuning versions
+of BERT model with an accuracy of 82% and 90% for the correct detection of the content and
+student’s sentiment, respectively. Moreover, Mahajan ( 2022) created a system for students
+to improve their knowledge of the English language that allows them to obtain information
+on the meaning of words, make translations, and resolve pronunciation doubts. The authors
+exploited the RoBERTa model with an accuracy greater than 98% in communication intent
+detection. Similarly, Mendoza et al. ( 2022) created a virtual assistant intended for academic
+and administrative tasks but exploiting Dialogﬂow.
+6 Cronbach’s alpha coefﬁcients during the
+evaluation of the system exceeded 0.7. In contrast, Topsakal & Topsakal ( 2022)p r e s e n t e d
+a foreign language virtual assistant based on the GPT-3.5 model combined with augmented
+reality. The authors claim that this combination attracted students’ attention and motivated
+them through entertaining learning thanks to gamiﬁcation. In this case, the language model
+was used to establish a dialogue with the end-users. Unfortunately, no results were discussed.
+Moreover, Tyen et al. (2022) proposed a virtual assistant for second language learning with
+difﬁculty level adjustment in the decoder module and evaluated by experienced teachers.
+The system exploits RoBERTa ﬁne-tuned with a Cambridge exams data set. The system
+attained Spearman and Pearson coefﬁcients of 0.755 and 0.731, respectively. Finally, Wang
+et al. (2022) developed an educational domain-speciﬁc chatbot. Its goal is to reduce pressure
+on teachers in virtual environments and improve response times by easing communication
+between students and teachers. They used natural language understanding (NLU) techniques
+on variations of the BERT model for the classiﬁcation of intents and response generation. It
+presented an accuracy of 88% in detecting intents. However, its values are lower than 50%
+regarding semantic analysis.
+Table 3 lists the selected pre-printed or non-peer-reviewed works, taking into account
+their application, model used, and reproducibility feature. In this case, da Silva et al. (2022),
+7
+Zhang et al. ( 2022),8 and Christ ( 2023)9 provide enough information for reproducibility,
+while Zhang et al. ( 2022)8 involved either teachers or students in the design or experimental
+plan.
+6 Available at https://dialogﬂow.cloud.google.com , April 2024.
+7 Available at https://arc.cct.ie/cgi/viewcontent.cgi?article=1026&context=ict , April 2024.
+8 Available at https://arxiv.org/pdf/2209.14876.pdf, April 2024.
+9 Available at https://fbmn.h-da.de/ﬁleadmin/Dokumente/Studium/DS/WS2022_MDS_Thesis_Paul_Christ_
+THE.pdf, April 2024.
+123
+886 S. García-Méndez et al.
+Table 3 Selected pre-printed or non peer-reviewed records
+Application Authorship Model Code/data
+availability
+Answer grading Hardy ( 2021)10 SBERT No
+Code correction Zhang et al. ( 2022)8 Codex Y es
+Phung et al. ( 2023)14 Codex No
+Problem resolution Cobbe et al. ( 2021)16 GPT-3 No
+Question generation da Silva et al. ( 2022)7 T5 Y es
+Raina & Gales ( 2022)17 GPT-3 and T5 No
+Christ (2023)9 DistilBERT Y es
+The distribution of applications is similar to the peer-reviewed records. Hardy ( 2021)10
+developed an automatic evaluation system for reading and writing exercises. The system uses
+the SBERT model, among others, to capture semantic data and provide valuable insights
+related to the student’s skills, using ASAP-AES
+11 and ASAP-SAS12 data sets. Particularly,
+they exploited the passage-dependent sentence-BERT model trained using curricular learning
+(Graves et al., 2016). The results from the quadratic weighted kappa (QWK) metric reached
+0.76 on average.
+Regarding code correction, Zhang et al. (2022)
+8 presented MMAPR, an error identiﬁcation
+and correction system for code development based on the OpenAI Codex model.13 The system
+ﬁxes semantic and syntax errors by combining iterative querying, multi-modal prompts,
+program chunking, and test-case-based selection of a few shots. Results obtained with almost
+300 students reached 96.50% in corrected code rate with the few-shots-based approach. Phung
+et al. ( 2023)
+14 presented a similar solution to MMAPR for code correction named PyFiXV .
+The main difference is that the Codex model, combined with prompt engineering, explains
+the detected errors. Moreover, the explanations are also validated in terms of suitability for
+the students. The system has been tested with TigerJython (Kohn & Manaris, 2020)a n d
+Codeforces
+15 data sets. The precision attained 76% in the most favorable scenario with the
+TigerJython data set.
+Cobbe et al. ( 2021)16 elaborated a data set of 8.5 K elementary school mathematical
+problems called GSM8K. Then, the GPT-3 model was used to generate comprehensible
+explanations of these problems, combining natural language and mathematical expressions.
+The authors trained veriﬁers to enhance the performance of the model beyond ﬁne-tuning.
+Ultimately, they concluded that this approach enhanced the overall performance.
+Subsequently, da Silva et al. ( 2022)
+7 developed an automatic questionnaire generation
+system using the T5 model and applying the ﬁne-tuning technique, named QUERAI. The
+T5 model was evaluated with skip thought vectors (STV), embedding average cosine simi-
+larity (EACS), vector extrema cosine similarity (VECS), and greedy matching score (GMS)
+10 Available at https://arxiv.org/ftp/arxiv/papers/2112/2112.11973.pdf , April 2024.
+11 Available at https://www.kaggle.com/c/asap-aes , April 2024.
+12 Available at https://www.kaggle.com/c/asap-sas , April 2024.
+13 Available at https://openai.com/blog/openai-codex , April 2024.
+14 Available at https://arxiv.org/pdf/2302.04662.pdf, April 2024.
+15 Available at https://codeforces.com, April 2024.
+16 Available at https://arxiv.org/pdf/2110.14168.pdf?curius=520, April 2024.
+123
+A Review on the Use of Large Language Models... 887
+metrics, with results higher than 0.8 except for VECS. Summing up, the accuracy of the pay-
+per-subscription solution is 91%. Similar to da Silva et al. ( 2022),7 Raina & Gales ( 2022)17
+developed a multiple-choice question generation solution to generate both questions and the
+set of possible answers using apart from T5, the GPT-3 model, both trained with the RACE++
+(Liang et al.,2019) data set composed of middle, high, and college level questions. The results
+obtained are similar between the two models with an accuracy of 80% (11 percentage points
+lower than the solution by da Silva et al. ( 2022)
+7). Note that the authors also measured the
+number of grammatical errors and other features like diversity and complexity. The lowest
+values are related to the diversity of the questions generated. In the best scenario, the T5
+model attained 60% accuracy, approximately. More recently, Christ ( 2023)
+9 used BERT to
+generate SQL-Query exercises automatically. Experiments with knowledge graphs and nat-
+ural language building were also performed as a baseline. The authors concluded that the
+DistilBERT-based approach generates descriptions that are, on average, almost 50% shorter
+and with a 20% decrease in term frequency compared to the NLP baseline.
+GPT-3 and the different adaptations of the BERT model are the most popular alternatives in
+the sample regarding answer grading, code explanation and general explanation generation,
+learning software, problem resolution, question generation, and text summarization. When
+it comes to their use as virtual assistants, the variety of models used increases. The current
+lower costs of the GPT-3.5 model will motivate a rapid increase in its use in the coming
+years. However, BERT robustness as an entity detector, with evaluation metrics above 80%
+in several of the discussed works, made it a reference for developing educational software
+tools. Unfortunately, most works reviewed do not provide the code or data used for their
+analysis, making reproducibility difﬁcult. Finally, regarding the risks of exploiting LLMs
+for educational tasks, they are transversal (e.g., for automatic question generation and as
+virtual assistants, the two most popular applications identiﬁed). The lack of transparency
+of the models (i.e., the rationale behind their functioning, such as difﬁculty adjustment in
+question generation) could negatively impact the end-users. Regarding their use as virtual
+tutors, reinforcement learning from human feedback is essential to gain control over their
+operation and ensure fairness. Ultimately, the risk of poor accuracy must be palliated by
+including the probabilistic conﬁdence of their response.
+4 Conclusion
+LLMs represent an undeniably mega-trend in the current century in many ﬁelds and industrial
+sectors. In the particular case of learning, these generative AI-based solutions have produced
+a considerable buzz. Accordingly, they enable hands-on learning and are commonly used
+in classrooms nowadays. Compared to previous AI solutions and traditional methodologies,
+which focused primarily on modifying the textual input, advanced LLMs can generate on-
+the-ﬂy human-like utterances, enhancing pedagogical practice and providing personalized
+assessment and tutoring.
+Given the popularity of LLMs, this work is the ﬁrst to contribute with a comprehensive
+overview of their application within the educational ﬁeld, paying particular attention to those
+that involved students or teachers in the design or experimental plan. From the 342 records
+obtained during data gathering, 29 works passed the screening stage by meeting the eligibility
+criteria. They were discussed, taking into account their application within the educational
+ﬁeld, the model used, and code and data availability features. Results show that the most
+17 Available at https://arxiv.org/pdf/2209.11830.pdf, April 2024.
+123
+888 S. García-Méndez et al.
+common tasks performed as virtual assistants are question generation, answer grading, and
+code correction and explanation. Moreover, the most popular model continues to be BERT,
+followed by GPT-3, T5, and GPT-3.5 models. In the end, this review identiﬁed 9 reproducible
+works and 8 solutions that involved either teachers or students in the design or experimental
+plan.
+Due to the recent launch of the GPT-4 model within the ChatGPT application, new works
+are expected to be published soon and will be analyzed as part of future work. Moreover,
+as future work, we will study the ethical implications of LLMs (i.e., their transparency and
+fairness behavior caused by the training data and privacy) and how the solutions discussed
+can be integrated into the education curricula, as well as their shortcomings and risk to
+academic integrity (e.g., plagiarism concerns). Finally, attention will be paid to those works
+that propose innovative teaching practices with LLMs and explore the use of ad hoc solutions
+through personal language models in the ﬁeld.
+Author Contribution Silvia García-Méndez: conceptualization, methodology, software, validation, formal
+analysis, investigation, resources, data curation, writing—original draft, writing—review and editing, visual-
+ization, supervision, project administration, funding acquisition. Francisco de Arriba-Pérez: conceptualization,
+methodology, software, validation, formal analysis, investigation, resources, data curation, writing—original
+draft, writing—review and editing, visualization, supervision, project administration, funding acquisition.
+Carmen Somoza-López: conceptualization, writing—review and editing.
+Funding Open Access funding provided thanks to the CRUE-CSIC agreement with Springer Nature. This
+work was partially supported by (i) Xunta de Galicia grants ED481B-2021-118 and ED481B-2022-093, Spain,
+and (iii) University of Vigo/CISUG for open access charge.
+Availability of Data and Material The used data is openly available.
+Declarations
+Ethics Approval Not applicable
+Consent to Participate Not applicable
+Consent for Publication Not applicable
+Conﬂict of Interest The authors declare that they have no conﬂict of interest.
+Open Access This article is licensed under a Creative Commons Attribution 4.0 International License, which
+permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as you give
+appropriate credit to the original author(s) and the source, provide a link to the Creative Commons licence,
+and indicate if changes were made. The images or other third party material in this article are included in the
+article’s Creative Commons licence, unless indicated otherwise in a credit line to the material. If material is
+not included in the article’s Creative Commons licence and your intended use is not permitted by statutory
+regulation or exceeds the permitted use, you will need to obtain permission directly from the copyright holder.
+To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/ .
+References
+Ahmed, A., Joorabchi, A., & Hayes, M. J. (2022). On the application of sentence transformers to automatic
+short answer grading in blended assessment. In: Proceedings of Irish Signals and Systems Conference.
+IEEE, pp 1–6, https://doi.org/10.1109/ISSC55427.2022.9826194
+Alshater M (2022) Exploring the role of artiﬁcial intelligence in enhancing academic performance: A case
+study of ChatGPT. SSRN Electronic Journal pp 1–22. https://doi.org/10.2139/ssrn.4312358
+123
+A Review on the Use of Large Language Models... 889
+123
+Baha, T. A., Hajji, M. E., Es-Saady, Y ., et al. (2022). Towards highly adaptive Edu-Chatbot.Procedia Computer
+Science, 198, 397–403. https://doi.org/10.1016/j.procs.2021.12.260
+Baidoo-Anu D, Ansah LO (2023) Education in the era of generative artiﬁcial intelligence (AI): Understanding
+the potential beneﬁts of ChatGPT in promoting teaching and learning. Journal of AI 7:52–62. https://doi.
+org/10.61969/jai.1337500
+Bhat, S., Nguyen, H. A., Moore, S., et al (2022). Towards automated generation and evaluation of questions in
+educational domains. In: Proceedings of the International Conference on Educational Data Mining, vol
+701. The International Educational Data Mining Society, pp 701–704, https://doi.org/10.5281/zenodo.
+6853085
+Brown, T. B., Mann, B., Ryder, N., et al (2020) Language models are few-shot learners. In: Proceedings of
+the Conference on Neural Information Processing Systems, vol 33. NeurIPS Inc., pp 1877–1901
+Calabrese, A., Rivoli, A., Sciarrone, F., et al. (2022). An intelligent chatbot supporting students in massive
+open online courses. In: Proceedings of the International Symposium on Emerging Technologies for
+Education, vol 13869. Springer, pp 190–201, https://doi.org/10.1007/978-3-031-33023-0_17
+Chen, G., Y ang, J., Hauff, C., et al. (2018). LearningQ: A large-scale dataset for educational question generation.
+In: Proceedings of the International AAAI Conference on Web and Social Media, vol 12. AAAI Press,
+pp 481–490, https://doi.org/10.1609/icwsm.v12i1.14987
+Christ, P . (2023). Generation of meaningful SQL-Query exercises using large language models and knowledge
+graphs
+Cobbe, K., Kosaraju, V ., Bavarian, M., et al. (2021) Training veriﬁers to solve math word problems
+Cooper, G. (2023). Examining science education in ChatGPT: An exploratory study of generative artiﬁcial
+intelligence. Journal of Science Education and Technology, 32, 444–452. https://doi.org/10.1007/s10956-
+023-10039-y
+da Silva, E., da Silva, F. A., Womg, K. J., et al. (2022). QUERAI - A smart quiz generator
+Demircioglu, T., Karakus, M., & Ucar, S. (2022). Developing students’ critical thinking skills and argumen-
+tation abilities through augmented reality-based argumentation activities in science classes. Science &
+Education, 32, 1165–1195. https://doi.org/10.1007/s11191-022-00369-5
+Devlin, J., Chang, M. W., Lee, K., et al. (2019). BERT: Pre-training of deep bidirectional transformers for lan-
+guage understanding. In: Proceedings of the Conference of the North American Chapter of the Association
+for Computational Linguistics: Human Language Technologies, vol 1. Association for Computational
+Linguistics, pp 4171–4186
+Dijkstra, R., Genç, Z., Kayal, S., et al. (2022). Reading comprehension quiz generation using generative
+pre-trained transformers. In: Proceedings of International Workshop on Intelligent Textbooks, vol 3192.
+CEUR, pp 4–17
+Essel, H. B., Vlachopoulos, D., Tachie-Menson, A., et al. (2022). The impact of a virtual teaching assistant
+(chatbot) on students’ learning in Ghanaian higher education. International Journal of Educational
+Technology in Higher Education, 19, 57–75. https://doi.org/10.1186/s41239-022-00362-6
+Estigarribia, L., Chalabe, J. K. T., Cisnero, K., et al. (2022). Co-design of a teaching-learning sequence to
+address COVID-19 as a socio-scientiﬁc issue in an infodemic context. Science & Education, 31 , 1585–
+1627. https://doi.org/10.1007/S11191-022-00362-Y/TABLES/2
+George, A. S., George, A. H., & Martin, A. (2023). A review of ChatGPT AI’s impact on several business
+sectors. Partners Universal International Innovation Journal, 1 , 9–23. https://doi.org/10.5281/zenodo.
+7644359
+Graves, A., Wayne, G., Reynolds, M., et al. (2016). Hybrid computing using a neural network with dynamic
+external memory. Nature, 538, 471–476. https://doi.org/10.1038/nature20101
+Haleem, A., Javaid, M., & Singh, R. P . (2022). An era of ChatGPT as a signiﬁcant futuristic support tool: A
+study on features, abilities, and challenges. BenchCouncil Transactions on Benchmarks, Standards and
+Evaluations, 2, 100089–100096. https://doi.org/10.1016/j.tbench.2023.100089
+Haluza, D., & Jungwirth, D. (2023). Artiﬁcial intelligence and ten societal megatrends: An exploratory study
+using GPT-3. Systems, 11, 1–18. https://doi.org/10.3390/systems11030120
+Han, L. (2018). Analysis of new advances in the application of artiﬁcial intelligence to education. In: Proceed-
+ings of the International Conference on Education, E-learning and Management Technology. Atlantis
+Press, pp 608–611, https://doi.org/10.2991/iceemt-18.2018.118
+Hardy, M. (2021). Toward educator-focused automated scoring systems for reading and writing
+Hochberg, K., Kuhn, J., & Müller, A. (2018). Using smartphones as experimental tools-Effects on interest,
+curiosity, and learning in physics education. Journal of Science Education and Technology, 27, 385–403.
+https://doi.org/10.1007/s10956-018-9731-7
+Huang, X., & Qiao, C. (2022). Enhancing computational thinking skills through artiﬁcial intelligence educa-
+tion at a STEAM high school. Science & Education, 33 , 383–403. https://doi.org/10.1007/s11191-022-
+00392-6
+890 S. García-Méndez et al.
+123
+Humphry, T., & Fuller, A. L. (2023). Potential ChatGPT use in undergraduate chemistry laboratories. Journal
+of Chemical Education., 100 , 1434–1436. https://doi.org/10.1021/acs.jchemed.3c00006
+Jensen, J. L., Holt, E. A., Sowards, J. B., et al. (2018). Investigating strategies for pre-class content learning
+in a ﬂipped classroom. Journal of Science Education and Technology, 27 , 523–535. https://doi.org/10.
+1007/s10956-018-9740-6
+Jia, X., Zhou, W., Sun, X., et al. (2021). EQG-RACE: Examination-type question generation. In: Proceedings
+of the AAAI Conference on Artiﬁcial Intelligence, vol 35. AAAI Press, pp 13,143–13,151, https://doi.
+org/10.1609/aaai.v35i14.17553
+Kasneci, E., Sessler, K., Küchemann, S., et al. (2023). ChatGPT for good? On opportunities and challenges of
+large language models for education. Learning and Individual Differences 103:102,274–102,282. https://
+doi.org/10.1016/j.lindif.2023.102274
+Kohn, T., & Manaris, B. (2020). Tell me what’s wrong. In: Proceedings of the ACM Technical Symposium on
+Computer Science Education. Association for Computing Machinery, pp 1054–1060, https://doi.org/10.
+1145/3328778.3366920
+Korteling, J. E. H., Boer-Visschedijk, G. V . D., Blankendaal, R. A., et al. (2021). Human versus artiﬁcial
+intelligence. Frontiers in Artiﬁcial Intelligence, 4 , 1–13. https://doi.org/10.3389/frai.2021.622364
+Lavie, A., & Agarwal, A. (2007). METEOR: An automatic metric for MT evaluation with high levels of
+correlation with human judgments. In: Proceedings of the Workshop on Statistical Machine Translation.
+Association for Computing Machinery, pp 228–231
+Li, X., Li, Y ., & Wang, W. (2023). Long-lasting conceptual change in science education.Science & Education,
+32, 123–168. https://doi.org/10.1007/s11191-021-00288-x
+Liang, Y ., Li, J., & Yin, J. (2019). A new multi-choice reading comprehension dataset for curriculum learning.
+In: Proceedings of the Asian Conference on Machine Learning, vol 101. PMLR, pp 742–757
+Liu, S., Man, S., & Song, L. (2022). An NLP-empowered virtual course assistant for online teaching and
+learning. In: Proceedings of the IEEE International Conference on Teaching, Assessment and Learning
+for Engineering. IEEE, pp 373–380, https://doi.org/10.1109/TALE54877.2022.00068
+MacNeil, S., Kim, J., Leinonen, J., et al. (2022). The implications of large language models for CS teachers and
+students. In: Proceedings of the ACM Technical Symposium on Computer Science Education. Association
+for Computing Machinery, pp 1255–1257, https://doi.org/10.1145/3545947.3573358
+MacNeil, S., Tran, A., Mogil, D., et al. (2022). Generating diverse code explanations using the GPT-3 large lan-
+guage model. In: Proceedings of the ACM Conference on International Computing Education Research,
+vol 2. Association for Computing Machinery, pp 37–39, https://doi.org/10.1145/3501709.3544280
+Mahajan, M. (2022). BELA: Bot for English language acquisition. In: Proceedings of the Second Workshop
+on NLP for Positive Impact. Association for Computational Linguistics, pp 142–148, https://doi.org/10.
+18653/v1/2022.nlp4pi-1.17
+Mendoza, S., Sánchez-Adame, L. M., Urquiza-Yllescas, J. F., et al. (2022). A model to develop chatbots for
+assisting the teaching and learning process. Sensors, 22, 5532–5552. https://doi.org/10.3390/s22155532
+Mhlanga, D. (2023). Open AI in education, the responsible and ethical use of ChatGPT towards lifelong
+learning. In: FinTech and Artiﬁcial Intelligence for Sustainable Development. Springer, p 1–19, https://
+doi.org/10.1007/978-3-031-37776-1_17
+Mohler, M., & Mihalcea, R. (2009). Text-to-text semantic similarity for automatic short answer grading. In:
+Proceedings of the Conference of the European Chapter of the Association for Computational Linguistics.
+Association for Computational Linguistics, pp 567–575, https://doi.org/10.3115/1609067.1609130
+Mohler, M., Bunescu, R., & Mihalcea, R. (2011). Learning to grade short answer questions using seman-
+tic similarity measures and dependency graph alignments. In: Proceedings of the Annual Meeting of
+the Association for Computational Linguistics: Human Language Technologies, vol 1. Association for
+Computing Machinery, p 752-762
+Moore, S., Nguyen, H. A., Bier, N., et al. (2022). Assessing the quality of student-generated short answer
+questions using GPT-3. In: Proceedings of the European Conference on Technology Enhanced Learning,
+vol 13450. Springer, pp 243–257, https://doi.org/10.1007/978-3-031-16290-9_18
+Nasution, N. E. A. (2023). Using artiﬁcial intelligence to create biology multiple choice questions for higher
+education. Agricultural and Environmental Education, 2 , 1–11. https://doi.org/10.29333/agrenvedu/
+13071
+O’Connor, S., & ChatGPT. (2023). Open artiﬁcial intelligence platforms in nursing education: Tools for
+academic progress or abuse? Nurse Education in Practice, 66, 103537–103538. https://doi.org/10.1016/
+j.nepr.2022.103537
+Papineni, K., Roukos, S., Ward, T., et al. (2002). BLEU: A method for automatic evaluation of machine
+translation. In: Proceedings of the Annual Meeting of the Association for Computational Linguistics.
+Association for Computing Machinery, pp 311–318
+A Review on the Use of Large Language Models... 891
+123
+Pavlik, J. V . (2023). Collaborating With ChatGPT: Considering the implications of generative artiﬁcial intel-
+ligence for journalism and media education. Journalism & Mass Communication Educator , 78, 84–93.
+https://doi.org/10.1177/10776958221149577
+Perkins, M. (2023). Academic integrity considerations of AI large language models in the post-pandemic era:
+ChatGPT and beyond. Journal of University Teaching and Learning Practice 20:2–26. https://doi.org/10.
+53761/1.20.02.07
+Phillips, T., Saleh, A., Glazewski, K. D., et al. (2022). Exploring the use of GPT-3 as a tool for evaluating text-
+based collaborative discourse. In: Proceedings of the International Conference on Learning Analytics &
+Knowledge. Society for Learning Analytics Research, pp 54–56
+Phung T, Cambronero J, Gulwani S, et al (2023) Generating high-precision feedback for programming syntax
+errors using large language models
+Pipalia, K., Bhadja, R., & Shukla, M. (2020). Comparative analysis of different transformer based archi-
+tectures used in sentiment analysis. In: Proceedings of the International Conference System Modeling
+and Advancement in Research Trends. IEEE, pp 411–415, https://doi.org/10.1109/SMART50582.2020.
+9337081
+Prihar, E., Moore, A., & Heffernan, N. (2022). Identifying explanations within student-tutor chat logs. In:
+Proceedings of the International Conference on Educational Data Mining. International Educational
+Data Mining Society, pp 773–777, https://doi.org/10.5281/ZENODO.6852938
+Raffel, C., Shazeer, N., Roberts, A., et al. (2020). Exploring the limits of transfer learning with a uniﬁed text-
+to-text transformer. Journal of Machine Learning Research, 21 , 5485–5551. https://doi.org/10.5555/
+3455716.3455856
+Raina, V ., & Gales, M. (2022). Multiple-choice question generation: towards an automated assessment frame-
+work
+Rasa T, Lavonen J, Laherto A (2023) Agency and transformative potential of technology in students’ images
+of the future. Science & Education pp 1–25. https://doi.org/10.1007/s11191-023-00432-9
+Roll, I., & Wylie, R. (2016). Evolution and revolution in artiﬁcial intelligence in education. International
+Journal of Artiﬁcial Intelligence in Education, 26 , 582–599. https://doi.org/10.1007/s40593-016-0110-
+3
+Rudolph, J., Tan, S., & Tan, S. (2023). ChatGPT: Bullshit spewer or the end of traditional assessments in
+higher education? Journal of Applied Learning & Teaching, 6 , 342–363. https://doi.org/10.37074/jalt.
+2023.6.1.9
+Russe, M. F., Reisert, M., Bamberg, F., et al. (2024). Improving the use of LLMs in radiology through
+prompt engineering: from precision prompts to zero-shot learning. RöFo - Fortschritte auf dem Gebiet
+der Röntgenstrahlen und der bildgebenden V erfahren pp 1–5. https://doi.org/10.1055/a-2264-5631
+Sallam, M. (2023). ChatGPT utility in healthcare education, research, and practice: Systematic review
+on the promising perspectives and valid concerns. Healthcare, 11 , 887–906. https://doi.org/10.3390/
+healthcare11060887
+Sarker, I. H. (2022). AI-based modeling: Techniques, applications and research issues towards automa-
+tion, intelligent and smart systems. SN Computer Science, 3, 1–20. https://doi.org/10.1007/s42979-022-
+01043-x
+Sharma, S., Agarwal, R., & Mittal, A. (2022). Generating educational questions with similar difﬁculty level.
+In: Proceedings of the International Conference on Innovative Computing & Communication. SSRN
+Electronic Journal, pp 1–9, https://doi.org/10.2139/ssrn.4033499
+Sok, S., & Heng, K. (2023). ChatGPT for education and research: A review of beneﬁts and risks. SSRN
+Electronic Journal, 3, 110–121. https://doi.org/10.2139/ssrn.4378735
+Sophia, J., & Jacob, T. (2021). EDUBOT-A chatbot for education in COVID-19 pandemic and VQAbot com-
+parison. In: Proceedings of the International Conference on Electronics and Sustainable Communication.
+IEEE, pp 1707–1714, https://doi.org/10.1109/ICESC51422.2021.9532611
+Taber, K. S. (2018). The use of Cronbach’s alpha when developing and reporting research instruments in
+science education. Research in Science Education, 48, 1273–1296. https://doi.org/10.1007/s11165-016-
+9602-2
+Talan, T. (2021). Artiﬁcial intelligence in education: A bibliometric study. International Journal of Research
+in Education and Science, 7 (3), 822–837. https://doi.org/10.46328/ijres.2409
+Tay, Y ., Dehghani, M., Bahri, D., et al. (2023). Efﬁcient transformers: A survey.ACM Computing Surveys, 55,
+1–28. https://doi.org/10.1145/3530811
+Tobore, T. O. (2019). On energy efﬁciency and the brain’s resistance to change: The neurological evolution
+of dogmatism and close-mindedness. Psychological Reports, 122 , 2406–2416. https://doi.org/10.1177/
+0033294118792670
+892 S. García-Méndez et al.
+Publisher’s Note Springer Nature remains neutral with regard to jurisdictional claims in published maps and
+institutional afﬁliations.
+123
+Topsakal, O., & Topsakal, E. (2022). Framework for a foreign language teaching software for children utilizing
+AR, V oicebots and ChatGPT (large language models). The Journal of Cognitive Systems 7:33–38.https://
+doi.org/10.52876/jcs.1227392
+Tyen, G., Brenchley, M., Caines, A., et al. (2022). Towards an open-domain chatbot for language practice.
+In: Proceedings of the Workshop on Innovative Use of NLP for Building Educational Applications.
+Association for Computational Linguistics, pp 234–249, https://doi.org/10.18653/v1/2022.bea-1.28
+Wang, Y ., Liu, S., & Song, L. (2022) Designing an educational chatbot with joint intent classiﬁcation and slot
+ﬁlling. In: Proceedings of the IEEE International Conference on Teaching, Assessment and Learning for
+Engineering. IEEE, pp 381–388, https://doi.org/10.1109/TALE54877.2022.00069
+Y amaoka, K., Watanabe, K., Kise, K., et al. (2022). Experience is the best teacher: Personalized vocabulary
+building within the context of Instagram posts and sentences from GPT-3. In: Proceedings of the ACM
+International Joint Conference on Pervasive and Ubiquitous Computing. Association for Computing
+Machinery, pp 313–316, https://doi.org/10.1145/3544793.3560382
+Y u, J., Wang, Y ., Zhong, Q., et al. (2021). MOOCCubeX: A large knowledge-centered repository for adaptive
+learning in MOOCs. In: Proceedings of the ACM International Conference on Information & Knowledge
+Management. Association for Computing Machinery, pp 4643–4652, https://doi.org/10.1145/3459637.
+3482010
+Zhang, F., Markopoulos, P ., & Bekker, T. (2020). Children’s emotions in design-based learning: A systematic
+review.Journal of Science Education and Technology, 29, 459–481. https://doi.org/10.1007/s10956-020-
+09830-y
+Zhang, J., Cambronero, J., Gulwani, S., et al. (2022). Repairing bugs in Python assignments using large
+language model
+Zhou, L., Meng, W., Wu, S., et al. (2023). Development of digital education in the age of digital transformation:
+Citing China’s practice in smart education as a case study. Science Insights Education Frontiers, 14 ,
+2077–2092. https://doi.org/10.15354/sief.23.or095
+Zong, M., & Krishnamachari, B. (2022). Solving math word problems concerning systems of equations with
+GPT-3. In: Proceedings of the Symposium on Educational Advances in Artiﬁcial Intelligence, vol 37.
+Association for the Advancement of Artiﬁcial Intelligence, pp 15,972–15,979, https://doi.org/10.1609/
+aaai.v37i13.26896

@@ -364,14 +364,11 @@ def request_support(
         session=session,
         main_draft=action_input.main_draft,
         doubt_text=None,
-        force_current_step=False,
     )
     if output is None:
         return to_session_response(repository, session)
     generated_session = apply_support_request_output(
         repository=repository,
-        support_service=support_service,
-        question=question,
         session=session,
         main_draft=action_input.main_draft,
         doubt_text=None,
@@ -421,14 +418,11 @@ def ask_doubt(
         session=session,
         main_draft=action_input.main_draft,
         doubt_text=action_input.doubt_text,
-        force_current_step=False,
     )
     if output is None:
         return to_session_response(repository, session)
     generated_session = apply_support_request_output(
         repository=repository,
-        support_service=support_service,
-        question=question,
         session=session,
         main_draft=action_input.main_draft,
         doubt_text=action_input.doubt_text,
@@ -891,8 +885,6 @@ async def stream_voice_input(
 def apply_support_request_output(
     *,
     repository: SessionRepository,
-    support_service: AISupportService,
-    question: Question,
     session: Session,
     main_draft: str,
     doubt_text: str | None,
@@ -915,43 +907,8 @@ def apply_support_request_output(
             support_kind="SIMPLE_DOUBT",
             settings=settings,
         )
-    if output.action == "CURRENT_STEP_ANSWER":
-        return repository.record_direct_help(
-            session=session,
-            main_draft=main_draft,
-            doubt_text=doubt_text,
-            content=output.content,
-            support_kind="CURRENT_STEP",
-            settings=settings,
-        )
     if output.action != "GUIDED_QUESTIONS":
         raise RuntimeError(f"不支持的教学支持动作：{output.action}")
-    force_current_step = repository.record_help_progress(
-        session=session,
-        main_draft=main_draft,
-        covered_points=output.covered_points,
-        settings=settings,
-    )
-    if force_current_step:
-        step_output = support_service.generate_request(
-            question=question,
-            session=session,
-            main_draft=main_draft,
-            doubt_text=doubt_text,
-            force_current_step=True,
-        )
-        if step_output is None:
-            return session
-        if step_output.action != "CURRENT_STEP_ANSWER":
-            raise RuntimeError("AI 未按确定性规则生成当前步骤答案")
-        return repository.record_direct_help(
-            session=session,
-            main_draft=main_draft,
-            doubt_text=doubt_text,
-            content=step_output.content,
-            support_kind="CURRENT_STEP",
-            settings=settings,
-        )
     return repository.record_guided_questions(
         session=session,
         main_draft=main_draft,
