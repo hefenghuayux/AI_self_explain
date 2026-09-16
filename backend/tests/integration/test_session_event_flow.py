@@ -48,8 +48,8 @@ def test_text_self_explanation_writes_real_event_chain(settings, monkeypatch) ->
         else:
             content = (
                 '{"correctness":"CORRECT","completeness":"COMPLETE",'
-                '"coveredPoints":["正确计算加法","得出结果 2"],"missingPoints":[],'
-                '"errorEvidence":[],"confidence":1,"needHumanReason":null}'
+                '"missingPoints":[],'
+                '"confidence":1,"needHumanReason":null}'
             )
         return AIModelResponse('{"choices":[]}', content, 3)
 
@@ -97,8 +97,8 @@ def test_text_self_explanation_writes_real_event_chain(settings, monkeypatch) ->
     ]
     assert responded.data["rawContent"] == (
         '{"correctness":"CORRECT","completeness":"COMPLETE",'
-        '"coveredPoints":["正确计算加法","得出结果 2"],"missingPoints":[],'
-        '"errorEvidence":[],"confidence":1,"needHumanReason":null}'
+        '"missingPoints":[],'
+        '"confidence":1,"needHumanReason":null}'
     )
     assert responded.data["validation"] == "valid"
     state_events = [event for event in events if event.event_type == "state.changed"]

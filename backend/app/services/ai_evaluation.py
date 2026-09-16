@@ -460,7 +460,6 @@ def _render_prompt(
                 "progressContext": transport_context["progressContext"],
                 "round": session.round,
                 "supportCountRound": session.support_count_round,
-                "coveredPointsCurrentRound": session.covered_points_current_round,
             },
             user_input=user_input,
             retry_context={
@@ -491,21 +490,14 @@ def _parse_and_validate_evaluation(
     try:
         payload = json.loads(content)
         if isinstance(payload, dict):
-            legacy_points = payload.get("coveredPoints")
-            if isinstance(legacy_points, list) and all(
-                isinstance(point, str) for point in legacy_points
-            ):
-                payload["coveredPoints"] = [
-                    rubric_points.index(point) + 1 for point in legacy_points
-                ]
+            payload.pop("coveredPoints", None)
+            payload.pop("errorEvidence", None)
         evaluation = AIEvaluationOutput.model_validate(payload)
     except (ValidationError, ValueError, TypeError) as error:
         if isinstance(error, ValidationError):
             return None, [entry["msg"] for entry in error.errors()]
         return None, [str(error)]
-    return evaluation, validate_evaluation_relationships(
-        evaluation, rubric_points, confirmed_text
-    )
+    return evaluation, validate_evaluation_relationships(evaluation)
 
 
 def _duration_ms(started_at: float) -> int:

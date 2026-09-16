@@ -33,8 +33,9 @@ def stub_ai_evaluation(monkeypatch) -> None:
             raw_response='{"choices": []}',
             content=(
                 '{"correctness":"CORRECT","completeness":"INCOMPLETE",'
-                '"coveredPoints":["正确计算加法"],"missingPoints":["得出结果 2"],'
-                '"errorEvidence":[],"confidence":1,"needHumanReason":null}'
+                '"hasProgress":true,"mainReason":"知识应用问题","otherReasons":[],'
+                '"judgeReason":"学生尚未完成当前推理。"'
+                '}'
             ),
             duration_ms=1,
         )

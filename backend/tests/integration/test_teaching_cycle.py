@@ -53,8 +53,6 @@ def _stub_ai(monkeypatch, evaluation: dict[str, object]) -> None:
             content = {
                 "correctness": evaluation["correctness"],
                 "completeness": evaluation["completeness"],
-                "coveredPoints": evaluation["coveredPoints"],
-                "errorEvidence": evaluation["errorEvidence"],
                 "hasProgress": evaluation.get("hasProgress", True),
                 "mainReason": None if terminal else "知识应用问题",
                 "otherReasons": [],
@@ -81,7 +79,6 @@ def _stub_ai(monkeypatch, evaluation: dict[str, object]) -> None:
         elif "forceCurrentStepAnswer\": true" in prompt:
             content = {
                 "action": "CURRENT_STEP_ANSWER",
-                "coveredPoints": [],
                 "missingPoints": ["正确计算加法", "得出结果 2"],
                 "content": "先把两个 1 合并，再写出这一步得到的结果。",
                 "questions": [],
@@ -89,7 +86,6 @@ def _stub_ai(monkeypatch, evaluation: dict[str, object]) -> None:
         elif "教学支持生成器" in prompt:
             content = {
                 "action": "GUIDED_QUESTIONS",
-                "coveredPoints": [],
                 "missingPoints": ["正确计算加法", "得出结果 2"],
                 "content": "请先回答下面两个问题。",
                 "questions": [
@@ -310,9 +306,7 @@ def test_focused_question_after_explanation_is_a_non_counting_guided_question(
     evaluation = {
         "correctness": "CORRECT",
         "completeness": "INCOMPLETE",
-        "coveredPoints": ["正确计算加法"],
         "missingPoints": ["得出结果 2"],
-        "errorEvidence": [],
         "feedback": "请补充结果。",
         "confidence": 1,
         "nextAction": "ASK_FOCUSED_QUESTION",
@@ -346,16 +340,7 @@ def test_wrong_incomplete_answer_creates_counted_correction_without_question(
     evaluation = {
         "correctness": "WRONG",
         "completeness": "INCOMPLETE",
-        "coveredPoints": [],
         "missingPoints": ["正确计算加法", "得出结果 2"],
-        "errorEvidence": [
-            {
-                "quote": "1 加 1 等于 3",
-                "locationDescription": "计算结果",
-                "reason": "加法结果错误",
-                "thinkingDirection": "重新计算两个 1 合并后的数量",
-            }
-        ],
         "feedback": "你把 1 加 1 算成了 3，请重新检查。",
         "confidence": 1,
         "nextAction": "CORRECT_AND_ASK",
@@ -390,9 +375,7 @@ def test_doubt_and_appeal_are_allowed_while_evaluation_questions_are_pending(
     evaluation = {
         "correctness": "WRONG",
         "completeness": "INCOMPLETE",
-        "coveredPoints": [],
         "missingPoints": ["正确计算加法", "得出结果 2"],
-        "errorEvidence": [],
         "feedback": "请重新检查。",
         "confidence": 1,
         "nextAction": "CORRECT_AND_ASK",
@@ -474,7 +457,6 @@ def test_full_solution_request_is_refused_without_counting_support(settings, mon
     def fake_evaluate(self, request) -> AIModelResponse:
         content = {
             "action": "REFUSE_FULL_SOLUTION",
-            "coveredPoints": [],
             "missingPoints": ["正确计算加法", "得出结果 2"],
             "content": "我不能直接给出完整答案，请写出你当前的分析后再继续。",
             "questions": [],

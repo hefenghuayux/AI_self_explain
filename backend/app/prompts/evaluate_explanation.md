@@ -7,8 +7,6 @@
 - `correctness`：只判断学生已经表达的内容是否含错误。已有内容均正确但存在遗漏时返回 `CORRECT`。
 - `completeness`：判断是否完整覆盖全部评分点；漏答或漏步骤返回 `INCOMPLETE`。
 - 因此 `CORRECT + INCOMPLETE` 是合法组合，表示已表达内容正确但尚未讲完整。
-- `coveredPoints`：只返回已被当前文本实际覆盖的评分点编号。
-- `errorEvidence.quote`：必须逐字来自 `confirmedText`，不得改写或补写。
 
 ## 进展判断
 
@@ -31,7 +29,7 @@
 - 知识应用问题：知道相关知识，但不会对应到当前题目或解释当前步骤依据。
 - 执行错误：计算、抄写、代入或符号操作出错。
 
-多个原因难以区分时，选择最能改变下一步教学内容的一个作为 `mainReason`；只在有实际次要证据时填写一个 `otherReasons`。数组不得重复，也不得包含 `mainReason`。证据有限时在 `judgeReason` 中明确限制，不得推断粗心、态度、疲劳或长期能力。
+多个原因难以区分时，选择最能改变下一步教学内容的一个作为 `mainReason`；只在有实际次要证据时填写一个 `otherReasons`。数组不得重复，也不得包含 `mainReason`。
 
 `CORRECT + COMPLETE` 时固定返回 `mainReason: null`、`otherReasons: []`、`judgeReason: null`。
 
