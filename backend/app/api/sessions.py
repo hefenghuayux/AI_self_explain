@@ -54,6 +54,7 @@ from app.schemas.session import (
 from app.schemas.support import GuidedAnswer, SupportEventResponse
 from app.services.ai_evaluation import AIEvaluationService
 from app.services.ai_support import AISupportService
+from app.services.ai_teaching import AITeachingService
 from app.services.audio_storage import AudioStorage, AudioStorageError
 from app.services.realtime_asr import ASRServiceError, ASRStreamEvent, RealtimeASRService
 
@@ -274,18 +275,20 @@ def submit_text_attempt(
     if isinstance(evaluation_result, Session):
         return to_session_response(repository, evaluation_result)
 
-    merged_output = evaluation_result.merged_output
+    evaluation_output = evaluation_result.output
     decision = decide_teaching(
-        merged_output=merged_output,
+        evaluation=evaluation_output,
         session=session,
         settings=request.app.state.settings,
         evaluation_mode=evaluation_result.evaluation_record.evaluation_mode,
+        rubric_points=question.rubric_points or [],
     )
     if not decision.should_generate:
         decided_session, _ = repository.apply_teaching_decision(
             session=session,
             evaluation_id=evaluation_result.evaluation_record.id,
             decision=decision,
+            teaching_output=None,
             run_id=session_run_id(session.id, attempt.id),
         )
         return to_session_response(
@@ -294,16 +297,33 @@ def submit_text_attempt(
             TeachingNotRequiredResponse(status="NOT_REQUIRED"),
         )
 
+    teaching_output = AITeachingService(
+        database_session, request.app.state.settings, request.app.state.ai_http_client
+    ).generate(
+        question=question,
+        session=session,
+        attempt=attempt,
+        evaluation=evaluation_output,
+        decision=decision,
+    )
+    if teaching_output is None:
+        failed_session = repository.record_teaching_generation_failure(
+            session=session,
+            evaluation_id=evaluation_result.evaluation_record.id,
+            decision=decision,
+            run_id=session_run_id(session.id, attempt.id),
+        )
+        return to_session_response(repository, failed_session)
+
     decided_session, support_event = repository.apply_teaching_decision(
         session=session,
         evaluation_id=evaluation_result.evaluation_record.id,
         decision=decision,
-        content=merged_output.content,
-        questions=merged_output.questions,
+        teaching_output=teaching_output,
         run_id=session_run_id(session.id, attempt.id),
     )
     if support_event is None:
-        raise RuntimeError("合并输出校验成功后缺少支持事件")
+        raise RuntimeError("教学输出校验成功后缺少支持事件")
     return to_session_response(
         repository,
         decided_session,

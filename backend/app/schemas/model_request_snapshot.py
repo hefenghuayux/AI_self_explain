@@ -43,7 +43,12 @@ class ModelRequestSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     schema_version: Literal["1.0"] = Field(default="1.0", alias="schemaVersion")
-    purpose: Literal["AI_EVALUATION", "AI_SUPPORT", "GUIDED_ANSWER_ASSESSMENT"]
+    purpose: Literal[
+        "AI_EVALUATION",
+        "AI_TEACHING",
+        "AI_SUPPORT",
+        "GUIDED_ANSWER_ASSESSMENT",
+    ]
     prompt_version: str = Field(alias="promptVersion")
     blocks: ModelRequestBlocks
     transport: ModelTransportSnapshot

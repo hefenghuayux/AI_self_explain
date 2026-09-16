@@ -49,11 +49,12 @@ def valid_evaluation_content() -> str:
         {
             "correctness": "CORRECT",
             "completeness": "INCOMPLETE",
-            "coveredPoints": ["正确计算加法"],
-            "missingPoints": ["得出结果 2"],
+            "coveredPoints": [1],
             "errorEvidence": [],
-            "confidence": 1,
-            "needHumanReason": None,
+            "hasProgress": True,
+            "mainReason": "知识应用问题",
+            "otherReasons": [],
+            "judgeReason": "学生说明了计算方向，但尚未给出结果。",
         }
     )
 
@@ -150,7 +151,7 @@ def test_valid_evaluation_and_generated_teaching_are_saved(
     settings, monkeypatch
 ) -> None:
     def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
-        if request.purpose == "AI_SUPPORT":
+        if request.purpose == "AI_TEACHING":
             return AIModelResponse("{\"choices\": []}", focused_teaching_content(), 10)
         prompt = request.transport.messages[0].content
         schema = request.blocks.question_context["outputSchema"]
@@ -254,23 +255,24 @@ def test_schema_retry_exhaustion_requests_human_review_without_support_count(
     assert invalid_count == settings.ai_schema_max_retries + 1
 
 
-def test_need_human_evaluation_requests_review_and_keeps_self_explanation_open(
+def test_unknown_evaluation_requests_review_and_keeps_self_explanation_open(
     settings, monkeypatch
 ) -> None:
-    need_human_content = json.dumps(
+    invalid_content = json.dumps(
         {
-            "correctness": "UNCERTAIN",
+            "correctness": "UNKNOWN",
             "completeness": "INCOMPLETE",
-            "coveredPoints": ["正确计算加法"],
-            "missingPoints": ["得出结果 2"],
+            "coveredPoints": [1],
             "errorEvidence": [],
-            "confidence": 1,
-            "needHumanReason": "无法可靠确认学生的计算依据。",
+            "hasProgress": True,
+            "mainReason": "知识应用问题",
+            "otherReasons": [],
+            "judgeReason": "评价值无效。",
         }
     )
 
     def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
-        return AIModelResponse("{\"choices\": []}", need_human_content, 8)
+        return AIModelResponse("{\"choices\": []}", invalid_content, 8)
 
     monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
     with prepare_client(settings, monkeypatch) as client:
@@ -287,9 +289,9 @@ def test_need_human_evaluation_requests_review_and_keeps_self_explanation_open(
     assert saved_session["supportCountRound"] == 0
     assert saved_session["supportCountTotal"] == 0
     assert saved_session["coveredPointsCurrentRound"] == []
-    assert saved_session["needHumanReason"] == "无法可靠确认学生的计算依据。"
-    assert saved_session["latestEvaluation"]["correctness"] == "UNCERTAIN"
-    assert saved_session["teachingGeneration"] == {"status": "NOT_REQUIRED"}
+    assert "AI 结构化评价" in saved_session["needHumanReason"]
+    assert saved_session["latestEvaluation"] is None
+    assert saved_session["teachingGeneration"] is None
     assert continued.status_code == 200
     assert continued.json()["flowStage"] == "CAPTURING_INPUT"
 
@@ -316,6 +318,10 @@ def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
             "nextAction": "GIVE_HINT",
             "needHumanReason": None,
             "guidedQuestions": [],
+            "hasProgress": True,
+            "mainReason": "知识应用问题",
+            "otherReasons": [],
+            "judgeReason": "学生完成了前两问，但尚未把距离关系用于第三问。",
         }
     )
     corrected_content = json.dumps(
@@ -332,15 +338,17 @@ def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
                 "得到 P(2, 0) 和 P(-2, 0) 两个坐标。",
             ],
             "errorEvidence": [],
-            "confidence": 1,
-            "needHumanReason": None,
+            "hasProgress": True,
+            "mainReason": "知识应用问题",
+            "otherReasons": [],
+            "judgeReason": "学生完成了前两问，但尚未把距离关系用于第三问。",
         }
     )
     requests: list[ModelRequestSnapshot] = []
 
     def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
         requests.append(request)
-        if request.purpose == "AI_SUPPORT":
+        if request.purpose == "AI_TEACHING":
             content = json.dumps(
                 {
                     "content": "请再检查点 P 到原点的距离表示。",
@@ -402,11 +410,12 @@ def test_complete_evaluation_sets_completion_with_deterministic_label(
         {
             "correctness": "CORRECT",
             "completeness": "COMPLETE",
-            "coveredPoints": ["正确计算加法", "得出结果 2"],
-            "missingPoints": [],
+            "coveredPoints": [1, 2],
             "errorEvidence": [],
-            "confidence": 1,
-            "needHumanReason": None,
+            "hasProgress": True,
+            "mainReason": None,
+            "otherReasons": [],
+            "judgeReason": None,
         }
     )
 
@@ -433,7 +442,7 @@ def test_transport_retry_exhaustion_requests_review_and_allows_another_explanati
 
     def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
         nonlocal calls
-        if request.purpose == "AI_SUPPORT":
+        if request.purpose == "AI_TEACHING":
             return AIModelResponse("{\"choices\": []}", focused_teaching_content(), 9)
         calls += 1
         if calls <= settings.ai_transport_max_retries + 1:
@@ -513,17 +522,11 @@ def test_teaching_failure_keeps_evaluation_without_support_side_effects(
         response = submit_text(client, started)
         current = client.get(f"/api/sessions/{started['id']}")
 
-    assert response.status_code == 502
-    assert response.json() == {
-        "detail": {
-            "code": "TEACHING_GENERATION_FAILED",
-            "message": "教学生成失败，会话已进入人工处理",
-            "sessionId": started["id"],
-        }
-    }
+    assert response.status_code == 200
+    assert response.json()["needHumanReason"] == "教学生成失败，会话已进入人工处理"
     assert "供应商" not in response.text
     assert current.status_code == 200
-    assert current.json()["status"] == "NEED_HUMAN"
+    assert current.json()["status"] == "IN_PROGRESS"
     assert current.json()["flowStage"] == "WAIT_STUDENT_ACTION"
     assert current.json()["coveredPointsCurrentRound"] == ["正确计算加法"]
     assert current.json()["supportCountRound"] == 0
@@ -541,7 +544,7 @@ def test_teaching_failure_keeps_evaluation_without_support_side_effects(
                 text(
                     "SELECT related_evaluation_id, related_support_event_id "
                     "FROM state_transition_events "
-                    "WHERE trigger_type = 'TEACHING_GENERATION_FAILED'"
+                    "WHERE trigger_type = 'AI_TEACHING_RETRY_EXHAUSTED'"
                 )
             ).mappings().one()
     finally:

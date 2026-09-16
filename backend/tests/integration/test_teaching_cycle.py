@@ -46,22 +46,29 @@ def _stub_ai(monkeypatch, evaluation: dict[str, object]) -> None:
     def fake_evaluate(self, request) -> AIModelResponse:
         prompt = request.transport.messages[0].content
         if request.purpose == "AI_EVALUATION":
+            terminal = (
+                evaluation["correctness"] == "CORRECT"
+                and evaluation["completeness"] == "COMPLETE"
+            )
             content = {
-                key: evaluation[key]
-                for key in (
-                    "correctness",
-                    "completeness",
-                    "coveredPoints",
-                    "missingPoints",
-                    "errorEvidence",
-                    "confidence",
-                    "needHumanReason",
-                )
+                "correctness": evaluation["correctness"],
+                "completeness": evaluation["completeness"],
+                "coveredPoints": evaluation["coveredPoints"],
+                "errorEvidence": evaluation["errorEvidence"],
+                "hasProgress": evaluation.get("hasProgress", True),
+                "mainReason": None if terminal else "知识应用问题",
+                "otherReasons": [],
+                "judgeReason": None if terminal else "学生尚未完成当前推理。",
             }
         elif "instructionFromRules" in request.blocks.session_context:
+            action = request.blocks.session_context["instructionFromRules"]["allowedAction"]
             content = {
                 "content": evaluation["feedback"],
-                "questions": evaluation["guidedQuestions"],
+                "questions": (
+                    evaluation["guidedQuestions"]
+                    if action == "ASK_FOCUSED_QUESTION"
+                    else []
+                ),
             }
         elif "子问题作答评估器" in prompt:
             content = {
@@ -333,7 +340,7 @@ def test_focused_question_after_explanation_is_a_non_counting_guided_question(
     ]
 
 
-def test_correction_and_question_creates_one_counted_guided_question(
+def test_wrong_incomplete_answer_creates_counted_correction_without_question(
     settings, monkeypatch
 ) -> None:
     evaluation = {
@@ -371,12 +378,10 @@ def test_correction_and_question_creates_one_counted_guided_question(
 
     assert response.status_code == 200
     saved = response.json()
-    assert saved["flowStage"] == "WAIT_GUIDED_ANSWERS"
+    assert saved["flowStage"] == "WAIT_STUDENT_ACTION"
     assert saved["supportCountRound"] == 1
-    assert saved["latestSupport"]["supportType"] == "CORRECT_AND_ASK"
-    assert saved["latestSupport"]["guidedQuestions"] == [
-        {"id": "evaluation-q1", "question": "两个 1 合起来实际是多少？"}
-    ]
+    assert saved["latestSupport"]["supportType"] == "GIVE_CORRECTION"
+    assert saved["latestSupport"]["guidedQuestions"] is None
 
 
 def test_doubt_and_appeal_are_allowed_while_evaluation_questions_are_pending(
