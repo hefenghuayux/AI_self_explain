@@ -1,12 +1,19 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import ConfigDict, field_validator, model_validator
+from pydantic import ConfigDict, Field, StrictBool, field_validator, model_validator
 
 from app.schemas.question import QuestionSchema, RequiredText, to_camel_case
 
 Correctness = Literal["CORRECT", "WRONG"]
 Completeness = Literal["COMPLETE", "INCOMPLETE"]
+Reason = Literal[
+    "表达与输入问题",
+    "题意理解问题",
+    "知识理解与回忆问题",
+    "知识应用问题",
+    "执行错误",
+]
 
 
 class ErrorEvidence(QuestionSchema):
@@ -35,6 +42,10 @@ class AIEvaluationOutput(QuestionSchema):
     completeness: Completeness
     covered_points: list[int]
     error_evidence: list[ErrorEvidence]
+    has_progress: StrictBool
+    main_reason: Reason | None
+    other_reasons: list[Reason] = Field(default_factory=list, max_length=1)
+    judge_reason: RequiredText | None
 
     @model_validator(mode="before")
     @classmethod
@@ -90,6 +101,23 @@ def validate_evaluation_relationships(
         if evidence.quote not in confirmed_text:
             errors.append("errorEvidence.quote 必须是 confirmedText 中的原文片段")
             break
+    terminal = evaluation.correctness == "CORRECT" and evaluation.completeness == "COMPLETE"
+    if terminal:
+        if evaluation.main_reason is not None:
+            errors.append("终态评价不能返回 mainReason")
+        if evaluation.other_reasons:
+            errors.append("终态评价不能返回 otherReasons")
+        if evaluation.judge_reason is not None:
+            errors.append("终态评价不能返回 judgeReason")
+    else:
+        if evaluation.main_reason is None:
+            errors.append("非终态评价必须返回 mainReason")
+        if evaluation.judge_reason is None:
+            errors.append("非终态评价必须返回 judgeReason")
+    if len(set(evaluation.other_reasons)) != len(evaluation.other_reasons):
+        errors.append("otherReasons 不能包含重复原因")
+    if evaluation.main_reason in evaluation.other_reasons:
+        errors.append("otherReasons 不能包含 mainReason")
     return errors
 
 

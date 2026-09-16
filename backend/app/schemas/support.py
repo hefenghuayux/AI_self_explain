@@ -11,7 +11,6 @@ SupportAction = Literal[
     "GUIDED_QUESTIONS",
     "SIMPLE_DOUBT_ANSWER",
     "REFUSE_FULL_SOLUTION",
-    "CURRENT_STEP_ANSWER",
 ]
 SupportReason = Literal[
     "表达与输入问题",
@@ -37,7 +36,6 @@ class SupportRequestOutput(QuestionSchema):
     )
 
     action: SupportAction
-    covered_points: list[RequiredText]
     main_reason: SupportReason | None = Field(alias="main_reason")
     other_reasons: list[SupportReason] = Field(default_factory=list, alias="other_reasons")
     judge_reason: RequiredText | None = Field(alias="judge_reason")

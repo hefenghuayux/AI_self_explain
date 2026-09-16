@@ -41,6 +41,12 @@ Pop-Location
 
 前端地址为 `http://127.0.0.1:5173`，API 健康检查地址为 `http://127.0.0.1:8000/api/health`。Vite 从根目录 `.env` 读取 `BACKEND_PROXY_TARGET`，并将 `/api` 代理到 FastAPI。
 
+## 局域网访问
+
+```powershell
+.\scripts\lan.ps1
+```
+
 ## 检查
 
 ```powershell

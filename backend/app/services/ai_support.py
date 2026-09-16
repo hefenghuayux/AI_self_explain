@@ -54,7 +54,6 @@ class AISupportService:
         session: Session,
         main_draft: str,
         doubt_text: str | None,
-        force_current_step: bool,
     ) -> SupportRequestOutput | None:
         reasoning_effort = self.settings.ai_reasoning_effort
         result = self._generate(
@@ -64,14 +63,13 @@ class AISupportService:
                 session=session,
                 main_draft=main_draft,
                 doubt_text=doubt_text,
-                force_current_step=force_current_step,
                 validation_errors=validation_errors,
                 model=self.settings.ai_model,
                 prompt_version=self.settings.prompt_version,
                 reasoning_effort=reasoning_effort,
             ),
             output_type=SupportRequestOutput,
-            validator=lambda output: _validate_support_request(output, question.rubric_points),
+            validator=_validate_support_request,
         )
         return result
 
@@ -307,7 +305,6 @@ def _render_support_prompt(
     session: Session,
     main_draft: str,
     doubt_text: str | None,
-    force_current_step: bool,
     validation_errors: list[str],
     model: str,
     prompt_version: str,
@@ -320,7 +317,6 @@ def _render_support_prompt(
     user_input = {
         "mainDraft": main_draft,
         "doubtText": doubt_text,
-        "forceCurrentStepAnswer": force_current_step,
     }
     context = {**question_context, **session_context, **user_input}
     prompt = template.replace("{{CONTEXT_JSON}}", json.dumps(context, ensure_ascii=False))
@@ -393,7 +389,6 @@ def _session_context(session: Session) -> dict[str, object]:
     return {
         "round": session.round,
         "supportCountRound": session.support_count_round,
-        "coveredPointsCurrentRound": session.covered_points_current_round,
     }
 
 
@@ -436,11 +431,7 @@ def _model_request(
     )
 
 
-def _validate_support_request(output: SupportRequestOutput, rubric_points: list[str]) -> list[str]:
-    covered_points = set(output.covered_points)
-    expected_points = set(rubric_points)
-    if not covered_points <= expected_points:
-        return ["coveredPoints 必须来自题目评分点"]
+def _validate_support_request(output: SupportRequestOutput) -> list[str]:
     no_reason = output.action == "REFUSE_FULL_SOLUTION"
     if no_reason and (
         output.main_reason is not None

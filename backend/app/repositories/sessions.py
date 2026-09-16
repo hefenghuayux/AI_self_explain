@@ -30,12 +30,11 @@ from app.rules.teaching_cycle import (
     COUNTED_SUPPORT_TYPES,
     support_limit_for,
     support_limit_reached,
-    update_coverage,
 )
 from app.rules.teaching_decision import TeachingDecision
 from app.schemas.ai_evaluation import AIEvaluationOutput
-from app.schemas.merged import MergedTeachingQuestion
 from app.schemas.model_request_snapshot import ModelRequestSnapshot
+from app.schemas.merged import MergedTeachingQuestion
 from app.schemas.support import GuidedAnswer, GuidedQuestion
 from app.services.audio_storage import AudioCapture, AudioStorage
 from app.services.event_store import EventStore
@@ -822,49 +821,6 @@ class SessionRepository:
         self.database_session.refresh(session)
         return session
 
-    def record_help_progress(
-        self,
-        *,
-        session: Session,
-        main_draft: str,
-        covered_points: list[str],
-        settings: Settings,
-    ) -> bool:
-        """记录本次求助前的草稿进展，并返回是否应给出当前步骤答案。"""
-        before_snapshot = session_snapshot(session)
-        normalized_draft = _normalize_draft(main_draft)
-        previous_draft = _normalize_draft(session.last_support_draft)
-        new_points: set[str] = set()
-        session.current_draft = main_draft
-        if normalized_draft and normalized_draft != previous_draft:
-            new_points = set(covered_points) - set(session.covered_points_current_round)
-            (
-                session.covered_points_current_round,
-                session.covered_points_all,
-                session.no_progress_count,
-            ) = update_coverage(
-                covered_points=covered_points,
-                covered_points_current_round=session.covered_points_current_round,
-                covered_points_all=session.covered_points_all,
-                no_progress_count=session.no_progress_count,
-            )
-        else:
-            session.no_progress_count += 1
-        session.last_support_draft = main_draft
-        if new_points:
-            session.no_progress_help_request_count = 0
-        else:
-            session.no_progress_help_request_count += 1
-        session.version += 1
-        self._record_transition(
-            session=session,
-            trigger_type="ASSESS_HELP_PROGRESS",
-            before_snapshot=before_snapshot,
-        )
-        self.database_session.commit()
-        self.database_session.refresh(session)
-        return session.no_progress_help_request_count > settings.guided_question_request_limit
-
     def record_support_submission(
         self,
         *,
@@ -1430,7 +1386,3 @@ def _timeline_sort_key(item: dict[str, object]) -> tuple[object, int, str]:
         event_order,
         str(item["id"]),
     )
-
-
-def _normalize_draft(value: str) -> str:
-    return "\n".join(line.strip() for line in value.replace("\r\n", "\n").split("\n")).strip()

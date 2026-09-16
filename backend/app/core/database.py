@@ -16,7 +16,9 @@ def create_database_engine(settings: Settings) -> Engine:
         event.listen(engine, "connect", _enable_sqlite_foreign_keys)
         return engine
 
-    engine = create_engine(settings.database_url)
+    # pool_pre_ping 在借出连接前先探测存活，远程 MySQL 因 wait_timeout 断开
+    # 的空闲连接会被丢弃重建，避免 "MySQL server has gone away"(2006)。
+    engine = create_engine(settings.database_url, pool_pre_ping=True, pool_recycle=3600)
     return engine
 
 

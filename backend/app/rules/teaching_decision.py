@@ -4,7 +4,6 @@ from app.core.config import Settings
 from app.models.session import Session
 from app.rules.teaching_cycle import completion_type_for, support_limit_for, update_coverage
 from app.schemas.ai_evaluation import AIEvaluationOutput
-from app.schemas.merged import MergedModelOutput
 from app.schemas.teaching import GeneratedTeachingAction
 
 COUNTED_SUPPORT_TYPES = frozenset({"GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"})
@@ -34,27 +33,13 @@ class TeachingDecision:
 
 def decide_teaching(
     *,
-    merged_output: MergedModelOutput,
+    evaluation: AIEvaluationOutput,
     session: Session,
     settings: Settings,
     evaluation_mode: str = "FULL_RUBRIC",
 ) -> TeachingDecision:
-    """根据合并输出的评价字段和模型给出的教学动作做确定性决策。
-
-    教学动作（追问/提示/纠错）由模型在输出中通过 teachingAction 给出；
-    本轮是否新增评分点仍由后端按 coveredPoints 与
-    coveredPointsCurrentRound 的差集确定，只用于覆盖记录和审计。
-    后端确定性负责：COMPLETED / 支持上限阻断。
-    """
-    evaluation = _as_evaluation_output(merged_output)
-    if evaluation_mode != "FULL_RUBRIC":
-        return _decide_without_rubric(
-            evaluation=evaluation, session=session, settings=settings
-        )
-
     coverage = _coverage_result(evaluation=evaluation, session=session)
-
-    if merged_output.correctness == "CORRECT" and merged_output.completeness == "COMPLETE":
+    if evaluation.correctness == "CORRECT" and evaluation.completeness == "COMPLETE":
         return _decision(
             session=session,
             coverage=coverage,
@@ -67,10 +52,16 @@ def decide_teaching(
             ),
         )
 
-    action = merged_output.teaching_action
-    if action is None:
-        raise ValueError("非终态合并输出缺少 teachingAction")
+    if evaluation_mode != "FULL_RUBRIC":
+        return _decision(
+            session=session,
+            coverage=coverage,
+            next_status="IN_PROGRESS",
+            next_flow_stage="WAIT_STUDENT_ACTION",
+            need_human_reason="题目未配置评分点，无法生成可审计的针对性支持",
+        )
 
+    action = _action_for(evaluation)
     if action in COUNTED_SUPPORT_TYPES:
         support_limit = support_limit_for(round_number=session.round, settings=settings)
         if session.support_count_round + 1 >= support_limit:
@@ -91,30 +82,12 @@ def decide_teaching(
     )
 
 
-def _decide_without_rubric(
-    *, evaluation: AIEvaluationOutput, session: Session, settings: Settings
-) -> TeachingDecision:
-    coverage = _coverage_result(evaluation=evaluation, session=session)
-    if evaluation.correctness == "CORRECT":
-        return _decision(
-            session=session,
-            coverage=coverage,
-            next_status="COMPLETED",
-            next_flow_stage="WAIT_STUDENT_ACTION",
-            completion_type=completion_type_for(
-                solution_exposed=session.solution_exposed,
-                round_number=session.round,
-                support_count_total=session.support_count_total,
-            ),
-        )
-
-    return _decision(
-        session=session,
-        coverage=coverage,
-        next_status="IN_PROGRESS",
-        next_flow_stage="WAIT_STUDENT_ACTION",
-        need_human_reason="题目未配置评分点，无法生成可审计的针对性支持",
-    )
+def _action_for(evaluation: AIEvaluationOutput) -> GeneratedTeachingAction:
+    if not evaluation.has_progress:
+        return "GIVE_HINT"
+    if evaluation.correctness == "WRONG":
+        return "GIVE_CORRECTION"
+    return "ASK_FOCUSED_QUESTION"
 
 
 def _coverage_result(
@@ -125,7 +98,7 @@ def _coverage_result(
         for point in evaluation.covered_points
         if point not in set(session.covered_points_current_round)
     ]
-    current_round, all_rounds, no_progress_count = update_coverage(
+    current_round, all_rounds, _ = update_coverage(
         covered_points=evaluation.covered_points,
         covered_points_current_round=session.covered_points_current_round,
         covered_points_all=session.covered_points_all,
@@ -135,17 +108,8 @@ def _coverage_result(
         current_round=current_round,
         all_rounds=all_rounds,
         newly_covered=newly_covered,
-        no_progress_count=no_progress_count,
-        reset_help_request_count=bool(newly_covered),
-    )
-
-
-def _as_evaluation_output(merged_output: MergedModelOutput) -> AIEvaluationOutput:
-    return AIEvaluationOutput(
-        correctness=merged_output.correctness,
-        completeness=merged_output.completeness,
-        covered_points=merged_output.covered_points,
-        error_evidence=merged_output.error_evidence,
+        no_progress_count=0 if evaluation.has_progress else session.no_progress_count + 1,
+        reset_help_request_count=False,
     )
 
 
