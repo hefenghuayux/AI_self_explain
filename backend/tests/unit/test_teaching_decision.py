@@ -2,28 +2,29 @@ import pytest
 
 from app.models.session import Session
 from app.rules.teaching_decision import decide_teaching
-from app.schemas.merged import MergedModelOutput
+from app.schemas.ai_evaluation import AIEvaluationOutput
+
+RUBRIC_POINTS = ["评分点 A", "评分点 B"]
 
 
-def merged_output(
+def evaluation(
     correctness: str,
     completeness: str,
     *,
-    covered_points: list[str] | None = None,
-    need_human_reason: str | None = None,
-    teaching_action: str | None = None,
-    questions: list[dict[str, str]] | None = None,
-) -> MergedModelOutput:
-    return MergedModelOutput.model_validate(
+    covered_points: list[int] | None = None,
+    has_progress: bool = True,
+) -> AIEvaluationOutput:
+    terminal = correctness == "CORRECT" and completeness == "COMPLETE"
+    return AIEvaluationOutput.model_validate(
         {
             "correctness": correctness,
             "completeness": completeness,
             "coveredPoints": covered_points or [],
             "errorEvidence": [],
-            "needHumanReason": need_human_reason,
-            "teachingAction": teaching_action,
-            "content": "教学正文。" if teaching_action is not None else None,
-            "questions": questions or [],
+            "hasProgress": has_progress,
+            "mainReason": None if terminal else "知识应用问题",
+            "otherReasons": [],
+            "judgeReason": None if terminal else "学生尚未完成当前推理。",
         }
     )
 
@@ -44,41 +45,45 @@ def session(**updates: object) -> Session:
 
 
 @pytest.mark.parametrize(
-    ("correctness", "completeness", "action"),
+    ("correctness", "completeness", "has_progress", "expected_action"),
     [
-        ("CORRECT", "INCOMPLETE", "ASK_FOCUSED_QUESTION"),
-        ("WRONG", "COMPLETE", "GIVE_CORRECTION"),
-        ("WRONG", "INCOMPLETE", "CORRECT_AND_ASK"),
-        ("CORRECT", "INCOMPLETE", "GIVE_HINT"),
-        ("WRONG", "INCOMPLETE", "GIVE_HINT"),
+        ("CORRECT", "INCOMPLETE", True, "ASK_FOCUSED_QUESTION"),
+        ("WRONG", "COMPLETE", True, "GIVE_CORRECTION"),
+        ("WRONG", "INCOMPLETE", True, "GIVE_CORRECTION"),
+        ("CORRECT", "INCOMPLETE", False, "GIVE_HINT"),
+        ("WRONG", "INCOMPLETE", False, "GIVE_HINT"),
     ],
 )
-def test_teaching_action_from_model_flows_through_to_generation(
-    settings, correctness: str, completeness: str, action: str
+def test_teaching_action_is_selected_by_deterministic_priority(
+    settings,
+    correctness: str,
+    completeness: str,
+    has_progress: bool,
+    expected_action: str,
 ) -> None:
     decision = decide_teaching(
-        merged_output=merged_output(
+        evaluation=evaluation(
             correctness,
             completeness,
-            covered_points=["评分点 A"],
-            teaching_action=action,
+            covered_points=[1],
+            has_progress=has_progress,
         ),
         session=session(),
         settings=settings,
+        rubric_points=RUBRIC_POINTS,
     )
 
-    assert decision.allowed_action == action
+    assert decision.allowed_action == expected_action
     assert decision.should_generate is True
     assert decision.coverage.newly_covered == ["评分点 A"]
 
 
 def test_complete_decision_is_deterministic_and_skips_generation(settings) -> None:
     decision = decide_teaching(
-        merged_output=merged_output(
-            "CORRECT", "COMPLETE", covered_points=["评分点 A"]
-        ),
+        evaluation=evaluation("CORRECT", "COMPLETE", covered_points=[1]),
         session=session(support_count_total=1),
         settings=settings,
+        rubric_points=RUBRIC_POINTS,
     )
 
     assert decision.allowed_action is None
@@ -88,11 +93,11 @@ def test_complete_decision_is_deterministic_and_skips_generation(settings) -> No
 
 
 @pytest.mark.parametrize("evaluation_mode", ["BASIC", "AI_GENERAL"])
-def test_non_rubric_correct_evaluation_completes_without_teaching(
+def test_non_rubric_complete_evaluation_completes_without_teaching(
     settings, evaluation_mode: str
 ) -> None:
     decision = decide_teaching(
-        merged_output=merged_output("CORRECT", "INCOMPLETE"),
+        evaluation=evaluation("CORRECT", "COMPLETE"),
         session=session(),
         settings=settings,
         evaluation_mode=evaluation_mode,
@@ -102,9 +107,9 @@ def test_non_rubric_correct_evaluation_completes_without_teaching(
     assert decision.should_generate is False
 
 
-def test_non_rubric_wrong_evaluation_requests_human_review(settings) -> None:
+def test_non_rubric_non_terminal_evaluation_requests_human_review(settings) -> None:
     decision = decide_teaching(
-        merged_output=merged_output("WRONG", "INCOMPLETE"),
+        evaluation=evaluation("WRONG", "INCOMPLETE"),
         session=session(),
         settings=settings,
         evaluation_mode="BASIC",
@@ -115,27 +120,22 @@ def test_non_rubric_wrong_evaluation_requests_human_review(settings) -> None:
     assert decision.need_human_reason == "题目未配置评分点，无法生成可审计的针对性支持"
 
 
-def test_uncertain_decision_preserves_coverage_and_requests_human(settings) -> None:
-    current_session = session(
-        covered_points_current_round=["评分点 A"],
-        covered_points_all=["评分点 A"],
-        no_progress_count=1,
-    )
-    decision = decide_teaching(
-        merged_output=merged_output(
-            "UNCERTAIN",
-            "INCOMPLETE",
-            need_human_reason="材料不足",
-        ),
-        session=current_session,
+def test_has_progress_controls_no_progress_count(settings) -> None:
+    progressed = decide_teaching(
+        evaluation=evaluation("CORRECT", "INCOMPLETE", has_progress=True),
+        session=session(no_progress_count=2),
         settings=settings,
+        rubric_points=RUBRIC_POINTS,
+    )
+    stalled = decide_teaching(
+        evaluation=evaluation("CORRECT", "INCOMPLETE", has_progress=False),
+        session=session(no_progress_count=2),
+        settings=settings,
+        rubric_points=RUBRIC_POINTS,
     )
 
-    assert decision.should_generate is False
-    assert decision.next_flow_stage == "WAIT_STUDENT_ACTION"
-    assert decision.need_human_reason == "材料不足"
-    assert decision.coverage.current_round == ["评分点 A"]
-    assert decision.coverage.no_progress_count == 1
+    assert progressed.coverage.no_progress_count == 0
+    assert stalled.coverage.no_progress_count == 3
 
 
 @pytest.mark.parametrize(
@@ -151,11 +151,10 @@ def test_counted_action_hits_limit_before_generation(
         else settings.second_round_support_limit
     )
     decision = decide_teaching(
-        merged_output=merged_output(
-            "WRONG", "COMPLETE", teaching_action="GIVE_CORRECTION"
-        ),
+        evaluation=evaluation("WRONG", "COMPLETE"),
         session=session(round=round_number, support_count_round=limit - 1),
         settings=settings,
+        rubric_points=RUBRIC_POINTS,
     )
 
     assert decision.should_generate is False
@@ -163,12 +162,3 @@ def test_counted_action_hits_limit_before_generation(
     assert decision.next_status == expected_status
     assert decision.next_flow_stage == "SHOWING_FULL_SOLUTION"
     assert decision.support_count_round_override == limit
-
-
-def test_non_terminal_merged_output_requires_teaching_action(settings) -> None:
-    with pytest.raises(ValueError, match="缺少 teachingAction"):
-        decide_teaching(
-            merged_output=merged_output("WRONG", "INCOMPLETE"),
-            session=session(),
-            settings=settings,
-        )

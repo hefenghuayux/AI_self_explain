@@ -17,11 +17,10 @@ from app.models.question import Question
 from app.models.session import Session
 from app.models.support_event import SupportEvent
 from app.repositories.sessions import SessionRepository, session_run_id
-from app.schemas.ai_evaluation import AIEvaluationOutput
-from app.schemas.merged import (
-    MergedModelOutput,
-    merged_json_schema,
-    validate_merged_output,
+from app.schemas.ai_evaluation import (
+    AIEvaluationOutput,
+    evaluation_json_schema,
+    validate_evaluation_relationships,
 )
 from app.schemas.model_request_snapshot import (
     ModelRequestBlocks,
@@ -45,9 +44,9 @@ class AIModelResponse:
 
 
 @dataclass(frozen=True)
-class MergedEvaluationResult:
+class EvaluationResult:
     evaluation_record: AIEvaluation
-    merged_output: MergedModelOutput
+    output: AIEvaluationOutput
 
 
 class AITransportError(RuntimeError):
@@ -143,11 +142,12 @@ class AIEvaluationService:
         question: Question,
         session: Session,
         attempt: ExplanationAttempt,
-    ) -> MergedEvaluationResult | Session:
+    ) -> EvaluationResult | Session:
         rubric_points = question.rubric_points or []
         evaluation_mode = question.evaluation_mode
-        schema = merged_json_schema(rubric_points)
+        schema = evaluation_json_schema(rubric_points)
         validation_errors: list[str] = []
+        previous_output: str | None = None
         external_attempt_number = 0
         run_id = session_run_id(session.id, attempt.id)
         event_log = SessionEventLog(self.repository.database_session)
@@ -192,6 +192,7 @@ class AIEvaluationService:
                 prompt_version=self.settings.prompt_version,
                 reasoning_effort=reasoning_effort,
                 progress_context=progress_context,
+                previous_output=previous_output,
             )
             if schema_attempt == 0:
                 event_log.append_contexts(
@@ -220,12 +221,13 @@ class AIEvaluationService:
 
             if external_call is None:
                 raise RuntimeError("AI 评价传输成功后缺少外部调用记录")
-            merged_output, validation_errors = _parse_and_validate_merged(
+            evaluation_output, validation_errors = _parse_and_validate_evaluation(
                 model_response.content,
                 rubric_points,
                 attempt.confirmed_text,
             )
             if validation_errors:
+                previous_output = model_response.content
                 event_log.append_model_responded(
                     session_id=session.id,
                     run_id=run_id,
@@ -255,7 +257,7 @@ class AIEvaluationService:
                 invalid_evaluation = self.repository.record_invalid_evaluation(
                     session=session,
                     attempt=attempt,
-                    evaluation=_as_evaluation_output(merged_output),
+                    evaluation=evaluation_output,
                     raw_response=model_response.raw_response,
                     validation_errors=validation_errors,
                     request_duration_ms=model_response.duration_ms,
@@ -278,7 +280,7 @@ class AIEvaluationService:
                     )
                 continue
 
-            if merged_output is None:
+            if evaluation_output is None:
                 raise RuntimeError("AI 评价校验完成后缺少评价结果")
             self.repository.record_external_call_validation(
                 record=external_call,
@@ -305,7 +307,7 @@ class AIEvaluationService:
             saved_evaluation = self.repository.record_valid_evaluation(
                 session=session,
                 attempt=attempt,
-                evaluation=_as_evaluation_output(merged_output),
+                evaluation=evaluation_output,
                 raw_response=model_response.raw_response,
                 request_duration_ms=model_response.duration_ms,
                 prompt_version=self.settings.prompt_version,
@@ -314,9 +316,9 @@ class AIEvaluationService:
                 external_call_record_id=external_call.id,
                 evaluation_mode=evaluation_mode,
             )
-            return MergedEvaluationResult(
+            return EvaluationResult(
                 evaluation_record=saved_evaluation,
-                merged_output=merged_output,
+                output=evaluation_output,
             )
         raise RuntimeError("AI 结构化评价循环未产生结果")
 
@@ -414,6 +416,7 @@ def _render_prompt(
     prompt_version: str,
     reasoning_effort: str | None = None,
     progress_context: dict[str, object] | None = None,
+    previous_output: str | None = None,
 ) -> ModelRequestSnapshot:
     template = PROMPT_PATH.read_text(encoding="utf-8")
     question_context: dict[str, object] = {
@@ -442,6 +445,7 @@ def _render_prompt(
     prompt = (
         template.replace("{{JSON_SCHEMA}}", json.dumps(schema, ensure_ascii=False))
         .replace("{{CONTEXT_JSON}}", json.dumps(transport_context, ensure_ascii=False))
+        .replace("{{PREVIOUS_OUTPUT}}", json.dumps(previous_output, ensure_ascii=False))
         .replace("{{VALIDATION_ERRORS}}", json.dumps(validation_errors, ensure_ascii=False))
     )
     extra_body = resolve_reasoning_params(model, reasoning_effort)
@@ -459,7 +463,10 @@ def _render_prompt(
                 "coveredPointsCurrentRound": session.covered_points_current_round,
             },
             user_input=user_input,
-            retry_context={"validationErrors": validation_errors},
+            retry_context={
+                "validationErrors": validation_errors,
+                "previousOutput": previous_output,
+            },
         ),
         transport=ModelTransportSnapshot(
             model=model,
@@ -476,11 +483,11 @@ def _render_prompt(
     )
 
 
-def _parse_and_validate_merged(
+def _parse_and_validate_evaluation(
     content: str,
     rubric_points: list[str],
     confirmed_text: str,
-) -> tuple[MergedModelOutput | None, list[str]]:
+) -> tuple[AIEvaluationOutput | None, list[str]]:
     try:
         payload = json.loads(content)
         if isinstance(payload, dict):
@@ -491,20 +498,13 @@ def _parse_and_validate_merged(
                 payload["coveredPoints"] = [
                     rubric_points.index(point) + 1 for point in legacy_points
                 ]
-        merged_output = MergedModelOutput.model_validate(payload)
+        evaluation = AIEvaluationOutput.model_validate(payload)
     except (ValidationError, ValueError, TypeError) as error:
         if isinstance(error, ValidationError):
             return None, [entry["msg"] for entry in error.errors()]
         return None, [str(error)]
-    return merged_output, validate_merged_output(merged_output, rubric_points, confirmed_text)
-
-
-def _as_evaluation_output(output: MergedModelOutput) -> AIEvaluationOutput:
-    return AIEvaluationOutput(
-        correctness=output.correctness,
-        completeness=output.completeness,
-        covered_points=output.covered_points,
-        error_evidence=output.error_evidence,
+    return evaluation, validate_evaluation_relationships(
+        evaluation, rubric_points, confirmed_text
     )
 
 

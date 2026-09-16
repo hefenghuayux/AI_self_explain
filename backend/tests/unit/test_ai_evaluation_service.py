@@ -95,6 +95,11 @@ def test_evaluation_snapshot_separates_session_state_from_transport_prompt() -> 
     assert '"supportCountRound"' not in prompt
     assert '"coveredPointsCurrentRound"' not in prompt
     assert request.blocks.session_context == {
+        "taskType": "EXPLANATION",
+        "progressContext": {
+            "previousExplanations": [],
+            "previousTeaching": [],
+        },
         "round": 2,
         "supportCountRound": 3,
         "coveredPointsCurrentRound": ["不应进入评价上下文"],

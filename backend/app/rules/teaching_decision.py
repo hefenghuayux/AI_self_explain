@@ -37,8 +37,13 @@ def decide_teaching(
     session: Session,
     settings: Settings,
     evaluation_mode: str = "FULL_RUBRIC",
+    rubric_points: list[str] | None = None,
 ) -> TeachingDecision:
-    coverage = _coverage_result(evaluation=evaluation, session=session)
+    coverage = _coverage_result(
+        evaluation=evaluation,
+        session=session,
+        rubric_points=rubric_points or [],
+    )
     if evaluation.correctness == "CORRECT" and evaluation.completeness == "COMPLETE":
         return _decision(
             session=session,
@@ -91,15 +96,20 @@ def _action_for(evaluation: AIEvaluationOutput) -> GeneratedTeachingAction:
 
 
 def _coverage_result(
-    *, evaluation: AIEvaluationOutput, session: Session
+    *, evaluation: AIEvaluationOutput, session: Session, rubric_points: list[str]
 ) -> CoverageResult:
+    covered_points = [
+        rubric_points[index - 1]
+        for index in evaluation.covered_points
+        if 0 < index <= len(rubric_points)
+    ]
     newly_covered = [
         point
-        for point in evaluation.covered_points
+        for point in covered_points
         if point not in set(session.covered_points_current_round)
     ]
     current_round, all_rounds, _ = update_coverage(
-        covered_points=evaluation.covered_points,
+        covered_points=covered_points,
         covered_points_current_round=session.covered_points_current_round,
         covered_points_all=session.covered_points_all,
         no_progress_count=session.no_progress_count,

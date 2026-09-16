@@ -16,7 +16,10 @@ def valid_payload() -> dict[str, object]:
         "completeness": "INCOMPLETE",
         "coveredPoints": [1],
         "errorEvidence": [],
-        "needHumanReason": None,
+        "hasProgress": True,
+        "mainReason": "知识应用问题",
+        "otherReasons": [],
+        "judgeReason": "学生已经给出局部推理，但尚未完成。",
     }
 
 
@@ -42,8 +45,8 @@ def test_evaluation_schema_rejects_missing_fields_and_unknown_enum() -> None:
     ("payload_update", "expected_error"),
     [
         ({"coveredPoints": [3]}, "是题目评分点编号"),
-        ({"correctness": "UNCERTAIN", "needHumanReason": None}, "needHumanReason 必填"),
-        ({"needHumanReason": "不确定"}, "必须为空"),
+        ({"mainReason": None}, "mainReason"),
+        ({"otherReasons": ["知识应用问题"]}, "不能包含 mainReason"),
         (
             {
                 "correctness": "WRONG",
@@ -77,7 +80,9 @@ def test_evaluation_relationship_validation_rejects_invalid_output(
     assert any(expected_error in error for error in errors)
 
 
-@pytest.mark.parametrize("field", ["feedback", "nextAction", "guidedQuestions"])
+@pytest.mark.parametrize(
+    "field", ["feedback", "nextAction", "guidedQuestions", "content", "questions"]
+)
 def test_evaluation_schema_rejects_removed_teaching_fields(field: str) -> None:
     payload = valid_payload()
     payload[field] = "不应存在"
