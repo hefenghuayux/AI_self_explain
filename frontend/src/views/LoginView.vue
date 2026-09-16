@@ -49,7 +49,7 @@ async function submit() {
         <el-checkbox v-model="rememberLogin">记住登录状态</el-checkbox>
         <el-button class="submit-button" type="primary" :loading="submitting" @click="submit">登录</el-button>
       </el-form>
-      <p class="auth-switch">还没有账号？<RouterLink to="/register">注册学生账号</RouterLink></p>
+      <p class="auth-switch">还没有账号？<RouterLink to="/register">注册账号</RouterLink></p>
     </section>
   </main>
 </template>

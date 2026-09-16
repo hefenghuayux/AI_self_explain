@@ -24,7 +24,7 @@ def test_register_login_remember_and_logout(settings, monkeypatch) -> None:
             json={"username": "student-a", "password": "secret6", "fullName": "学生甲"},
         )
         assert register_response.status_code == 201
-        assert register_response.json()["role"] == "STUDENT"
+        assert register_response.json()["role"] == "TEACHER"
 
         duplicate_response = client.post(
             "/api/auth/register",
@@ -52,7 +52,7 @@ def test_register_login_remember_and_logout(settings, monkeypatch) -> None:
         assert expired_response.status_code == 401
 
 
-def test_student_cannot_manage_questions(settings, monkeypatch) -> None:
+def test_registered_account_can_manage_questions(settings, monkeypatch) -> None:
     migrate_database(settings, monkeypatch)
     with TestClient(create_app(settings)) as client:
         register_response = client.post(
@@ -75,7 +75,8 @@ def test_student_cannot_manage_questions(settings, monkeypatch) -> None:
             "fullSolution": "解析",
         }
         assert register_response.status_code == 201
-        assert client.post("/api/questions", json=question, headers=headers).status_code == 403
+        # Registered accounts are now teachers and can manage questions
+        assert client.post("/api/questions", json=question, headers=headers).status_code == 201
 
 
 def test_session_api_requires_login(settings, monkeypatch) -> None:

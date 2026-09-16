@@ -25,7 +25,7 @@ def register(input_data: RegisterInput, session: DatabaseSession) -> UserRespons
         username=input_data.username,
         password_hash=hash_password(input_data.password),
         full_name=input_data.full_name,
-        role="STUDENT",
+        role="TEACHER",
     )
     session.add(user)
     try:

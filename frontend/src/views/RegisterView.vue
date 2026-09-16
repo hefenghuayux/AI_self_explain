@@ -39,7 +39,7 @@ async function submit() {
       <div class="auth-heading">
         <span class="brand-mark" aria-hidden="true">讲</span>
         <div>
-          <h1 id="register-title">注册学生账号</h1>
+          <h1 id="register-title">注册账号</h1>
           <p>创建账号后开始自讲练习</p>
         </div>
       </div>
