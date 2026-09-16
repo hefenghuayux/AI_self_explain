@@ -73,6 +73,9 @@ describe("QuestionListView", () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain("题目列表")
+    expect(wrapper.text()).toContain("初中")
+    expect(wrapper.text()).toContain("数学")
+    expect(wrapper.text()).not.toContain("学段 2")
     expect(wrapper.text()).toContain("自讲")
     expect(wrapper.find('.question-rich-text img').attributes("src")).toBe("https://example.test/question.png")
     expect(wrapper.text()).not.toContain("录入题目")
@@ -117,6 +120,8 @@ describe("QuestionListView", () => {
     })
     await flushPromises()
 
+    expect(wrapper.text()).toContain("初中")
+    expect(wrapper.text()).toContain("数学")
     expect(wrapper.text()).toContain("自讲")
     expect(wrapper.text()).toContain("录入题目")
     expect(wrapper.text()).toContain("编辑")

@@ -11,6 +11,7 @@ import {
 import { createSession } from "../api/sessions"
 import { authUser } from "../stores/auth"
 import type { QuestionFilterOptions, QuestionListItem } from "../types/question"
+import { gradePeriodName, subjectName } from "../utils/dictionaries"
 import { sanitizeQuestionHtml } from "../utils/questionHtml"
 
 const router = useRouter()
@@ -139,10 +140,10 @@ onMounted(async () => {
     <div class="list-toolbar">
       <div class="list-filters">
         <el-select v-model="gradePeriod" clearable placeholder="全部学段" @change="resetAndLoadQuestions">
-          <el-option v-for="item in filterOptions.gradePeriods" :key="item" :label="`学段 ${item}`" :value="item" />
+          <el-option v-for="item in filterOptions.gradePeriods" :key="item" :label="gradePeriodName(item)" :value="item" />
         </el-select>
         <el-select v-model="subject" clearable placeholder="全部学科" @change="resetAndLoadQuestions">
-          <el-option v-for="item in filterOptions.subjects" :key="item" :label="item" :value="item" />
+          <el-option v-for="item in filterOptions.subjects" :key="item" :label="subjectName(item)" :value="item" />
         </el-select>
         <el-input v-model="keyword" clearable placeholder="检索题干" @keyup.enter="resetAndLoadQuestions" />
         <el-button @click="resetAndLoadQuestions">搜索</el-button>
@@ -162,6 +163,12 @@ onMounted(async () => {
     />
     <el-table v-else :data="questions" class="question-table" table-layout="fixed">
       <el-table-column prop="id" label="ID" width="80" />
+      <el-table-column label="学段" width="80">
+        <template #default="scope">{{ gradePeriodName(scope.row.gradePeriod) }}</template>
+      </el-table-column>
+      <el-table-column label="学科" width="80">
+        <template #default="scope">{{ subjectName(scope.row.subject) }}</template>
+      </el-table-column>
       <el-table-column label="题目内容" min-width="360" class-name="question-content-cell">
         <template #default="scope">
           <div class="question-rich-text" v-html="sanitizeQuestionHtml(scope.row.questionContent)" />
@@ -234,6 +241,8 @@ onMounted(async () => {
         <div class="question-item-head">
           <span class="question-id">题目 {{ question.id }}</span>
           <div class="question-tags">
+            <el-tag v-if="question.gradePeriod != null">{{ gradePeriodName(question.gradePeriod) }}</el-tag>
+            <el-tag v-if="question.subject">{{ subjectName(question.subject) }}</el-tag>
             <el-tag :type="evaluationModeTagType(question)">{{ evaluationModeLabel(question) }}</el-tag>
             <el-tag v-if="authUser?.role === 'TEACHER'" :type="question.archivedAt ? 'warning' : 'success'">
               {{ question.archivedAt ? "已归档" : "可用" }}
@@ -299,6 +308,9 @@ h1 {
 }
 .list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); }
 .list-filters { display: flex; flex: 1; gap: var(--space-3); }
+.list-filters > * { flex: 1 1 0; min-width: 0; }
+.list-filters :deep(.el-select) { margin-right: 0; }
+.list-filters :deep(.el-select__wrapper) { width: 100%; }
 .question-pagination { justify-content: flex-end; margin-top: var(--space-6); }
 .question-table { border-top: 1px solid var(--color-border); }
 .question-table :deep(.question-content-cell .cell) { overflow: hidden; display: -webkit-box; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
@@ -322,6 +334,7 @@ h1 {
   }
   .page-header a, .page-header .el-button { width: 100%; }
   .list-toolbar, .list-filters { align-items: stretch; flex-direction: column; }
+  .list-filters > * { flex: 0 1 auto; }
   .question-table { display: none; }
   .question-list-mobile { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
   .question-item { padding: var(--space-4) 0 var(--space-6); border-bottom: 1px solid var(--color-border); }
