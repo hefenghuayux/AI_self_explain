@@ -151,6 +151,8 @@ def _model_response_detail(data: dict[str, object]) -> TrajectoryRecordDetail:
             validation=validation,
             input_tokens=_optional_count(data.get("inputTokens")),
             output_tokens=_optional_count(data.get("outputTokens")),
+            prompt_cache_hit_tokens=_optional_count(data.get("promptCacheHitTokens")),
+            prompt_cache_miss_tokens=_optional_count(data.get("promptCacheMissTokens")),
         )
     )
 

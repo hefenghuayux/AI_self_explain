@@ -229,6 +229,7 @@ class AIEvaluationService:
                     validation="invalid",
                     duration_ms=model_response.duration_ms,
                     parent_event_id=requested_event_id,
+                    raw_response=model_response.raw_response,
                 )
                 self.repository.record_external_call_validation(
                     record=external_call,
@@ -288,6 +289,7 @@ class AIEvaluationService:
                 validation="valid",
                 duration_ms=model_response.duration_ms,
                 parent_event_id=requested_event_id,
+                raw_response=model_response.raw_response,
             )
             logger.info(
                 "AI 评价输出校验通过",

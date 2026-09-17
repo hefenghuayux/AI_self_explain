@@ -99,6 +99,7 @@ class SessionEventLog:
         validation: str,
         duration_ms: int,
         parent_event_id: str,
+        raw_response: str | None = None,
     ) -> SessionEvent:
         try:
             output = json.loads(response_content)
@@ -106,17 +107,22 @@ class SessionEventLog:
             output = {}
         if not isinstance(output, dict):
             output = {}
+        data: dict[str, object] = {
+            "output": output,
+            "rawContent": response_content,
+            "durationMs": duration_ms,
+            "validation": validation,
+        }
+        if raw_response is not None:
+            usage = _parse_usage(raw_response)
+            if usage is not None:
+                data.update(usage)
         event = self.event_store.append(
             session_id=session_id,
             event_type="model.responded",
             run_id=run_id,
             parent_event_id=parent_event_id,
-            data={
-                "output": output,
-                "rawContent": response_content,
-                "durationMs": duration_ms,
-                "validation": validation,
-            },
+            data=data,
         )
         self.database_session.commit()
         self.database_session.refresh(event)
@@ -160,3 +166,32 @@ class SessionEventLog:
     def _surface_seq(self, session_id: int) -> int:
         events = self.event_store.list_events(session_id)
         return events[-1].seq if events else 0
+
+
+_USAGE_MAP: dict[str, str] = {
+    "prompt_tokens": "inputTokens",
+    "completion_tokens": "outputTokens",
+    "prompt_cache_hit_tokens": "promptCacheHitTokens",
+    "prompt_cache_miss_tokens": "promptCacheMissTokens",
+}
+
+
+def _parse_usage(raw_response: str) -> dict[str, int] | None:
+    """从 DeepSeek 原始响应中提取 token 用量。
+
+    返回的 key 使用事件数据中的 camelCase 字段名，便于 trajectory 直接读取。
+    如果 raw_response 不是合法 JSON、不含 usage 或没有可识别的字段，返回 None。
+    """
+    try:
+        parsed = json.loads(raw_response)
+        usage = parsed.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        result: dict[str, int] = {}
+        for source_key, target_key in _USAGE_MAP.items():
+            value = usage.get(source_key)
+            if isinstance(value, int):
+                result[target_key] = value
+        return result if result else None
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return None

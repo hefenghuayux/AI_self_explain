@@ -117,6 +117,7 @@ class AITeachingService:
                     validation="invalid",
                     duration_ms=model_response.duration_ms,
                     parent_event_id=requested_event_id,
+                    raw_response=model_response.raw_response,
                 )
                 if schema_attempt == self.settings.ai_schema_max_retries:
                     return None
@@ -136,6 +137,7 @@ class AITeachingService:
                 validation="valid",
                 duration_ms=model_response.duration_ms,
                 parent_event_id=requested_event_id,
+                raw_response=model_response.raw_response,
             )
             return output
         raise RuntimeError("AI 教学结构重试循环未产生结果")
