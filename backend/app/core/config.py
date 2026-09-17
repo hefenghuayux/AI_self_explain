@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     ai_api_key: SecretStr
     ai_model: NonEmptyString
     ai_reasoning_effort: str | None = None
+    progress_context_max_interactions: PositiveInt = 12
 
     asr_provider: NonEmptyString
     asr_base_url: AnyUrl
