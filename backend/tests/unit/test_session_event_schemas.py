@@ -23,6 +23,20 @@ from app.schemas.session_event import EVENT_DATA_SCHEMAS, SessionEventResponse
             },
         ),
         (
+            "model.requested",
+            {
+                "provider": "test-ai",
+                "model": "test-model",
+                "messages": [
+                    {"role": "system", "content": "你是 AI 教学助手"},
+                    {"role": "user", "content": "题目：1+1="},
+                    {"role": "user", "content": "历史对话"},
+                    {"role": "user", "content": "评价这段自讲"},
+                ],
+                "surfaceSeq": 3,
+            },
+        ),
+        (
             "model.responded",
             {"output": {}, "rawContent": '{"correctness": "CORRECT"}', "validation": "valid"},
         ),

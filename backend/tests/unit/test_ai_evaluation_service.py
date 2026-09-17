@@ -1,11 +1,19 @@
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.models.explanation_attempt import ExplanationAttempt
 from app.models.question import Question
 from app.models.session import Session
+from app.schemas.model_request_snapshot import (
+    ModelRequestBlocks,
+    ModelRequestMessage,
+    ModelRequestPrivacy,
+    ModelRequestSnapshot,
+    ModelTransportSnapshot,
+)
 from app.services.ai_evaluation import AIModelClient, _render_prompt
 
 
@@ -114,3 +122,83 @@ def test_app_reuses_and_closes_ai_http_client(settings) -> None:
         assert http_client.timeout.connect == settings.ai_request_timeout_seconds
 
     assert http_client.is_closed
+
+
+def test_snapshot_schema_v1_0_backward_compatible() -> None:
+    """schemaVersion="1.0" 的旧快照仍能被当前模型读取。"""
+    snapshot = ModelRequestSnapshot(
+        schema_version="1.0",
+        purpose="AI_EVALUATION",
+        prompt_version="v1",
+        blocks=ModelRequestBlocks(
+            system_instructions="旧模板",
+            question_context={"q": "1+1="},
+            session_context={"round": 1},
+            user_input={"confirmedText": "2"},
+            retry_context={"validationErrors": []},
+        ),
+        transport=ModelTransportSnapshot(
+            model="test-model",
+            messages=[ModelRequestMessage(role="user", content="旧请求")],
+            response_format={"type": "json_object"},
+        ),
+        privacy=ModelRequestPrivacy(
+            contains_student_content=True,
+            contains_answer_material=True,
+            contains_memory=False,
+        ),
+    )
+    db_value = snapshot.database_value()
+    assert db_value["schemaVersion"] == "1.0"
+    assert db_value["transport"]["messages"] == [{"role": "user", "content": "旧请求"}]
+    payload = snapshot.transport_payload()
+    assert payload["messages"] == [{"role": "user", "content": "旧请求"}]
+    # 1.0 快照不包含 taskInstructions
+    assert "taskInstructions" not in db_value["blocks"]
+    assert "taskInstructions" not in snapshot.blocks.model_dump(by_alias=True, exclude_none=True)
+
+
+def test_snapshot_schema_v1_1_multi_message_serialization() -> None:
+    """schemaVersion="1.1" 支持 system + 多条 user 消息序列化。"""
+    snapshot = ModelRequestSnapshot(
+        schema_version="1.1",
+        purpose="AI_EVALUATION",
+        prompt_version="v1",
+        blocks=ModelRequestBlocks(
+            system_instructions="共享 system 内容",
+            question_context={"q": "1+1="},
+            session_context={"round": 1},
+            task_instructions="评价任务指令",
+            user_input={"confirmedText": "2"},
+            retry_context={"validationErrors": []},
+        ),
+        transport=ModelTransportSnapshot(
+            model="test-model",
+            messages=[
+                ModelRequestMessage(role="system", content="共享 system 内容"),
+                ModelRequestMessage(role="user", content="会话级上下文"),
+                ModelRequestMessage(role="user", content="共享历史"),
+                ModelRequestMessage(role="user", content="任务指令"),
+                ModelRequestMessage(role="user", content="本轮数据"),
+            ],
+            response_format={"type": "json_object"},
+        ),
+        privacy=ModelRequestPrivacy(
+            contains_student_content=True,
+            contains_answer_material=True,
+            contains_memory=False,
+        ),
+    )
+    db_value = snapshot.database_value()
+    assert db_value["schemaVersion"] == "1.1"
+    assert db_value["blocks"]["taskInstructions"] == "评价任务指令"
+    messages = db_value["transport"]["messages"]
+    assert len(messages) == 5
+    assert messages[0] == {"role": "system", "content": "共享 system 内容"}
+    assert messages[1]["role"] == "user"
+    assert messages[2]["role"] == "user"
+    assert messages[3]["role"] == "user"
+    assert messages[4]["role"] == "user"
+    payload = snapshot.transport_payload()
+    assert len(payload["messages"]) == 5
+    assert payload["messages"][0]["role"] == "system"

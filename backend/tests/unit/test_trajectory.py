@@ -449,3 +449,46 @@ def test_trajectory_detail_only_carries_the_used_key(
     # 未使用的键在投影模型里就是 None，序列化时被 exclude_none 剔除。
     assert trajectory.events[0].detail.user is None
     assert trajectory.events[1].detail.state_change is None
+
+
+def test_trajectory_displays_multi_message_with_system_and_user_roles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """多条消息（system + 多条 user）按原始角色和顺序展示。"""
+    events = [
+        event(
+            1,
+            "model.requested",
+            {
+                "provider": "test-ai",
+                "model": "test-model",
+                "messages": [
+                    {"role": "system", "content": "你是 AI 教学助手，按 JSON 输出"},
+                    {"role": "user", "content": "题目：1+1=？"},
+                    {"role": "user", "content": "学生提交：2"},
+                ],
+                "surfaceSeq": 0,
+            },
+            run_id="run_1",
+        ),
+    ]
+    trajectory = build_service(monkeypatch, events).build_trajectory(42)
+
+    record = trajectory.events[0]
+    assert record.kind == "model_request"
+    assert record.full_text == (
+        "[system]\n"
+        "你是 AI 教学助手，按 JSON 输出\n"
+        "\n"
+        "[user]\n"
+        "题目：1+1=？\n"
+        "\n"
+        "[user]\n"
+        "学生提交：2"
+    )
+    assert record.summary == "test-model · 3 条消息 · surfaceSeq #0"
+    assert record.detail.model_request is not None
+    assert len(record.detail.model_request.messages) == 3
+    assert record.detail.model_request.messages[0]["role"] == "system"
+    assert record.detail.model_request.messages[1]["role"] == "user"
+    assert record.detail.model_request.messages[2]["role"] == "user"
