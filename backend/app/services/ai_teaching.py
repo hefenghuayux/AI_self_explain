@@ -30,6 +30,7 @@ from app.services.ai_reasoning import resolve_reasoning_params
 from app.services.session_event_log import SessionEventLog
 
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "generate_teaching.md"
+SHARED_SYSTEM_PATH = Path(__file__).resolve().parents[1] / "prompts" / "shared_system.md"
 RESPONSE_GOALS = {
     "ASK_FOCUSED_QUESTION": "ASK_ONE_FOCUSED_QUESTION",
     "GIVE_HINT": "GIVE_ONE_LOCAL_HINT",
@@ -275,23 +276,39 @@ def _render_prompt(
     prompt_version: str,
     reasoning_effort: str | None,
 ) -> ModelRequestSnapshot:
+    shared_system = SHARED_SYSTEM_PATH.read_text(encoding="utf-8")
     template = PROMPT_PATH.read_text(encoding="utf-8")
-    prompt = (
-        template.replace(
-            "{{JSON_SCHEMA}}",
-            json.dumps(TeachingOutput.model_json_schema(by_alias=True), ensure_ascii=False),
-        )
-        .replace("{{CONTEXT_JSON}}", context.model_dump_json(by_alias=True))
-        .replace("{{PREVIOUS_OUTPUT}}", json.dumps(previous_output, ensure_ascii=False))
-        .replace("{{VALIDATION_ERRORS}}", json.dumps(validation_errors, ensure_ascii=False))
+    schema = TeachingOutput.model_json_schema(by_alias=True)
+    # 五层消息
+    # messages[0] system：全局共享前缀
+    # messages[1] user：会话级稳定上下文（题目数据）
+    question_context = dict(context.question)
+    question_message = {k: v for k, v in question_context.items() if k != "outputSchema"}
+    # messages[2] user：截至当前任务前的共享历史（教学历史）
+    shared_history = {"teachingHistory": context.teaching_history}
+    # messages[3] user：taskType 固定指令 + JSON Schema
+    task_prompt = template.replace(
+        "{{JSON_SCHEMA}}", json.dumps(schema, ensure_ascii=False)
     )
+    # messages[4] user：本轮任务数据
+    current_data: dict[str, object] = {
+        "currentStudentText": context.current_student_text,
+    }
+    if validation_errors:
+        current_data["previousOutput"] = previous_output
+        current_data["validationErrors"] = validation_errors
+    elif previous_output is not None:
+        current_data["previousOutput"] = previous_output
+        current_data["validationErrors"] = []
     extra_body = resolve_reasoning_params(model, reasoning_effort)
     return ModelRequestSnapshot(
+        schema_version="1.1",
         purpose="AI_TEACHING",
         prompt_version=prompt_version,
         blocks=ModelRequestBlocks(
-            system_instructions=template,
-            question_context=context.question,
+            system_instructions=shared_system,
+            task_instructions=task_prompt,
+            question_context=question_context,
             session_context={
                 "taskType": context.task_type,
                 "latestEvaluation": context.latest_evaluation.model_dump(
@@ -310,7 +327,22 @@ def _render_prompt(
         ),
         transport=ModelTransportSnapshot(
             model=model,
-            messages=[ModelRequestMessage(role="user", content=prompt)],
+            messages=[
+                ModelRequestMessage(role="system", content=shared_system),
+                ModelRequestMessage(
+                    role="user",
+                    content=json.dumps(question_message, ensure_ascii=False),
+                ),
+                ModelRequestMessage(
+                    role="user",
+                    content=json.dumps(shared_history, ensure_ascii=False),
+                ),
+                ModelRequestMessage(role="user", content=task_prompt),
+                ModelRequestMessage(
+                    role="user",
+                    content=json.dumps(current_data, ensure_ascii=False),
+                ),
+            ],
             response_format={"type": "json_object"},
             reasoning_effort=reasoning_effort,
             extra_body=extra_body,
