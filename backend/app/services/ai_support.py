@@ -31,6 +31,7 @@ from app.services.ai_evaluation import AIModelClient, AIModelResponse, AITranspo
 from app.services.ai_reasoning import resolve_reasoning_params
 from app.services.session_event_log import SessionEventLog
 
+SHARED_SYSTEM_PATH = Path(__file__).resolve().parents[1] / "prompts" / "shared_system.md"
 SUPPORT_PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "generate_support.md"
 ASSESSMENT_PROMPT_PATH = (
     Path(__file__).resolve().parents[1] / "prompts" / "assess_guided_answers.md"
@@ -318,19 +319,15 @@ def _render_support_prompt(
         "mainDraft": main_draft,
         "doubtText": doubt_text,
     }
-    context = {**question_context, **session_context, **user_input}
-    prompt = template.replace("{{CONTEXT_JSON}}", json.dumps(context, ensure_ascii=False))
-    prompt += "\n上一次结构校验错误：" + json.dumps(validation_errors, ensure_ascii=False)
     return _model_request(
         purpose="AI_SUPPORT",
         prompt_version=prompt_version,
-        template=template,
+        task_instructions=template,
         question_context=question_context,
         session_context=session_context,
         user_input=user_input,
         validation_errors=validation_errors,
         model=model,
-        prompt=prompt,
         reasoning_effort=reasoning_effort,
     )
 
@@ -355,19 +352,15 @@ def _render_answer_assessment_prompt(
         "questions": support_event.guided_questions,
         "answers": [answer.model_dump() for answer in answers],
     }
-    context = {**question_context, **session_context, **user_input}
-    prompt = template.replace("{{CONTEXT_JSON}}", json.dumps(context, ensure_ascii=False))
-    prompt += "\n上一次结构校验错误：" + json.dumps(validation_errors, ensure_ascii=False)
     return _model_request(
         purpose="GUIDED_ANSWER_ASSESSMENT",
         prompt_version=prompt_version,
-        template=template,
+        task_instructions=template,
         question_context=question_context,
         session_context=session_context,
         user_input=user_input,
         validation_errors=validation_errors,
         model=model,
-        prompt=prompt,
         reasoning_effort=reasoning_effort,
     )
 
@@ -396,21 +389,27 @@ def _model_request(
     *,
     purpose: str,
     prompt_version: str,
-    template: str,
+    task_instructions: str,
     question_context: dict[str, object],
     session_context: dict[str, object],
     user_input: dict[str, object],
     validation_errors: list[str],
     model: str,
-    prompt: str,
     reasoning_effort: str | None = None,
 ) -> ModelRequestSnapshot:
+    shared_system = SHARED_SYSTEM_PATH.read_text(encoding="utf-8")
+    shared_history = {"events": []}
+    current_data = dict(user_input)
+    if validation_errors:
+        current_data["validationErrors"] = validation_errors
     extra_body = resolve_reasoning_params(model, reasoning_effort)
     return ModelRequestSnapshot(
+        schema_version="1.1",
         purpose=purpose,
         prompt_version=prompt_version,
         blocks=ModelRequestBlocks(
-            system_instructions=template,
+            system_instructions=shared_system,
+            task_instructions=task_instructions,
             question_context=question_context,
             session_context=session_context,
             user_input=user_input,
@@ -418,7 +417,19 @@ def _model_request(
         ),
         transport=ModelTransportSnapshot(
             model=model,
-            messages=[ModelRequestMessage(role="user", content=prompt)],
+            messages=[
+                ModelRequestMessage(role="system", content=shared_system),
+                ModelRequestMessage(
+                    role="user", content=json.dumps(question_context, ensure_ascii=False)
+                ),
+                ModelRequestMessage(
+                    role="user", content=json.dumps(shared_history, ensure_ascii=False)
+                ),
+                ModelRequestMessage(role="user", content=task_instructions),
+                ModelRequestMessage(
+                    role="user", content=json.dumps(current_data, ensure_ascii=False)
+                ),
+            ],
             response_format={"type": "json_object"},
             reasoning_effort=reasoning_effort,
             extra_body=extra_body,
