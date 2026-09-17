@@ -163,6 +163,7 @@ class AISupportService:
                     validation="invalid",
                     duration_ms=model_response.duration_ms,
                     parent_event_id=requested_event_id,
+                    raw_response=model_response.raw_response,
                 )
                 logger.log(
                     logging.ERROR
@@ -199,6 +200,7 @@ class AISupportService:
                 validation="valid",
                 duration_ms=model_response.duration_ms,
                 parent_event_id=requested_event_id,
+                raw_response=model_response.raw_response,
             )
             logger.info(
                 "AI 教学支持输出校验通过",

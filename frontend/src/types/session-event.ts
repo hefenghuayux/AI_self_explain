@@ -107,6 +107,8 @@ export interface ModelResponseRecordDetail {
   validation: "valid" | "invalid"
   inputTokens?: number
   outputTokens?: number
+  promptCacheHitTokens?: number
+  promptCacheMissTokens?: number
 }
 
 export interface ModelErrorRecordDetail {

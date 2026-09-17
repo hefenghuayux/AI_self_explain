@@ -242,6 +242,10 @@ function activateTab(id: DetailTab) {
             输入 {{ record.detail.modelResponse.inputTokens ?? "未记录" }} tok ·
             输出 {{ record.detail.modelResponse.outputTokens ?? "未记录" }} tok
           </p>
+          <p v-if="record.detail.modelResponse.promptCacheHitTokens !== undefined || record.detail.modelResponse.promptCacheMissTokens !== undefined" class="detail-note">
+            缓存命中 {{ record.detail.modelResponse.promptCacheHitTokens ?? 0 }} tok ·
+            缓存未命中 {{ record.detail.modelResponse.promptCacheMissTokens ?? 0 }} tok
+          </p>
           <h3>判词输出</h3>
           <JsonTree :value="record.detail.modelResponse.output" />
           <h3>模型原始回复</h3>

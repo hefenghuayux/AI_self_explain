@@ -127,6 +127,8 @@ class ModelResponseDetail(ProjectionSchema):
     validation: Literal["valid", "invalid"]
     input_tokens: int | None = Field(default=None, alias="inputTokens")
     output_tokens: int | None = Field(default=None, alias="outputTokens")
+    prompt_cache_hit_tokens: int | None = Field(default=None, alias="promptCacheHitTokens")
+    prompt_cache_miss_tokens: int | None = Field(default=None, alias="promptCacheMissTokens")
 
 
 class ModelErrorDetail(ProjectionSchema):
