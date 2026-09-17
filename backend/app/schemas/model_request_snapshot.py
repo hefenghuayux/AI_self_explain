@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ModelRequestMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    role: Literal["user"]
+    role: Literal["system", "user"]
     content: str
 
 
@@ -26,6 +26,7 @@ class ModelRequestBlocks(BaseModel):
     system_instructions: str = Field(alias="systemInstructions")
     question_context: dict[str, object] = Field(alias="questionContext")
     session_context: dict[str, object] = Field(alias="sessionContext")
+    task_instructions: str | None = Field(default=None, alias="taskInstructions")
     memory_context: dict[str, object] | None = Field(default=None, alias="memoryContext")
     user_input: dict[str, object] = Field(alias="userInput")
     retry_context: dict[str, object] = Field(alias="retryContext")
@@ -42,7 +43,7 @@ class ModelRequestPrivacy(BaseModel):
 class ModelRequestSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    schema_version: Literal["1.0"] = Field(default="1.0", alias="schemaVersion")
+    schema_version: Literal["1.0", "1.1"] = Field(default="1.0", alias="schemaVersion")
     purpose: Literal[
         "AI_EVALUATION",
         "AI_TEACHING",
