@@ -151,10 +151,10 @@ def test_valid_evaluation_and_generated_teaching_are_saved(
     def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
         if request.purpose == "AI_TEACHING":
             return AIModelResponse("{\"choices\": []}", focused_teaching_content(), 10)
-        prompt = request.transport.messages[0].content
+        prompt = request.transport.messages[4].content
         schema = request.blocks.question_context["outputSchema"]
         assert "我先计算 1 加 1。" in prompt
-        assert "两个 1 合起来是多少？" in prompt
+        assert "两个 1 合起来是多少？" in request.transport.messages[1].content
         return AIModelResponse("{\"choices\": []}", valid_evaluation_content(), 12)
 
     monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
@@ -362,7 +362,7 @@ def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
     evaluation_requests = [item for item in requests if item.purpose == "AI_EVALUATION"]
     assert len(evaluation_requests) == 2
     assert (
-        "Extra inputs are not permitted" in evaluation_requests[1].transport.messages[0].content
+        "Extra inputs are not permitted" in evaluation_requests[1].transport.messages[4].content
     )
     assert evaluation_requests[1].blocks.retry_context["validationErrors"]
 

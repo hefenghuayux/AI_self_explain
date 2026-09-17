@@ -33,6 +33,7 @@ from app.services.ai_reasoning import resolve_reasoning_params
 from app.services.session_event_log import SessionEventLog
 
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "evaluate_explanation.md"
+SHARED_SYSTEM_PATH = Path(__file__).resolve().parents[1] / "prompts" / "shared_system.md"
 logger = logging.getLogger(__name__)
 
 
@@ -167,18 +168,11 @@ class AIEvaluationService:
             .where(SupportEvent.session_id == session.id, SupportEvent.round == session.round)
             .order_by(SupportEvent.id)
         ).all()
-        progress_context = {
-            "previousExplanations": [item.confirmed_text for item in previous_attempts],
-            "previousTeaching": [
-                {
-                    "content": item.content,
-                    "questions": item.guided_questions,
-                    "answers": item.guided_answers,
-                    "followUpContent": item.follow_up_content,
-                }
-                for item in previous_support
-            ],
-        }
+        progress_context = build_progress_context(
+            previous_attempts=previous_attempts,
+            previous_support=previous_support,
+            max_interactions=self.settings.progress_context_max_interactions,
+        )
 
         for schema_attempt in range(self.settings.ai_schema_max_retries + 1):
             reasoning_effort = self.settings.ai_reasoning_effort
@@ -405,6 +399,154 @@ class AIEvaluationService:
         raise RuntimeError("AI 传输重试循环未产生结果")
 
 
+def _append_support_events(
+    events: list[dict[str, object]], support: SupportEvent, seq_start: int
+) -> int:
+    """把一个 SupportEvent 展开为带 role 的事件并追加到 events。
+
+    最多生成 4 个事件：teaching、guided_answer（每条回答一个）、follow_up。
+    返回下一个可用 seq。
+    """
+    interaction_id = f"support:{support.id}"
+    next_seq = seq_start
+    question_by_id = {
+        str(question.get("id", "")): str(question.get("question", ""))
+        for question in support.guided_questions or []
+        if isinstance(question, dict)
+    }
+    content_parts = [support.content]
+    for question in support.guided_questions or []:
+        if isinstance(question, dict) and question.get("question"):
+            content_parts.append(f"问：{question['question']}")
+    events.append(
+        {
+            "seq": next_seq,
+            "actor": "teacher",
+            "kind": "teaching",
+            "content": "\n\n".join(content_parts),
+            "interactionId": interaction_id,
+        }
+    )
+    next_seq += 1
+    for answer in support.guided_answers or []:
+        if not isinstance(answer, dict):
+            continue
+        answer_id = str(answer.get("question_id", ""))
+        events.append(
+            {
+                "seq": next_seq,
+                "actor": "student",
+                "kind": "guided_answer",
+                "content": [
+                    {
+                        "questionId": answer_id,
+                        "question": question_by_id.get(answer_id, ""),
+                        "answer": str(answer.get("answer", "")),
+                    }
+                ],
+                "interactionId": interaction_id,
+                "replyTo": interaction_id,
+            }
+        )
+        next_seq += 1
+    if support.follow_up_content:
+        events.append(
+            {
+                "seq": next_seq,
+                "actor": "teacher",
+                "kind": "follow_up",
+                "content": support.follow_up_content,
+                "interactionId": f"{interaction_id}:followup",
+            }
+        )
+        next_seq += 1
+    return next_seq
+
+
+def build_progress_context(
+    *,
+    previous_attempts: list[ExplanationAttempt],
+    previous_support: list[SupportEvent],
+    max_interactions: int,
+) -> dict[str, list[dict[str, object]]]:
+    """把同 round 的学生自讲与教学事件合并成带 role 的有序事件序列。
+
+    阶段一实现：不读取 session_events，直接从现有表查询结果按
+    （created_at, id）排序，id 作为同一时间戳下的稳定回退顺序。
+    截断按交互组执行，见 _truncate_by_interaction。
+    """
+    raw: list[tuple[object, int, str, object]] = []
+    for item in previous_attempts:
+        if item.confirmed_text:
+            raw.append((item.created_at, item.id, "attempt", item))
+    for item in previous_support:
+        raw.append((item.created_at, item.id, "support", item))
+    raw.sort(key=lambda entry: (entry[0], entry[1]))
+
+    events: list[dict[str, object]] = []
+    next_seq = 0
+    for _, _, rec_type, record in raw:
+        if rec_type == "attempt":
+            events.append(
+                {
+                    "seq": next_seq,
+                    "actor": "student",
+                    "kind": "explanation",
+                    "content": record.confirmed_text,
+                    "interactionId": f"attempt:{record.id}",
+                }
+            )
+            next_seq += 1
+        else:
+            next_seq = _append_support_events(events, record, next_seq)
+    return {"events": _truncate_by_interaction(events, max_interactions)}
+
+
+def _truncate_by_interaction(
+    events: list[dict[str, object]], max_interactions: int
+) -> list[dict[str, object]]:
+    """从序列尾部按完整交互组保留，保证不拆散问答。
+
+    交互组边界：
+    - teaching 总是开启一个新的教学回合；其后的 guided_answer 与
+      follow_up 属于同一回合，直到下一条 explanation 或新的 teaching 关闭它。
+    - explanation 自成一组（一轮自讲）。
+    - 孤立 guided_answer（防御性兜底）并入当前回合或自成一组的最后一个位置。
+    """
+    if max_interactions <= 0 or not events:
+        return []
+
+    groups: list[int] = []
+    group_id = 0
+    in_exchange = False
+    for event in events:
+        actor = event.get("actor")
+        kind = event.get("kind")
+        if actor == "teacher" and kind == "teaching":
+            group_id += 1
+            in_exchange = True
+        elif actor == "teacher" and kind == "follow_up":
+            if not in_exchange:
+                group_id += 1
+            in_exchange = True
+        elif actor == "student" and kind == "guided_answer":
+            if not in_exchange:
+                group_id += 1
+            in_exchange = True
+        elif actor == "student" and kind == "explanation":
+            group_id += 1
+            in_exchange = False
+        groups.append(group_id)
+
+    max_group = max(groups)
+    keep_threshold = max(0, max_group - max_interactions + 1)
+    return [
+        event
+        for event, group in zip(events, groups)
+        if group >= keep_threshold
+    ]
+
+
 def _render_prompt(
     *,
     question: Question,
@@ -418,6 +560,7 @@ def _render_prompt(
     progress_context: dict[str, object] | None = None,
     previous_output: str | None = None,
 ) -> ModelRequestSnapshot:
+    shared_system = SHARED_SYSTEM_PATH.read_text(encoding="utf-8")
     template = PROMPT_PATH.read_text(encoding="utf-8")
     question_context: dict[str, object] = {
         "questionContent": question.question_content,
@@ -434,30 +577,42 @@ def _render_prompt(
     user_input: dict[str, object] = {
         "confirmedText": attempt.confirmed_text,
     }
-    transport_context = {
-        key: value for key, value in question_context.items() if key != "outputSchema"
+    # 五层消息
+    # messages[0] system：全局共享前缀
+    # messages[1] user：会话级稳定上下文（题目数据，不含 outputSchema）
+    question_message: dict[str, object] = {
+        key: value
+        for key, value in question_context.items()
+        if key != "outputSchema"
     }
-    transport_context.update(user_input)
-    transport_context["taskType"] = "EXPLANATION"
-    transport_context["progressContext"] = progress_context or {
-        "previousExplanations": [], "previousTeaching": []
-    }
-    prompt = (
-        template.replace("{{JSON_SCHEMA}}", json.dumps(schema, ensure_ascii=False))
-        .replace("{{CONTEXT_JSON}}", json.dumps(transport_context, ensure_ascii=False))
-        .replace("{{PREVIOUS_OUTPUT}}", json.dumps(previous_output, ensure_ascii=False))
-        .replace("{{VALIDATION_ERRORS}}", json.dumps(validation_errors, ensure_ascii=False))
+    # messages[2] user：截至当前任务前的共享历史
+    session_history = progress_context or {"events": []}
+    # messages[3] user：taskType 固定指令 + JSON Schema
+    task_prompt = template.replace(
+        "{{JSON_SCHEMA}}", json.dumps(schema, ensure_ascii=False)
     )
+    # messages[4] user：本轮任务数据
+    current_data: dict[str, object] = {
+        "confirmedText": attempt.confirmed_text,
+    }
+    if validation_errors:
+        current_data["previousOutput"] = previous_output
+        current_data["validationErrors"] = validation_errors
+    elif previous_output is not None:
+        current_data["previousOutput"] = previous_output
+        current_data["validationErrors"] = []
     extra_body = resolve_reasoning_params(model, reasoning_effort)
     return ModelRequestSnapshot(
+        schema_version="1.1",
         purpose="AI_EVALUATION",
         prompt_version=prompt_version,
         blocks=ModelRequestBlocks(
-            system_instructions=template,
+            system_instructions=shared_system,
+            task_instructions=task_prompt,
             question_context=question_context,
             session_context={
                 "taskType": "EXPLANATION",
-                "progressContext": transport_context["progressContext"],
+                "progressContext": session_history,
                 "round": session.round,
                 "supportCountRound": session.support_count_round,
             },
@@ -469,7 +624,22 @@ def _render_prompt(
         ),
         transport=ModelTransportSnapshot(
             model=model,
-            messages=[ModelRequestMessage(role="user", content=prompt)],
+            messages=[
+                ModelRequestMessage(role="system", content=shared_system),
+                ModelRequestMessage(
+                    role="user",
+                    content=json.dumps(question_message, ensure_ascii=False),
+                ),
+                ModelRequestMessage(
+                    role="user",
+                    content=json.dumps(session_history, ensure_ascii=False),
+                ),
+                ModelRequestMessage(role="user", content=task_prompt),
+                ModelRequestMessage(
+                    role="user",
+                    content=json.dumps(current_data, ensure_ascii=False),
+                ),
+            ],
             response_format={"type": "json_object"},
             reasoning_effort=reasoning_effort,
             extra_body=extra_body,
