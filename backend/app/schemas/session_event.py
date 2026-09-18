@@ -56,6 +56,9 @@ class ModelRespondedData(EventData):
     durationMs: NonNegativeInt | None = None
     inputTokens: NonNegativeInt | None = None
     outputTokens: NonNegativeInt | None = None
+    totalTokens: NonNegativeInt | None = None
+    promptCacheHitTokens: NonNegativeInt | None = None
+    promptCacheMissTokens: NonNegativeInt | None = None
 
 
 class ModelFailedData(EventData):

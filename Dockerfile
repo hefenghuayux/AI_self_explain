@@ -7,6 +7,8 @@ WORKDIR /app
 
 COPY backend/pyproject.toml backend/pyproject.toml
 COPY backend/app backend/app
+COPY scripts/deepseek_v4_tokenizer/deepseek_v4_tokenizer/tokenizer.json scripts/deepseek_v4_tokenizer/deepseek_v4_tokenizer/tokenizer.json
+COPY scripts/deepseek_v4_tokenizer/deepseek_v4_tokenizer/tokenizer_config.json scripts/deepseek_v4_tokenizer/deepseek_v4_tokenizer/tokenizer_config.json
 RUN python -m pip install --no-cache-dir ./backend
 
 COPY backend/alembic backend/alembic

@@ -56,6 +56,8 @@ from app.services.ai_evaluation import AIEvaluationService
 from app.services.ai_support import AISupportService
 from app.services.ai_teaching import AITeachingService
 from app.services.audio_storage import AudioStorage, AudioStorageError
+from app.services.context_compaction import CompactionError
+from app.services.context_runtime import preflight_submission
 from app.services.realtime_asr import ASRServiceError, ASRStreamEvent, RealtimeASRService
 
 logger = logging.getLogger(__name__)
@@ -82,7 +84,11 @@ def reject_operation(detail: str) -> None:
 
 def validate_version(session: Session, version: int) -> None:
     if session.version != version:
-        reject_operation(f"会话版本已变化，当前版本为 {session.version}，请刷新后重试")
+        raise HTTPException(status_code=409, detail={
+            "code": "SESSION_VERSION_CONFLICT",
+            "message": "会话版本已变化，请刷新后重试",
+            "sessionId": session.id,
+        })
 
 
 def validate_in_progress(session: Session) -> None:
@@ -238,6 +244,10 @@ def submit_text_attempt(
     validate_in_progress(session)
     if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT:
         reject_operation(f"当前流程阶段不能提交文本：{session.flow_stage}")
+    validate_version(session, attempt_input.version)
+    preflight_submission(
+        database_session, session, request.app.state.settings, text=attempt_input.confirmed_text
+    )
     voice_attempt = None
     if attempt_input.voice_attempt_id is not None:
         voice_attempt = get_voice_attempt_for_submission(
@@ -265,13 +275,23 @@ def submit_text_attempt(
     question = database_session.get(Question, session.question_id)
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
-    evaluation_result = AIEvaluationService(
-        database_session, request.app.state.settings, request.app.state.ai_http_client
-    ).evaluate(
-        question=question,
-        session=session,
-        attempt=attempt,
-    )
+    try:
+        evaluation_result = AIEvaluationService(
+            database_session, request.app.state.settings, request.app.state.ai_http_client
+        ).evaluate(
+            question=question,
+            session=session,
+            attempt=attempt,
+        )
+    except CompactionError as error:
+        repository.request_human_review(
+            session=session,
+            need_human_reason=f"AI 评价上下文恢复失败：{error.code}",
+            trigger_type="AI_EVALUATION_CONTEXT_FAILED",
+            related_attempt_id=attempt.id,
+            run_id=session_run_id(session.id, attempt.id),
+        )
+        raise
     if isinstance(evaluation_result, Session):
         return to_session_response(repository, evaluation_result)
 
@@ -296,15 +316,24 @@ def submit_text_attempt(
             TeachingNotRequiredResponse(status="NOT_REQUIRED"),
         )
 
-    teaching_output = AITeachingService(
-        database_session, request.app.state.settings, request.app.state.ai_http_client
-    ).generate(
-        question=question,
-        session=session,
-        attempt=attempt,
-        evaluation=evaluation_output,
-        decision=decision,
-    )
+    try:
+        teaching_output = AITeachingService(
+            database_session, request.app.state.settings, request.app.state.ai_http_client
+        ).generate(
+            question=question,
+            session=session,
+            attempt=attempt,
+            evaluation=evaluation_output,
+            decision=decision,
+        )
+    except CompactionError:
+        repository.record_teaching_generation_failure(
+            session=session,
+            evaluation_id=evaluation_result.evaluation_record.id,
+            decision=decision,
+            run_id=session_run_id(session.id, attempt.id),
+        )
+        raise
     if teaching_output is None:
         failed_session = repository.record_teaching_generation_failure(
             session=session,
@@ -360,6 +389,9 @@ def request_support(
     validate_version(session, action_input.version)
     if session.flow_stage != FLOW_STAGE_WAIT_STUDENT_ACTION:
         reject_operation(f"当前流程阶段不能请求提示：{session.flow_stage}")
+    preflight_submission(
+        database_session, session, request.app.state.settings, main_draft=action_input.main_draft
+    )
     question = database_session.get(Question, session.question_id)
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
@@ -411,6 +443,10 @@ def ask_doubt(
     validate_version(session, action_input.version)
     if not can_submit_student_interruption(session.flow_stage):
         reject_operation(f"当前流程阶段不能提出疑问：{session.flow_stage}")
+    preflight_submission(
+        database_session, session, request.app.state.settings,
+        main_draft=action_input.main_draft, doubt_text=action_input.doubt_text,
+    )
     question = database_session.get(Question, session.question_id)
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
@@ -514,6 +550,10 @@ def submit_guided_answers(
             merged_answers=merged_answers,
         )
         return to_session_response(repository, updated_session)
+    preflight_submission(
+        database_session, session, request.app.state.settings,
+        support_event=support_event, answers=merged_answers,
+    )
     question = database_session.get(Question, session.question_id)
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")

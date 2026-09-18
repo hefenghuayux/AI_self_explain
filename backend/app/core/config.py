@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     ai_model: NonEmptyString
     ai_reasoning_effort: str | None = None
     progress_context_max_interactions: PositiveInt = 12
+    ai_context_window_tokens: PositiveInt = 258000
+    ai_max_output_tokens: PositiveInt = 10000
+    context_compaction_after_response_ratio: Annotated[float, Field(gt=0, lt=1)] = 0.80
+    context_compaction_before_request_ratio: Annotated[float, Field(gt=0, lt=1)] = 0.90
+    context_compaction_summary_max_tokens: PositiveInt = 1024
+    context_compaction_wait_timeout_seconds: PositiveFloat | None = None
 
     asr_provider: NonEmptyString
     asr_base_url: AnyUrl
@@ -118,6 +124,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_retry_backoffs(self) -> Self:
+        if self.context_compaction_wait_timeout_seconds is None:
+            self.context_compaction_wait_timeout_seconds = self.ai_request_timeout_seconds
+        if (
+            self.context_compaction_after_response_ratio
+            >= self.context_compaction_before_request_ratio
+        ):
+            raise ValueError("压缩响应阈值必须小于请求前阈值")
+        if self.ai_max_output_tokens >= self.ai_context_window_tokens:
+            raise ValueError("AI 输出预留必须小于上下文窗口")
         if len(self.ai_retry_backoff_seconds) != self.ai_transport_max_retries:
             raise ValueError("AI_RETRY_BACKOFF_SECONDS 数量必须等于 AI_TRANSPORT_MAX_RETRIES")
         if len(self.asr_retry_backoff_seconds) != self.asr_transport_max_retries:

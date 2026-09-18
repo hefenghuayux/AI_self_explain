@@ -79,6 +79,11 @@ class AITeachingService:
                 prompt_version=self.settings.prompt_version,
                 reasoning_effort=self.settings.ai_reasoning_effort,
             )
+            from app.services.context_runtime import prepare_request
+
+            prepare_request(request, self.repository.database_session, session,
+                            exclude_attempt_id=attempt.id)
+            request.transport.extra_body["max_tokens"] = self.settings.ai_max_output_tokens
             if schema_attempt == 0:
                 event_log.append_contexts(
                     session_id=session.id,
@@ -93,6 +98,7 @@ class AITeachingService:
                     request=request,
                     external_attempt_number=external_attempt_number,
                     run_id=run_id,
+                    exclude_attempt_id=attempt.id,
                 )
             )
             if model_response is None:
@@ -149,6 +155,7 @@ class AITeachingService:
         request: ModelRequestSnapshot,
         external_attempt_number: int,
         run_id: str,
+        exclude_attempt_id: int,
     ) -> tuple[AIModelResponse | None, ExternalCallRecord | None, int, str | None]:
         event_log = SessionEventLog(self.repository.database_session)
         for transport_attempt in range(self.settings.ai_transport_max_retries + 1):
@@ -161,7 +168,13 @@ class AITeachingService:
                 parent_event_id=event_log.latest_event_id(session.id, run_id),
             )
             try:
-                model_response = self.client.evaluate(request)
+                from app.services.context_runtime import evaluate_request
+
+                model_response, response_event_id = evaluate_request(
+                    self.client, request, self.repository.database_session, session,
+                    requested_event.event_id, run_id,
+                    exclude_attempt_id=exclude_attempt_id,
+                )
             except AITransportError as error:
                 self.repository.record_external_call(
                     session=session,
@@ -209,7 +222,7 @@ class AITeachingService:
                     "durationMs": model_response.duration_ms,
                 },
             )
-            return model_response, external_call, current_attempt_number, requested_event.event_id
+            return model_response, external_call, current_attempt_number, response_event_id
         raise RuntimeError("AI 教学传输重试循环未产生结果")
 
 
@@ -295,6 +308,10 @@ def _render_prompt(
     # messages[4] user：本轮任务数据
     current_data: dict[str, object] = {
         "currentStudentText": context.current_student_text,
+        "latestEvaluation": context.latest_evaluation.model_dump(mode="json", by_alias=True),
+        "instructionFromRules": context.instruction_from_rules.model_dump(
+            mode="json", by_alias=True
+        ),
     }
     if validation_errors:
         current_data["previousOutput"] = previous_output

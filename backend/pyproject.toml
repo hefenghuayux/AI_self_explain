@@ -16,6 +16,7 @@ dependencies = [
     "pydantic-settings>=2.7,<3",
     "python-json-logger>=3.2,<4",
     "sqlalchemy>=2.0,<3",
+    "tokenizers>=0.21,<1",
     "uvicorn[standard]>=0.34,<1",
 ]
 
