@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.question import Question
+from app.models.session import Session as SelfExplainSession
 from app.schemas.question import QuestionInput, QuestionListQuery
 
 
@@ -19,7 +20,7 @@ class QuestionRepository:
         return question
 
     def list_questions(
-        self, query: QuestionListQuery, *, include_archived: bool
+        self, query: QuestionListQuery, *, include_archived: bool, user_id: int
     ) -> tuple[list[Question], int]:
         conditions = []
         if not include_archived:
@@ -33,12 +34,27 @@ class QuestionRepository:
             escaped_keyword = escaped_keyword.replace("%", "\\%").replace("_", "\\_")
             conditions.append(Question.question_content.like(f"%{escaped_keyword}%", escape="\\"))
 
+        last_self_explained_at = (
+            select(
+                SelfExplainSession.question_id.label("question_id"),
+                func.max(SelfExplainSession.updated_at).label("last_self_explained_at"),
+            )
+            .where(SelfExplainSession.user_id == user_id)
+            .group_by(SelfExplainSession.question_id)
+            .subquery()
+        )
         total = self.session.scalar(select(func.count()).select_from(Question).where(*conditions))
         statement = (
             select(Question)
+            .outerjoin(
+                last_self_explained_at,
+                last_self_explained_at.c.question_id == Question.id,
+            )
             .where(*conditions)
             .order_by(
-                case((Question.rubric_points.is_not(None), 0), else_=1),
+                # 已自讲题目按最近自讲时间倒序排在前面，未自讲题目（IS NULL 为真）排在其后。
+                last_self_explained_at.c.last_self_explained_at.is_(None),
+                last_self_explained_at.c.last_self_explained_at.desc(),
                 Question.created_at.desc(),
                 Question.id.desc(),
             )

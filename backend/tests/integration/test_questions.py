@@ -1,15 +1,18 @@
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from alembic.config import Config
 from conftest import authenticated_test_client
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, insert, inspect
+from sqlalchemy import create_engine, insert, inspect, select
 
 from alembic import command
 from app.core.config import Settings
 from app.models.question import Question
+from app.models.session import Session
+from app.models.user import User
 
 
 def question_payload() -> dict[str, object]:
@@ -126,24 +129,62 @@ def test_migrated_question_with_empty_guided_questions_can_be_read(
     assert detail_response.json()["guidedQuestions"] == []
 
 
-def test_question_list_prioritizes_rubric_and_returns_evaluation_mode(
-    question_client: TestClient,
+def self_explanation_session(question_id: int, user_id: int, last_active_at: datetime) -> dict:
+    return {
+        "question_id": question_id,
+        "user_id": user_id,
+        "status": "IN_PROGRESS",
+        "flow_stage": "WAIT_INITIAL_CHOICE",
+        "round": 1,
+        "support_count_round": 0,
+        "support_count_total": 0,
+        "no_progress_count": 0,
+        "no_progress_help_request_count": 0,
+        "solution_exposed": False,
+        "current_draft": "",
+        "last_support_draft": "",
+        "version": 0,
+        "updated_at": last_active_at,
+    }
+
+
+def test_question_list_orders_by_latest_self_explanation(
+    question_client: TestClient, migrated_settings: Settings
 ) -> None:
-    without_rubric = question_client.post("/api/questions", json={"questionContent": "无评分点"})
-    with_rubric = question_client.post(
-        "/api/questions",
-        json={"questionContent": "有评分点", "rubricPoints": ["评分点"]},
-    )
+    # 录入顺序与自讲顺序相反，确保排序结果只可能来自最近自讲时间。
+    latest = question_client.post(
+        "/api/questions", json={"questionContent": "最近自讲", "rubricPoints": ["评分点"]}
+    ).json()
+    earlier = question_client.post("/api/questions", json={"questionContent": "较早自讲"}).json()
+    never = question_client.post("/api/questions", json={"questionContent": "未自讲"}).json()
+
+    engine = create_engine(migrated_settings.database_url)
+    try:
+        with engine.begin() as connection:
+            user_id = connection.scalar(select(User.id).where(User.username == "test-teacher"))
+            earlier_active_at = datetime(2026, 1, 2, tzinfo=UTC)
+            latest_active_at = datetime(2026, 1, 3, tzinfo=UTC)
+            connection.execute(
+                insert(Session),
+                [
+                    self_explanation_session(earlier["id"], user_id, earlier_active_at),
+                    self_explanation_session(latest["id"], user_id, latest_active_at),
+                ],
+            )
+    finally:
+        engine.dispose()
 
     response = question_client.get("/api/questions")
 
     assert response.status_code == 200
     assert [item["id"] for item in response.json()["items"]] == [
-        with_rubric.json()["id"],
-        without_rubric.json()["id"],
+        latest["id"],
+        earlier["id"],
+        never["id"],
     ]
     assert [item["evaluationMode"] for item in response.json()["items"]] == [
         "FULL_RUBRIC",
+        "AI_GENERAL",
         "AI_GENERAL",
     ]
 

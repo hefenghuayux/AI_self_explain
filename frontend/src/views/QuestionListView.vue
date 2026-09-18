@@ -180,19 +180,6 @@ onMounted(async () => {
         </template>
       </el-table-column>
       <el-table-column
-        v-if="authUser?.role === 'TEACHER'"
-        label="评分点数"
-        width="110"
-      >
-        <template #default="scope">{{ scope.row.rubricPointCount }}</template>
-      </el-table-column>
-      <el-table-column v-if="authUser?.role === 'TEACHER'" label="状态" width="100">
-        <template #default="scope">
-          <el-tag v-if="scope.row.archivedAt" type="warning">已归档</el-tag>
-          <el-tag v-else type="success">可用</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column
         label="操作"
         :width="authUser?.role === 'TEACHER' ? 420 : 200"
         fixed="right"
@@ -244,9 +231,6 @@ onMounted(async () => {
             <el-tag v-if="question.gradePeriod != null">{{ gradePeriodName(question.gradePeriod) }}</el-tag>
             <el-tag v-if="question.subject">{{ subjectName(question.subject) }}</el-tag>
             <el-tag :type="evaluationModeTagType(question)">{{ evaluationModeLabel(question) }}</el-tag>
-            <el-tag v-if="authUser?.role === 'TEACHER'" :type="question.archivedAt ? 'warning' : 'success'">
-              {{ question.archivedAt ? "已归档" : "可用" }}
-            </el-tag>
           </div>
         </div>
         <div class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
