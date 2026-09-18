@@ -71,7 +71,7 @@ def list_questions(
         keyword=keyword,
     )
     questions, total = QuestionRepository(session).list_questions(
-        query, include_archived=include_archived
+        query, include_archived=include_archived, user_id=user.id
     )
     return QuestionListResponse(
         items=questions,
