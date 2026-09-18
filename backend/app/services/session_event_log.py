@@ -126,6 +126,10 @@ class SessionEventLog:
         )
         self.database_session.commit()
         self.database_session.refresh(event)
+        if validation == "valid":
+            from app.services.context_runtime import note_success
+
+            note_success(data.get("totalTokens"))
         return event
 
     def append_model_failed(
@@ -171,6 +175,7 @@ class SessionEventLog:
 _USAGE_MAP: dict[str, str] = {
     "prompt_tokens": "inputTokens",
     "completion_tokens": "outputTokens",
+    "total_tokens": "totalTokens",
     "prompt_cache_hit_tokens": "promptCacheHitTokens",
     "prompt_cache_miss_tokens": "promptCacheMissTokens",
 }

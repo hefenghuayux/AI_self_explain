@@ -6,7 +6,6 @@ from pathlib import Path
 
 import httpx
 from pydantic import ValidationError
-from sqlalchemy import select
 from sqlalchemy.orm import Session as DatabaseSession
 
 from app.core.config import Settings
@@ -99,8 +98,20 @@ class AIModelClient:
 
         raw_response = response.text
         if response.is_error:
+            overflow = False
+            if response.status_code in {400, 413, 422}:
+                try:
+                    detail = response.json().get("error", {})
+                    code = detail.get("code")
+                    message = str(detail.get("message", "")).lower()
+                    overflow = code in {"context_length_exceeded", "context_window_exceeded"} or (
+                        "maximum context length" in message
+                        or "context window" in message and "exceed" in message
+                    )
+                except (ValueError, AttributeError):
+                    pass
             raise AITransportError(
-                error_type="AI_SERVICE_ERROR",
+                error_type="CONTEXT_WINDOW_EXCEEDED" if overflow else "AI_SERVICE_ERROR",
                 message=f"AI 服务返回 HTTP {response.status_code}",
                 duration_ms=_duration_ms(started_at),
                 raw_response=raw_response,
@@ -153,27 +164,6 @@ class AIEvaluationService:
         run_id = session_run_id(session.id, attempt.id)
         event_log = SessionEventLog(self.repository.database_session)
 
-        previous_attempts = self.repository.database_session.scalars(
-            select(ExplanationAttempt)
-            .where(
-                ExplanationAttempt.session_id == session.id,
-                ExplanationAttempt.round == session.round,
-                ExplanationAttempt.id < attempt.id,
-                ExplanationAttempt.id.in_(select(AIEvaluation.attempt_id)),
-            )
-            .order_by(ExplanationAttempt.id)
-        ).all()
-        previous_support = self.repository.database_session.scalars(
-            select(SupportEvent)
-            .where(SupportEvent.session_id == session.id, SupportEvent.round == session.round)
-            .order_by(SupportEvent.id)
-        ).all()
-        progress_context = build_progress_context(
-            previous_attempts=previous_attempts,
-            previous_support=previous_support,
-            max_interactions=self.settings.progress_context_max_interactions,
-        )
-
         for schema_attempt in range(self.settings.ai_schema_max_retries + 1):
             reasoning_effort = self.settings.ai_reasoning_effort
             request = _render_prompt(
@@ -185,9 +175,13 @@ class AIEvaluationService:
                 model=self.settings.ai_model,
                 prompt_version=self.settings.prompt_version,
                 reasoning_effort=reasoning_effort,
-                progress_context=progress_context,
                 previous_output=previous_output,
             )
+            from app.services.context_runtime import prepare_request
+
+            prepare_request(request, self.repository.database_session, session,
+                            exclude_attempt_id=attempt.id)
+            request.transport.extra_body["max_tokens"] = self.settings.ai_max_output_tokens
             if schema_attempt == 0:
                 event_log.append_contexts(
                     session_id=session.id,
@@ -202,6 +196,7 @@ class AIEvaluationService:
                     request=request,
                     external_attempt_number=external_attempt_number,
                     run_id=run_id,
+                    exclude_attempt_id=attempt.id,
                 )
             )
             if model_response is None:
@@ -325,6 +320,7 @@ class AIEvaluationService:
         request: ModelRequestSnapshot,
         external_attempt_number: int,
         run_id: str,
+        exclude_attempt_id: int,
     ) -> tuple[AIModelResponse | None, ExternalCallRecord | None, int, str | None]:
         event_log = SessionEventLog(self.repository.database_session)
         for transport_attempt in range(self.settings.ai_transport_max_retries + 1):
@@ -337,7 +333,13 @@ class AIEvaluationService:
                 parent_event_id=event_log.latest_event_id(session.id, run_id),
             )
             try:
-                model_response = self.client.evaluate(request)
+                from app.services.context_runtime import evaluate_request
+
+                model_response, response_event_id = evaluate_request(
+                    self.client, request, self.repository.database_session, session,
+                    requested_event.event_id, run_id,
+                    exclude_attempt_id=exclude_attempt_id,
+                )
             except AITransportError as error:
                 self.repository.record_external_call(
                     session=session,
@@ -397,7 +399,7 @@ class AIEvaluationService:
                     "durationMs": model_response.duration_ms,
                 },
             )
-            return model_response, external_call, current_attempt_number, requested_event.event_id
+            return model_response, external_call, current_attempt_number, response_event_id
         raise RuntimeError("AI 传输重试循环未产生结果")
 
 
@@ -596,6 +598,8 @@ def _render_prompt(
     # messages[4] user：本轮任务数据
     current_data: dict[str, object] = {
         "confirmedText": attempt.confirmed_text,
+        "round": session.round,
+        "supportCountRound": session.support_count_round,
     }
     if validation_errors:
         current_data["previousOutput"] = previous_output

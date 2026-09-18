@@ -7,18 +7,14 @@ from typing import TypeVar
 
 import httpx
 from pydantic import ValidationError
-from sqlalchemy import select
 from sqlalchemy.orm import Session as DatabaseSession
 
 from app.core.config import Settings
-from app.models.ai_evaluation import AIEvaluation
-from app.models.explanation_attempt import ExplanationAttempt
 from app.models.external_call_record import ExternalCallRecord
 from app.models.question import Question
 from app.models.session import Session
 from app.models.support_event import SupportEvent
 from app.repositories.sessions import SessionRepository
-from app.services.ai_evaluation import build_progress_context
 from app.schemas.model_request_snapshot import (
     ModelRequestBlocks,
     ModelRequestMessage,
@@ -57,24 +53,9 @@ class AISupportService:
         self.client = AIModelClient(settings, http_client)
 
     def _build_progress_context(self, session: Session) -> dict[str, object]:
-        previous_attempts = self.repository.database_session.scalars(
-            select(ExplanationAttempt)
-            .where(
-                ExplanationAttempt.session_id == session.id,
-                ExplanationAttempt.round == session.round,
-                ExplanationAttempt.id.in_(select(AIEvaluation.attempt_id)),
-            )
-            .order_by(ExplanationAttempt.id)
-        ).all()
-        previous_support = self.repository.database_session.scalars(
-            select(SupportEvent)
-            .where(SupportEvent.session_id == session.id, SupportEvent.round == session.round)
-            .order_by(SupportEvent.id)
-        ).all()
-        return build_progress_context(
-            previous_attempts=previous_attempts,
-            previous_support=previous_support,
-        )
+        from app.services.context_history import build_shared_history
+
+        return build_shared_history(self.repository.database_session, session)
 
     def generate_request(
         self,
@@ -146,6 +127,10 @@ class AISupportService:
         event_log = SessionEventLog(self.repository.database_session)
         for schema_attempt in range(self.settings.ai_schema_max_retries + 1):
             request = request_builder(validation_errors)
+            from app.services.context_runtime import prepare_request
+
+            prepare_request(request, self.repository.database_session, session)
+            request.transport.extra_body["max_tokens"] = self.settings.ai_max_output_tokens
             if schema_attempt == 0:
                 event_log.append_contexts(
                     session_id=session.id,
@@ -265,7 +250,12 @@ class AISupportService:
                 parent_event_id=event_log.latest_event_id(session.id, run_id),
             )
             try:
-                model_response = self.client.evaluate(request)
+                from app.services.context_runtime import evaluate_request
+
+                model_response, response_event_id = evaluate_request(
+                    self.client, request, self.repository.database_session, session,
+                    requested_event.event_id, run_id,
+                )
             except AITransportError as error:
                 self.repository.record_external_call(
                     session=session,
@@ -326,7 +316,7 @@ class AISupportService:
                     "durationMs": model_response.duration_ms,
                 },
             )
-            return model_response, external_call, current_attempt_number, requested_event.event_id
+            return model_response, external_call, current_attempt_number, response_event_id
         raise RuntimeError("AI 教学支持传输重试循环未产生结果")
 
     @staticmethod
@@ -439,6 +429,7 @@ def _model_request(
     shared_system = SHARED_SYSTEM_PATH.read_text(encoding="utf-8")
     shared_history = progress_context or {"events": []}
     current_data = dict(user_input)
+    current_data.update(session_context)
     if validation_errors:
         current_data["validationErrors"] = validation_errors
     extra_body = resolve_reasoning_params(model, reasoning_effort)
