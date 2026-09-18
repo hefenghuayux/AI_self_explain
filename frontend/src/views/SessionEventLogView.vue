@@ -6,6 +6,7 @@ import EventDetails from "../components/EventDetails.vue"
 import EventLedger from "../components/EventLedger.vue"
 import EventTimeline from "../components/EventTimeline.vue"
 import { fetchSessionTrajectory } from "../api/session-events"
+import { scopeRecords, type TrajectoryScope } from "../utils/trajectoryScope"
 import type { Trajectory, TrajectoryRecord } from "../types/session-event"
 
 /** 账本按窗口渲染，只有点「加载更早的记录」才扩大窗口；默认展示尾部最新记录。 */
@@ -21,7 +22,7 @@ const selectedSeq = ref<number>()
 const timelineMode = ref<"sequence" | "duration">("sequence")
 const searchQuery = ref("")
 /** 精简范围只显示上下文、用户与助手信息；完整范围追加状态变化与模型请求。 */
-const ledgerScope = ref<"core" | "all">("core")
+const ledgerScope = ref<TrajectoryScope>("core")
 const collapsedRunIds = ref<ReadonlySet<string>>(new Set())
 const ledgerWindow = ref(LEDGER_WINDOW)
 const loading = ref(true)
@@ -39,6 +40,9 @@ const runLabel = computed(() => {
 })
 
 const runRecords = computed<TrajectoryRecord[]>(() => selectedRun.value?.records ?? [])
+
+/** 时间线与账本共用同一份范围规则，否则会留下点不到的色块（账本里那条已被隐藏）。 */
+const timelineRecords = computed(() => scopeRecords(runRecords.value, ledgerScope.value))
 
 const visibleRecords = computed<TrajectoryRecord[]>(() =>
   runRecords.value.slice(Math.max(0, runRecords.value.length - ledgerWindow.value)),
@@ -118,6 +122,13 @@ watch(selectedRunId, () => {
   collapsedRunIds.value =
     records.length > AUTO_COLLAPSE_THRESHOLD ? new Set([selectedRunId.value]) : new Set()
 })
+
+// 切回精简范围后，被隐藏记录的详情面板不该继续留着，否则面板与账本口径不一致。
+watch(ledgerScope, () => {
+  const seq = selectedSeq.value
+  if (seq === undefined) return
+  if (!timelineRecords.value.some((record) => record.eventSeq === seq)) selectedSeq.value = undefined
+})
 </script>
 
 <template>
@@ -178,7 +189,7 @@ watch(selectedRunId, () => {
       </section>
 
       <EventTimeline
-        :records="runRecords"
+        :records="timelineRecords"
         :mode="timelineMode"
         :selected-seq="selectedSeq"
         @select="selectRecord"

@@ -2,18 +2,14 @@
 import { computed, ref } from "vue"
 
 import { formatDuration, formatTime } from "../utils/trajectoryTime"
-import type { TrajectoryRecord, TrajectoryRecordKind } from "../types/session-event"
-
-type LedgerScope = "core" | "all"
-
-/** 精简范围：只保留上下文、用户与助手（模型）信息，隐藏状态变化和模型请求。 */
-const CORE_KINDS: readonly TrajectoryRecordKind[] = ["session", "user", "context", "model_response", "model_error"]
+import { scopeRecords, type TrajectoryScope } from "../utils/trajectoryScope"
+import type { TrajectoryRecord } from "../types/session-event"
 
 const props = withDefaults(
   defineProps<{
     records: TrajectoryRecord[]
     runLabel: string
-    scope?: LedgerScope
+    scope?: TrajectoryScope
     selectedSeq?: number
     collapsed?: boolean
     searchQuery?: string
@@ -48,11 +44,7 @@ function matches(record: TrajectoryRecord): boolean {
     .some((value) => value.toLowerCase().includes(query.value))
 }
 
-const scopedRecords = computed<TrajectoryRecord[]>(() =>
-  props.scope === "core"
-    ? props.records.filter((record) => CORE_KINDS.includes(record.kind))
-    : props.records,
-)
+const scopedRecords = computed(() => scopeRecords(props.records, props.scope))
 
 const hiddenCount = computed(() => props.records.length - scopedRecords.value.length)
 const matchCount = computed(() => scopedRecords.value.filter(matches).length)
@@ -248,7 +240,8 @@ async function copyFullText(record: TrajectoryRecord) {
 .record-status { flex: 0 0 auto; padding: 1px var(--space-2); border-radius: var(--radius-sm); font-size: 12px; }
 .record-status.failed { color: var(--color-error-700); background: var(--color-error-100); }
 .record-status.pending { color: var(--color-text-secondary); background: var(--color-surface-muted); }
-.expand-button { flex: 0 0 auto; padding: 1px var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-secondary); background: var(--color-surface); cursor: pointer; font: inherit; font-size: 12px; }
+/* margin-left:auto 把按钮钉在内容列右端：展开后摘要（flex:1）被移除，否则按钮会左跳到时间戳旁。 */
+.expand-button { flex: 0 0 auto; margin-left: auto; padding: 1px var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-secondary); background: var(--color-surface); cursor: pointer; font: inherit; font-size: 12px; }
 .expand-button:hover { border-color: var(--color-brand-700); color: var(--color-brand-700); }
 .group-row { cursor: pointer; background: var(--color-surface-muted); }
 .group-row:focus-visible { outline: 2px solid var(--color-brand-600); outline-offset: -2px; }

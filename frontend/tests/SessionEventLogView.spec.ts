@@ -363,6 +363,45 @@ describe("SessionEventLogView", () => {
     expect(details.text()).toContain("该历史事件未保存模型原始回复。")
   })
 
+  it("时间线色块跟随账本范围，精简范围不显示状态变化与模型请求", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const wrapper = await mountView()
+
+    // 色块与账本行同源：5 条记录里精简范围只有 3 条，色块也必须是 3 个。
+    expect(
+      wrapper.findAll("button.timeline-block").map((block) => block.attributes("data-kind")),
+    ).toEqual(["user", "context", "model_response"])
+
+    await showAllRecords(wrapper)
+
+    expect(wrapper.findAll("button.timeline-block")).toHaveLength(5)
+    expect(wrapper.findAll("button.timeline-block")[4].attributes("data-kind")).toBe("state_change")
+  })
+
+  it("切回精简范围时关闭已被隐藏记录的详情面板", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const wrapper = await mountView()
+    await showAllRecords(wrapper)
+    // 完整范围下第 5 行是状态变化，精简范围会把它藏掉。
+    await wrapper.findAll("div.record-row")[4].trigger("click")
+    await flushPromises()
+    expect(wrapper.get("aside.details").text()).toContain("状态变化")
+
+    const backButton = wrapper
+      .findAll("button.toolbar-button")
+      .find((candidate) => candidate.text() === "只看上下文与助手")
+    if (backButton === undefined) throw new Error("缺少「只看上下文与助手」按钮")
+    await backButton.trigger("click")
+    await flushPromises()
+
+    expect(wrapper.find("aside.details").exists()).toBe(false)
+    expect(wrapper.findAll("button.timeline-block")).toHaveLength(3)
+  })
+
   it("搜索高亮命中记录，收起运行后只保留一行摘要", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
     vi.stubGlobal("fetch", fetchMock)
