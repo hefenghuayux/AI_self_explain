@@ -236,8 +236,6 @@ const segmentOptions = computed(() => segmentEntries.map((segment) => ({
   disabled: !canUseSegment(segment.value),
 })))
 
-const selfExplainCharacterCount = computed(() => selfExplainDraft.value.length)
-
 const hasFollowUpContent = computed(
   () => Boolean(session.value?.latestSupport?.followUpContent),
 )
@@ -596,9 +594,7 @@ async function respondToSolution(understood: boolean) {
                   placeholder="输入题干理解、分析过程或完整自讲"
                   :disabled="submitting || session.flowStage === 'AI_EVALUATING'"
                   aria-label="自讲输入"
-                  aria-describedby="self-explain-hint"
                 />
-                <div id="self-explain-hint" class="draft-meta"><span>已输入 {{ selfExplainCharacterCount }} 字</span><span>请用自己的语言说明思路。</span></div>
                 <div
                   v-if="session.flowStage !== 'WAIT_GUIDED_ANSWERS'
                     && session.flowStage !== 'AI_EVALUATING'
@@ -828,7 +824,6 @@ h2 { font-size: var(--font-size-lg); }
   box-shadow: var(--shadow-md);
 }
 .dialog-pane { min-height: 190px; }
-.draft-meta { display: flex; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .guided-question + .guided-question { margin-top: var(--space-4); }
 .guided-question p { margin: 0 0 var(--space-2); color: var(--color-text-primary); font-weight: 600; }
 .guided-question .voice-recorder { margin-top: 0; }
@@ -901,7 +896,6 @@ h2 { font-size: var(--font-size-lg); }
   .page-header a, .page-header .el-button { width: 100%; }
   .question-content { padding: var(--space-4); }
   .dialog-panel { padding: var(--space-4); }
-  .draft-meta { align-items: flex-start; flex-direction: column; gap: 0; }
   .actions .el-button { flex: 1 1 100%; }
   .conversation-scroll { height: 480px; }
   .conversation-list { padding: var(--space-3); }
