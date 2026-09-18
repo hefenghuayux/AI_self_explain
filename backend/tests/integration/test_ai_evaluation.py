@@ -5,11 +5,14 @@ import pytest
 from alembic.config import Config
 from conftest import authenticated_test_client
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy.orm import Session
 
 from alembic import command
+from app.models.session import Session as SessionModel
 from app.schemas.model_request_snapshot import ModelRequestSnapshot
 from app.services.ai_evaluation import AIModelClient, AIModelResponse, AITransportError
+from app.services.context_history import load_history
 
 
 def question_payload() -> dict[str, object]:
@@ -514,3 +517,63 @@ def test_teaching_failure_keeps_evaluation_without_support_side_effects(
         engine.dispose()
     assert failure_event["related_evaluation_id"] is not None
     assert failure_event["related_support_event_id"] is None
+
+
+def test_support_event_records_session_event_seq_anchor(settings, monkeypatch) -> None:
+    """支持事件必须记录创建时的 session_events.seq，供上下文历史按事件序排序。"""
+
+    def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
+        if request.purpose == "AI_TEACHING":
+            return AIModelResponse("{\"choices\": []}", focused_teaching_content(), 10)
+        return AIModelResponse("{\"choices\": []}", valid_evaluation_content(), 12)
+
+    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
+    with prepare_client(settings, monkeypatch) as client:
+        response = submit_text(client, create_started_session(client))
+
+    assert response.status_code == 200
+    engine = create_engine(settings.database_url)
+    try:
+        with engine.connect() as connection:
+            submission_seq = connection.execute(
+                text("SELECT seq FROM session_events WHERE event_type = 'user.message'")
+            ).scalar_one()
+            support_seq = connection.execute(
+                text("SELECT created_seq FROM support_events")
+            ).scalar_one()
+            latest_seq = connection.execute(text("SELECT MAX(seq) FROM session_events")).scalar_one()
+    finally:
+        engine.dispose()
+    assert support_seq is not None
+    assert submission_seq < support_seq <= latest_seq
+
+
+def test_shared_history_projects_round_events_in_session_event_order(
+    settings, monkeypatch
+) -> None:
+    """共享历史按 session_events.seq 投影：先出现学生自讲，再出现教学事件。"""
+
+    def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
+        if request.purpose == "AI_TEACHING":
+            return AIModelResponse("{\"choices\": []}", focused_teaching_content(), 10)
+        return AIModelResponse("{\"choices\": []}", valid_evaluation_content(), 12)
+
+    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
+    with prepare_client(settings, monkeypatch) as client:
+        response = submit_text(client, create_started_session(client))
+
+    assert response.status_code == 200
+    engine = create_engine(settings.database_url)
+    try:
+        with Session(engine) as database_session:
+            session_row = database_session.scalar(select(SessionModel))
+            assert session_row is not None
+            view = load_history(database_session, session_row)
+    finally:
+        engine.dispose()
+
+    events = [event for group in view.groups for event in group]
+    assert [event["kind"] for event in events] == ["explanation", "teaching"]
+    assert events[0]["content"] == "我先计算 1 加 1。"
+    assert events[1]["interactionId"] == f"support:{response.json()['latestSupport']['id']}"
+

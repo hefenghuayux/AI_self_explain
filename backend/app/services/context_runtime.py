@@ -92,7 +92,6 @@ def preflight_submission(
 ):
     from app.models.explanation_attempt import ExplanationAttempt
     from app.models.question import Question
-    from app.schemas.ai_evaluation import evaluation_json_schema
     from app.services.ai_evaluation import _render_prompt
     from app.services.ai_support import (
         _render_answer_assessment_prompt,
@@ -112,7 +111,6 @@ def preflight_submission(
         request = _render_prompt(
             **options,
             attempt=ExplanationAttempt(confirmed_text=text),
-            schema=evaluation_json_schema(question.rubric_points or []),
         )
     elif support_event is not None:
         request = _render_answer_assessment_prompt(

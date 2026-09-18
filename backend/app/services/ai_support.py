@@ -40,6 +40,8 @@ KNOWN_QUESTION_CONTEXT_KEYS = frozenset({
     "questionContent", "standardAnswer", "rubricPoints", "commonErrors",
     "alternativeSolutions", "layeredHints", "guidedQuestions", "fullSolution",
 })
+# 提示词要求 1 至 3 个子问题；数量上限由后端确定性校验，不依赖模型自觉。
+MAX_GUIDED_QUESTIONS = 3
 OutputType = TypeVar("OutputType", SupportRequestOutput, GuidedAnswerAssessmentOutput)
 logger = logging.getLogger(__name__)
 
@@ -452,7 +454,11 @@ def _model_request(
                 ModelRequestMessage(
                     role="user",
                     content=json.dumps(
-                        {k: v for k, v in question_context.items() if k in KNOWN_QUESTION_CONTEXT_KEYS},
+                        {
+                            key: value
+                            for key, value in question_context.items()
+                            if key in KNOWN_QUESTION_CONTEXT_KEYS
+                        },
                         ensure_ascii=False,
                     ),
                 ),
@@ -477,8 +483,10 @@ def _model_request(
 
 
 def _validate_support_request(output: SupportRequestOutput) -> list[str]:
-    if output.action == "GUIDED_QUESTIONS" and not output.questions:
-        return ["GUIDED_QUESTIONS 必须提供至少一个子问题"]
+    if output.action == "GUIDED_QUESTIONS" and not (
+        1 <= len(output.questions) <= MAX_GUIDED_QUESTIONS
+    ):
+        return [f"GUIDED_QUESTIONS 的子问题数量必须在 1 到 {MAX_GUIDED_QUESTIONS} 之间"]
     if output.action != "GUIDED_QUESTIONS" and output.questions:
         return ["非子问题动作不能提供 questions"]
     question_ids = [question.id for question in output.questions]

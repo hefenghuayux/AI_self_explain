@@ -1,9 +1,11 @@
 import json
+import logging
 
 import pytest
 from pydantic import ValidationError
 
 from app.schemas.ai_evaluation import (
+    LEGACY_EVALUATION_FIELDS,
     AIEvaluationOutput,
     validate_evaluation_relationships,
 )
@@ -56,3 +58,49 @@ def test_evaluation_schema_rejects_removed_teaching_fields(field: str) -> None:
 
     with pytest.raises(ValidationError):
         AIEvaluationOutput.model_validate(payload)
+
+
+def collect_evaluation_schema_logs(action: object) -> list[logging.LogRecord]:
+    """直接挂在模块 logger 上收集记录，避免 root handler 被其他测试清空。"""
+    records: list[logging.LogRecord] = []
+
+    class Collector(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    logger = logging.getLogger("app.schemas.ai_evaluation")
+    handler = Collector()
+    previous_level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    try:
+        action()
+    finally:
+        logger.setLevel(previous_level)
+        logger.removeHandler(handler)
+    return records
+
+
+def test_evaluation_schema_discards_legacy_fields_and_logs_warning() -> None:
+    payload = valid_payload()
+    payload.update(dict.fromkeys(LEGACY_EVALUATION_FIELDS, "旧契约字段"))
+    evaluation: AIEvaluationOutput | None = None
+
+    def validate() -> None:
+        nonlocal evaluation
+        evaluation = AIEvaluationOutput.model_validate(payload)
+
+    records = collect_evaluation_schema_logs(validate)
+
+    assert evaluation is not None
+    assert evaluation.main_reason == "知识应用问题"
+    assert [record.eventName for record in records] == ["ai.output.legacy_fields_discarded"]
+    assert records[0].legacyFields == ",".join(LEGACY_EVALUATION_FIELDS)
+
+
+def test_evaluation_schema_stays_silent_without_legacy_fields() -> None:
+    records = collect_evaluation_schema_logs(
+        lambda: AIEvaluationOutput.model_validate(valid_payload())
+    )
+
+    assert records == []

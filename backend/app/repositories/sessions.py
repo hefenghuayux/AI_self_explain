@@ -497,6 +497,7 @@ class SessionRepository:
                 guided_questions=[item.model_dump() for item in questions] or None,
                 guided_answers=None,
                 follow_up_content=None,
+                created_seq=EventStore(self.database_session).latest_seq(session.id),
             )
             self.database_session.add(support_event)
             self.database_session.flush()
@@ -887,6 +888,7 @@ class SessionRepository:
             guided_questions=[item.model_dump() for item in questions],
             guided_answers=None,
             follow_up_content=None,
+            created_seq=EventStore(self.database_session).latest_seq(session.id),
         )
         self.database_session.add(support_event)
         self.database_session.flush()
@@ -936,6 +938,7 @@ class SessionRepository:
             guided_questions=None,
             guided_answers=None,
             follow_up_content=None,
+            created_seq=EventStore(self.database_session).latest_seq(session.id),
         )
         self.database_session.add(support_event)
         self.database_session.flush()
@@ -977,6 +980,7 @@ class SessionRepository:
             guided_questions=None,
             guided_answers=None,
             follow_up_content=None,
+            created_seq=EventStore(self.database_session).latest_seq(session.id),
         )
         self.database_session.add(support_event)
         self.database_session.flush()
@@ -1325,6 +1329,7 @@ class SessionRepository:
             ),
             guided_answers=None,
             follow_up_content=None,
+            created_seq=EventStore(self.database_session).latest_seq(session.id),
         )
         self.database_session.add(support_event)
         session.support_count_round += 1
@@ -1359,6 +1364,7 @@ class SessionRepository:
             guided_questions=[item.model_dump() for item in guided_questions],
             guided_answers=None,
             follow_up_content=None,
+            created_seq=EventStore(self.database_session).latest_seq(session.id),
         )
         self.database_session.add(support_event)
         session.flow_stage = FLOW_STAGE_WAIT_GUIDED_ANSWERS

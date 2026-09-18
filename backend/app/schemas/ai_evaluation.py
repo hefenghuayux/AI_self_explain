@@ -1,9 +1,15 @@
+import logging
 from datetime import datetime
 from typing import Literal
 
-from pydantic import ConfigDict, Field, StrictBool, field_validator, model_validator
+from pydantic import ConfigDict, Field, StrictBool, model_validator
 
 from app.schemas.question import QuestionSchema, RequiredText, to_camel_case
+
+logger = logging.getLogger(__name__)
+# 迁移期间仍被静默丢弃的旧字段。所有模型请求和历史重放迁移完成后，
+# 应删除这份兼容逻辑并让 extra="forbid" 直接拒绝旧契约。
+LEGACY_EVALUATION_FIELDS = ("missingPoints", "confidence", "coveredPoints", "errorEvidence")
 
 Correctness = Literal["CORRECT", "WRONG"]
 Completeness = Literal["COMPLETE", "INCOMPLETE"]
@@ -36,10 +42,20 @@ class AIEvaluationOutput(QuestionSchema):
     def discard_removed_fields(cls, value: object) -> object:
         if isinstance(value, dict):
             value = dict(value)
-            value.pop("missingPoints", None)
-            value.pop("confidence", None)
-            value.pop("coveredPoints", None)
-            value.pop("errorEvidence", None)
+            discarded = []
+            for field in LEGACY_EVALUATION_FIELDS:
+                if field in value:
+                    value.pop(field)
+                    discarded.append(field)
+            if discarded:
+                logger.warning(
+                    "AI 评价输出包含已废弃字段，已忽略：%s",
+                    "、".join(discarded),
+                    extra={
+                        "eventName": "ai.output.legacy_fields_discarded",
+                        "legacyFields": ",".join(discarded),
+                    },
+                )
         return value
 
 
@@ -51,10 +67,6 @@ class AIEvaluationResponse(QuestionSchema):
     model_provider: str
     model_name: str
     created_at: datetime
-
-
-def evaluation_json_schema(rubric_points: list[str]) -> dict[str, object]:
-    return AIEvaluationOutput.model_json_schema(by_alias=True)
 
 
 def validate_evaluation_relationships(

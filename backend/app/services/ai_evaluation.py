@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,7 +19,6 @@ from app.models.support_event import SupportEvent
 from app.repositories.sessions import SessionRepository, session_run_id
 from app.schemas.ai_evaluation import (
     AIEvaluationOutput,
-    evaluation_json_schema,
     validate_evaluation_relationships,
 )
 from app.schemas.model_request_snapshot import (
@@ -157,7 +157,6 @@ class AIEvaluationService:
     ) -> EvaluationResult | Session:
         rubric_points = question.rubric_points or []
         evaluation_mode = question.evaluation_mode
-        schema = evaluation_json_schema(rubric_points)
         validation_errors: list[str] = []
         previous_output: str | None = None
         external_attempt_number = 0
@@ -170,7 +169,6 @@ class AIEvaluationService:
                 question=question,
                 session=session,
                 attempt=attempt,
-                schema=schema,
                 validation_errors=validation_errors,
                 model=self.settings.ai_model,
                 prompt_version=self.settings.prompt_version,
@@ -471,25 +469,45 @@ def build_progress_context(
     *,
     previous_attempts: list[ExplanationAttempt],
     previous_support: list[SupportEvent],
-    max_interactions: int,
+    max_interactions: int = 0,
+    attempt_seqs: Mapping[int, int] | None = None,
 ) -> dict[str, list[dict[str, object]]]:
     """把同 round 的学生自讲与教学事件合并成带 role 的有序事件序列。
 
-    阶段一实现：不读取 session_events，直接从现有表查询结果按
-    （created_at, id）排序，id 作为同一时间戳下的稳定回退顺序。
-    截断按交互组执行，见 _truncate_by_interaction。
+    排序以 session_events.seq 为准：自讲的锚点由调用方通过 attempt_seqs
+    传入（对应 user.message 事件的 seq），支持事件的锚点取自
+    SupportEvent.created_seq。created_at 在不同表之间可能落在同一秒，因此
+    只在锚点缺失的历史数据上作为兜底顺序。
+
+    max_interactions=0 或负数时不截断，返回全量事件列表。
     """
-    raw: list[tuple[object, int, str, object]] = []
+    # (created_at, id, 记录类型, 记录, seq 锚点)
+    raw: list[tuple[object, int, str, object, int | None]] = []
     for item in previous_attempts:
         if item.confirmed_text:
-            raw.append((item.created_at, item.id, "attempt", item))
+            anchor = None if attempt_seqs is None else attempt_seqs.get(item.id)
+            raw.append((item.created_at, item.id, "attempt", item, anchor))
     for item in previous_support:
-        raw.append((item.created_at, item.id, "support", item))
-    raw.sort(key=lambda entry: (entry[0], entry[1]))
+        raw.append((item.created_at, item.id, "support", item, item.created_seq))
+
+    if raw and all(entry[4] is not None for entry in raw):
+        # 锚点齐全：会话事件序号是唯一的时间顺序来源。
+        raw.sort(key=lambda entry: entry[4])
+    else:
+        # 历史数据缺少锚点：按 created_at 排序；同一时刻依次由锚点、
+        # 记录类型（自讲先于教学）和表内 id 决定，不比较跨表主键。
+        raw.sort(
+            key=lambda entry: (
+                entry[0],
+                entry[4] if entry[4] is not None else -1,
+                entry[2],
+                entry[1],
+            )
+        )
 
     events: list[dict[str, object]] = []
     next_seq = 0
-    for _, _, rec_type, record in raw:
+    for _, _, rec_type, record, _ in raw:
         if rec_type == "attempt":
             events.append(
                 {
@@ -503,7 +521,9 @@ def build_progress_context(
             next_seq += 1
         else:
             next_seq = _append_support_events(events, record, next_seq)
-    return {"events": _truncate_by_interaction(events, max_interactions)}
+    if max_interactions > 0:
+        return {"events": _truncate_by_interaction(events, max_interactions)}
+    return {"events": events}
 
 
 def _truncate_by_interaction(
@@ -546,7 +566,7 @@ def _truncate_by_interaction(
     keep_threshold = max(0, max_group - max_interactions + 1)
     return [
         event
-        for event, group in zip(events, groups)
+        for event, group in zip(events, groups, strict=True)
         if group >= keep_threshold
     ]
 
@@ -556,7 +576,6 @@ def _render_prompt(
     question: Question,
     session: Session,
     attempt: ExplanationAttempt,
-    schema: dict[str, object],
     validation_errors: list[str],
     model: str,
     prompt_version: str,
@@ -576,25 +595,17 @@ def _render_prompt(
         "layeredHints": question.layered_hints,
         "guidedQuestions": question.guided_questions,
         "fullSolution": question.full_solution,
-        "outputSchema": schema,
     }
     user_input: dict[str, object] = {
         "confirmedText": attempt.confirmed_text,
     }
     # 五层消息
     # messages[0] system：全局共享前缀
-    # messages[1] user：会话级稳定上下文（题目数据，不含 outputSchema）
-    question_message: dict[str, object] = {
-        key: value
-        for key, value in question_context.items()
-        if key != "outputSchema"
-    }
+    # messages[1] user：会话级稳定上下文（题目数据）
     # messages[2] user：截至当前任务前的共享历史
     session_history = progress_context or {"events": []}
-    # messages[3] user：taskType 固定指令 + JSON Schema
-    task_prompt = template.replace(
-        "{{JSON_SCHEMA}}", json.dumps(schema, ensure_ascii=False)
-    )
+    # messages[3] user：taskType 固定指令
+    task_prompt = template
     # messages[4] user：本轮任务数据
     current_data: dict[str, object] = {
         "confirmedText": attempt.confirmed_text,
@@ -634,7 +645,7 @@ def _render_prompt(
                 ModelRequestMessage(role="system", content=shared_system),
                 ModelRequestMessage(
                     role="user",
-                    content=json.dumps(question_message, ensure_ascii=False),
+                    content=json.dumps(question_context, ensure_ascii=False),
                 ),
                 ModelRequestMessage(
                     role="user",
@@ -665,9 +676,7 @@ def _parse_and_validate_evaluation(
 ) -> tuple[AIEvaluationOutput | None, list[str]]:
     try:
         payload = json.loads(content)
-        if isinstance(payload, dict):
-            payload.pop("coveredPoints", None)
-            payload.pop("errorEvidence", None)
+        # 旧契约字段由 AIEvaluationOutput.discard_removed_fields 丢弃并记录告警。
         evaluation = AIEvaluationOutput.model_validate(payload)
     except (ValidationError, ValueError, TypeError) as error:
         if isinstance(error, ValidationError):

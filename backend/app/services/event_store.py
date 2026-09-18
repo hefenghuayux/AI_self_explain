@@ -96,6 +96,13 @@ class EventStore:
             statement = statement.limit(limit)
         return list(self.database_session.scalars(statement))
 
+    def latest_seq(self, session_id: int) -> int | None:
+        """返回会话当前最大的事件序号；会话还没有任何事件时返回 None。"""
+        self._require_session(session_id)
+        return self.database_session.scalar(
+            select(func.max(SessionEvent.seq)).where(SessionEvent.session_id == session_id)
+        )
+
     def get_event(self, session_id: int, seq: int) -> SessionEvent:
         self._require_session(session_id)
         event = self.database_session.scalar(
