@@ -287,6 +287,8 @@ class SessionRepository:
                 }
             )
         for support in support_events:
+            # 关联评价的 support 已由上面的 EVALUATION 记录展示 content，
+            # 但它携带的子问题与整合引导仍要各自成条，否则学生看不到这两步。
             if support.evaluation_id is None:
                 timeline.append(
                     {
@@ -301,25 +303,39 @@ class SessionRepository:
                         "created_at": support.created_at,
                     }
                 )
-                if support.follow_up_content:
-                    answer_submission = guided_answer_submissions_by_support_id.get(support.id)
-                    timeline.append(
-                        {
-                            "id": f"support-follow-up-{support.id}",
-                            "event_type": "SUPPORT",
-                            "speaker": "AI",
-                            "submission_type": None,
-                            "content": support.follow_up_content,
-                            "correctness": None,
-                            "completeness": None,
-                            "action": support.support_type,
-                            "created_at": (
-                                answer_submission.created_at
-                                if answer_submission is not None
-                                else support.created_at
-                            ),
-                        }
-                    )
+            if support.guided_questions:
+                timeline.append(
+                    {
+                        "id": f"support-questions-{support.id}",
+                        "event_type": "GUIDED_QUESTIONS",
+                        "speaker": "AI",
+                        "submission_type": None,
+                        "content": _format_guided_questions_for_timeline(support.guided_questions),
+                        "correctness": None,
+                        "completeness": None,
+                        "action": None,
+                        "created_at": support.created_at,
+                    }
+                )
+            if support.follow_up_content:
+                answer_submission = guided_answer_submissions_by_support_id.get(support.id)
+                timeline.append(
+                    {
+                        "id": f"support-follow-up-{support.id}",
+                        "event_type": "FOLLOW_UP",
+                        "speaker": "AI",
+                        "submission_type": None,
+                        "content": support.follow_up_content,
+                        "correctness": None,
+                        "completeness": None,
+                        "action": None,
+                        "created_at": (
+                            answer_submission.created_at
+                            if answer_submission is not None
+                            else support.created_at
+                        ),
+                    }
+                )
         solution_transitions = self.database_session.scalars(
             select(StateTransitionEvent)
             .where(
@@ -1375,6 +1391,15 @@ def student_human_review_message() -> str:
     return "已申请人工复核，你可以继续自讲。"
 
 
+def _format_guided_questions_for_timeline(guided_questions: list[dict[str, str]]) -> str:
+    question_lines = [
+        f"{index}. {question['question']}"
+        for index, question in enumerate(guided_questions, start=1)
+        if "question" in question
+    ]
+    return "\n".join(question_lines)
+
+
 def _format_guided_answers_for_timeline(
     guided_questions: list[dict[str, str]], answers: list[GuidedAnswer]
 ) -> str:
@@ -1391,18 +1416,29 @@ def _format_guided_answers_for_timeline(
 
 
 def _timeline_sort_key(item: dict[str, object]) -> tuple[object, int, str]:
+    """同一秒内按教学流程排列。
+
+    数据库时间戳只精确到秒，一次自讲往返里的评价、子问题和学生作答常落在同一秒，
+    所以先后必须由事件类型决定。取值按流程顺序排列并留出间隔，便于以后插入新类型。
+    """
     event_type = str(item["event_type"])
     submission_type = str(item.get("submission_type"))
     if event_type == "SUBMISSION" and submission_type == "SELF_EXPLANATION":
         event_order = 0
     elif event_type == "EVALUATION":
-        event_order = 1
-    elif event_type == "SUBMISSION":
-        event_order = 2
+        event_order = 10
+    elif event_type == "SUBMISSION" and submission_type in {"SUPPORT_REQUEST", "DOUBT", "APPEAL"}:
+        event_order = 20
     elif event_type == "SUPPORT":
-        event_order = 3
+        event_order = 30
+    elif event_type == "GUIDED_QUESTIONS":
+        event_order = 40
+    elif event_type == "SUBMISSION" and submission_type == "GUIDED_ANSWER":
+        event_order = 50
+    elif event_type == "FOLLOW_UP":
+        event_order = 60
     else:
-        event_order = 4
+        event_order = 70
     return (
         item["created_at"],
         event_order,

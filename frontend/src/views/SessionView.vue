@@ -96,6 +96,8 @@ const timelineEventLabels: Record<LearningTimelineItem["eventType"], string> = {
   SUBMISSION: "学生提交",
   EVALUATION: "学习反馈",
   SUPPORT: "学习支持",
+  GUIDED_QUESTIONS: "子问题",
+  FOLLOW_UP: "整合引导",
   FULL_SOLUTION: "完整解析",
   NEED_HUMAN: "人工复核已申请",
 }

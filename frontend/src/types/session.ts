@@ -49,7 +49,14 @@ export interface GuidedAnswer {
 
 export interface LearningTimelineItem {
   id: string
-  eventType: "SUBMISSION" | "EVALUATION" | "SUPPORT" | "FULL_SOLUTION" | "NEED_HUMAN"
+  eventType:
+    | "SUBMISSION"
+    | "EVALUATION"
+    | "SUPPORT"
+    | "GUIDED_QUESTIONS"
+    | "FOLLOW_UP"
+    | "FULL_SOLUTION"
+    | "NEED_HUMAN"
   speaker: "STUDENT" | "AI" | "SYSTEM"
   submissionType: "SELF_EXPLANATION" | "SUPPORT_REQUEST" | "GUIDED_ANSWER" | "DOUBT" | "APPEAL" | null
   content: string

@@ -129,6 +129,96 @@ def test_timeline_persists_visible_feedback_and_hides_structured_details(
     assert appealed_items[-1]["content"] == "已申请人工复核，你可以继续自讲。"
 
 
+def test_timeline_records_guided_questions_and_follow_up_for_evaluation_support(
+    settings, monkeypatch
+) -> None:
+    """评价关联的子问题支持事件也要在时间线里各自成条。
+
+    这类 support 的 content 由 EVALUATION 记录展示，子问题与整合引导则没有其它出口；
+    早前它们整体被 evaluation_id 判断跳过，学生在历史记录里看不到这两步。
+    """
+
+    def fake_evaluate(self, request) -> AIModelResponse:
+        if request.purpose == "AI_TEACHING":
+            return AIModelResponse(
+                "{\"choices\": []}",
+                json.dumps(
+                    {
+                        "content": "先只处理最大值条件这一步。",
+                        "questions": [
+                            {"id": "q1", "question": "最大值应该怎样用端点函数值表示？"}
+                        ],
+                    }
+                ),
+                8,
+            )
+        if request.purpose == "GUIDED_ANSWER_ASSESSMENT":
+            return AIModelResponse(
+                "{\"choices\": []}",
+                json.dumps(
+                    {
+                        "results": [{"questionId": "q1", "result": "CORRECT"}],
+                        "content": "这一问回答正确，接下来确认最小值。",
+                    }
+                ),
+                8,
+            )
+        return AIModelResponse(
+            "{\"choices\": []}",
+            json.dumps(
+                {
+                    "correctness": "CORRECT",
+                    "completeness": "INCOMPLETE",
+                    "hasProgress": True,
+                    "mainReason": "知识应用问题",
+                    "otherReasons": [],
+                    "judgeReason": "学生尚未说明最小值的来源。",
+                }
+            ),
+            8,
+        )
+
+    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
+    with prepare_client(settings, monkeypatch) as client:
+        started_session = create_started_session(client)
+        evaluation_response = client.post(
+            f"/api/sessions/{started_session['id']}/text-attempts",
+            json={
+                "confirmedText": "a 可能是 0 或 2，最小值也是 -1。",
+                "version": started_session["version"],
+            },
+        )
+        assert evaluation_response.status_code == 200
+        prompted = evaluation_response.json()
+        assert prompted["flowStage"] == "WAIT_GUIDED_ANSWERS"
+        prompted_items = client.get(f"/api/sessions/{started_session['id']}/timeline").json()
+        answer_response = client.post(
+            f"/api/sessions/{started_session['id']}/guided-answers",
+            json={
+                "version": prompted["version"],
+                "answers": [{"questionId": "q1", "answer": "max{f(0),f(2)}=3。"}],
+            },
+        )
+        assert answer_response.status_code == 200
+        answered_items = client.get(f"/api/sessions/{started_session['id']}/timeline").json()
+
+    def outline(items: list[dict[str, object]]) -> list[tuple[str, str, str]]:
+        return [(item["eventType"], item["speaker"], item["content"]) for item in items]
+
+    assert outline(prompted_items) == [
+        ("SUBMISSION", "STUDENT", "a 可能是 0 或 2，最小值也是 -1。"),
+        ("EVALUATION", "AI", "先只处理最大值条件这一步。"),
+        ("GUIDED_QUESTIONS", "AI", "1. 最大值应该怎样用端点函数值表示？"),
+    ]
+    assert outline(answered_items) == [
+        ("SUBMISSION", "STUDENT", "a 可能是 0 或 2，最小值也是 -1。"),
+        ("EVALUATION", "AI", "先只处理最大值条件这一步。"),
+        ("GUIDED_QUESTIONS", "AI", "1. 最大值应该怎样用端点函数值表示？"),
+        ("SUBMISSION", "STUDENT", "最大值应该怎样用端点函数值表示？\n答：max{f(0),f(2)}=3。"),
+        ("FOLLOW_UP", "AI", "这一问回答正确，接下来确认最小值。"),
+    ]
+
+
 def test_timeline_records_solution_display_without_revealing_solution_content(
     settings, monkeypatch
 ) -> None:

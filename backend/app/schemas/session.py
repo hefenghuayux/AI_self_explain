@@ -68,6 +68,8 @@ TimelineEventType = Literal[
     "SUBMISSION",
     "EVALUATION",
     "SUPPORT",
+    "GUIDED_QUESTIONS",
+    "FOLLOW_UP",
     "FULL_SOLUTION",
     "NEED_HUMAN",
 ]
