@@ -17,6 +17,8 @@ export interface Question extends QuestionInput {
   updatedAt: string
 }
 
+export type QuestionProgress = "NOT_ATTEMPTED" | "ATTEMPTED" | "COMPLETED"
+
 export interface QuestionListItem {
   id: number
   questionContent: string
@@ -26,6 +28,7 @@ export interface QuestionListItem {
   difficultyLevel: number | null
   evaluationMode: "FULL_RUBRIC" | "BASIC" | "AI_GENERAL"
   rubricPointCount: number
+  progress: QuestionProgress
   archivedAt: string | null
 }
 

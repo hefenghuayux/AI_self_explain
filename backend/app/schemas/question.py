@@ -1,8 +1,9 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
+QuestionProgress = Literal["NOT_ATTEMPTED", "ATTEMPTED", "COMPLETED"]
 RequiredText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 RequiredTextList = Annotated[list[RequiredText], Field(min_length=1)]
 OptionalText = RequiredText | None
@@ -110,6 +111,7 @@ class QuestionListItemResponse(QuestionSchema):
     difficulty_level: int | None
     evaluation_mode: str
     rubric_point_count: int
+    progress: QuestionProgress
     archived_at: datetime | None
 
 
