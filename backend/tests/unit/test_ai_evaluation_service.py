@@ -1,8 +1,6 @@
-# -*- coding: utf-8 -*-
 import json
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -20,8 +18,8 @@ from app.schemas.model_request_snapshot import (
 from app.services.ai_evaluation import (
     AIModelClient,
     _render_prompt,
-    build_progress_context,
     _truncate_by_interaction,
+    build_progress_context,
 )
 
 
@@ -57,7 +55,6 @@ def test_ai_model_client_uses_configured_chat_completions_protocol(settings) -> 
         ),
         session=Session(round=1, support_count_round=0),
         attempt=ExplanationAttempt(confirmed_text="两个一相加等于二。"),
-        schema={"type": "object", "additionalProperties": False},
         validation_errors=[],
         model=settings.ai_model,
         prompt_version=settings.prompt_version,
@@ -98,7 +95,6 @@ def test_evaluation_snapshot_separates_session_state_from_transport_prompt() -> 
         question=question,
         session=session,
         attempt=attempt,
-        schema={"type": "object"},
         validation_errors=[],
         model="test-model",
         prompt_version="evaluation-v1",
@@ -149,7 +145,6 @@ def test_evaluation_v1_1_has_five_layer_structure() -> None:
         question=question,
         session=session,
         attempt=attempt,
-        schema={"type": "object"},
         validation_errors=[],
         model="test-model",
         prompt_version="evaluation-v1",
@@ -163,23 +158,22 @@ def test_evaluation_v1_1_has_five_layer_structure() -> None:
     # messages[0] system：全局共享前缀
     assert messages[0].role == "system"
     assert "后端模型组件" in messages[0].content
-    assert "原因定义" in messages[0].content
 
-    # messages[1] user：会话级稳定上下文（题目数据，不含 outputSchema）
+    # messages[1] user：会话级稳定上下文（题目数据）
     assert messages[1].role == "user"
     msg1 = json.loads(messages[1].content)
     assert msg1["questionContent"] == "1+1 等于多少？"
-    assert "outputSchema" not in msg1
 
     # messages[2] user：共享历史
     assert messages[2].role == "user"
     msg2 = json.loads(messages[2].content)
     assert "events" in msg2
 
-    # messages[3] user：taskType 固定指令 + JSON Schema
+    # messages[3] user：taskType 固定指令
     assert messages[3].role == "user"
     assert "评价器" in messages[3].content
-    assert '"type": "object"' in messages[3].content
+    assert "{{JSON_SCHEMA}}" not in messages[3].content
+    assert "表达与输入问题" in messages[3].content
 
     # messages[4] user：本轮任务数据
     assert messages[4].role == "user"
@@ -192,7 +186,7 @@ def test_evaluation_v1_1_has_five_layer_structure() -> None:
     # blocks
     assert "后端模型组件" in request.blocks.system_instructions
     assert request.blocks.task_instructions is not None
-    assert "JSON Schema" in request.blocks.task_instructions
+    assert "输出格式" in request.blocks.task_instructions
 
 
 def test_evaluation_v1_1_retry_only_changes_fifth_layer() -> None:
@@ -214,7 +208,6 @@ def test_evaluation_v1_1_retry_only_changes_fifth_layer() -> None:
         question=question,
         session=session,
         attempt=attempt,
-        schema={"type": "object"},
         validation_errors=[],
         model="test-model",
         prompt_version="evaluation-v1",
@@ -223,7 +216,6 @@ def test_evaluation_v1_1_retry_only_changes_fifth_layer() -> None:
         question=question,
         session=session,
         attempt=attempt,
-        schema={"type": "object"},
         validation_errors=["字段缺失"],
         model="test-model",
         prompt_version="evaluation-v1",
@@ -348,6 +340,7 @@ def _support(
     guided_questions: list[dict[str, str]] | None = None,
     guided_answers: list[dict[str, str]] | None = None,
     follow_up_content: str | None = None,
+    created_seq: int | None = None,
 ) -> SupportEvent:
     return SupportEvent(
         id=event_id,
@@ -361,6 +354,7 @@ def _support(
         guided_answers=guided_answers,
         follow_up_content=follow_up_content,
         created_at=created_at,
+        created_seq=created_seq,
     )
 
 
@@ -396,6 +390,56 @@ def test_build_progress_context_orders_by_created_at_not_id() -> None:
     assert events[2]["replyTo"] == "support:10"
     assert events[2]["content"][0]["questionId"] == "q1"
     assert events[2]["content"][0]["answer"] == "看端点"
+
+
+def test_build_progress_context_prefers_session_event_seq_over_timestamps() -> None:
+    """锚点齐全时，session_events.seq 覆盖 created_at 的先后。"""
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    attempt = _attempt(50, "学生第一轮自讲", base + timedelta(seconds=5))
+    support = _support(
+        10,
+        base,
+        guided_questions=[{"id": "q1", "question": "最大值在哪取得？"}],
+        created_seq=5,
+    )
+    events = build_progress_context(
+        previous_attempts=[attempt],
+        previous_support=[support],
+        max_interactions=12,
+        attempt_seqs={50: 1},
+    )["events"]
+
+    assert [event["kind"] for event in events] == ["explanation", "teaching"]
+    assert [event["interactionId"] for event in events] == ["attempt:50", "support:10"]
+
+
+def test_build_progress_context_orders_same_second_records_by_session_event_seq() -> None:
+    """时间戳落在同一秒时由锚点决定先后，不再比较跨表主键。"""
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    attempt = _attempt(50, "学生第一轮自讲", base)          # id=50
+    support = _support(10, base, created_seq=5)            # id=10，锚点更晚
+    events = build_progress_context(
+        previous_attempts=[attempt],
+        previous_support=[support],
+        max_interactions=12,
+        attempt_seqs={50: 1},
+    )["events"]
+
+    assert [event["kind"] for event in events] == ["explanation", "teaching"]
+
+
+def test_build_progress_context_falls_back_to_created_at_without_anchor() -> None:
+    """缺少锚点的历史数据仍按 created_at 排序。"""
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    support = _support(10, base)
+    attempt = _attempt(50, "学生第一轮自讲", base + timedelta(seconds=1))
+    events = build_progress_context(
+        previous_attempts=[attempt],
+        previous_support=[support],
+        max_interactions=12,
+    )["events"]
+
+    assert [event["kind"] for event in events] == ["teaching", "explanation"]
 
 
 def test_build_progress_context_teaching_event_embeds_questions_text() -> None:

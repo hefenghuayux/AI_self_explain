@@ -1,12 +1,16 @@
 import json
 
+import pytest
+
 from app.models.question import Question
 from app.models.session import Session
 from app.models.support_event import SupportEvent
-from app.schemas.support import GuidedAnswer
+from app.schemas.support import GuidedAnswer, SupportRequestOutput
 from app.services.ai_support import (
+    MAX_GUIDED_QUESTIONS,
     _render_answer_assessment_prompt,
     _render_support_prompt,
+    _validate_support_request,
 )
 
 
@@ -58,7 +62,7 @@ def test_support_request_has_five_layer_structure() -> None:
     assert "round" not in msg1
     assert "supportCountRound" not in msg1
 
-    # [2] user: shared history (empty for support)
+    # [2] user: shared history (default empty when progress_context not provided)
     assert messages[2].role == "user"
     msg2 = json.loads(messages[2].content)
     assert msg2 == {"events": []}
@@ -135,7 +139,7 @@ def test_guided_answer_has_five_layer_structure() -> None:
     assert msg1["questionContent"] == "计算 1 + 1。"
     assert "round" not in msg1
 
-    # [2] user: shared history (empty)
+    # [2] user: shared history (default empty when progress_context not provided)
     assert messages[2].role == "user"
     msg2 = json.loads(messages[2].content)
     assert msg2 == {"events": []}
@@ -162,3 +166,85 @@ def test_guided_answer_has_five_layer_structure() -> None:
     assert request.privacy.contains_student_content is True
     assert request.privacy.contains_answer_material is True
     assert request.privacy.contains_memory is False
+
+
+def test_support_progress_context_passed_through() -> None:
+    """传入 progress_context 时 messages[2] 包含对应 events。"""
+    progress_context = {
+        "events": [
+            {
+                "seq": 0,
+                "actor": "student",
+                "kind": "explanation",
+                "content": "旧自讲",
+                "interactionId": "attempt:1",
+            },
+            {
+                "seq": 1,
+                "actor": "teacher",
+                "kind": "teaching",
+                "content": "旧提示",
+                "interactionId": "support:1",
+            },
+        ]
+    }
+    request = _render_support_prompt(
+        question=question(),
+        session=session(),
+        main_draft="新草稿",
+        doubt_text=None,
+        validation_errors=[],
+        model="test-model",
+        prompt_version="support-v1",
+        progress_context=progress_context,
+    )
+    msg2 = json.loads(request.transport.messages[2].content)
+    assert msg2 == progress_context
+    assert len(msg2["events"]) == 2
+    assert msg2["events"][0]["actor"] == "student"
+
+
+def support_output(question_count: int) -> SupportRequestOutput:
+    return SupportRequestOutput(
+        action="GUIDED_QUESTIONS",
+        content="先判断开口方向。",
+        questions=[
+            {"id": f"q{index}", "question": f"第 {index} 个子问题"}
+            for index in range(1, question_count + 1)
+        ],
+    )
+
+
+@pytest.mark.parametrize("question_count", [1, MAX_GUIDED_QUESTIONS])
+def test_support_request_accepts_guided_questions_within_limit(question_count: int) -> None:
+    assert _validate_support_request(support_output(question_count)) == []
+
+
+@pytest.mark.parametrize("question_count", [0, MAX_GUIDED_QUESTIONS + 1, 12])
+def test_support_request_rejects_guided_questions_outside_limit(question_count: int) -> None:
+    errors = _validate_support_request(support_output(question_count))
+
+    assert errors == [f"GUIDED_QUESTIONS 的子问题数量必须在 1 到 {MAX_GUIDED_QUESTIONS} 之间"]
+
+
+def test_support_request_rejects_duplicate_question_ids() -> None:
+    output = SupportRequestOutput(
+        action="GUIDED_QUESTIONS",
+        content="先判断开口方向。",
+        questions=[
+            {"id": "q1", "question": "第一个"},
+            {"id": "q1", "question": "重复标识"},
+        ],
+    )
+
+    assert _validate_support_request(output) == ["questions 的 id 不能重复"]
+
+
+def test_non_guided_action_rejects_questions() -> None:
+    output = SupportRequestOutput(
+        action="SIMPLE_DOUBT_ANSWER",
+        content="这里用的是加法交换律。",
+        questions=[{"id": "q1", "question": "多余的子问题"}],
+    )
+
+    assert _validate_support_request(output) == ["非子问题动作不能提供 questions"]

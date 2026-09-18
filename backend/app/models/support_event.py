@@ -26,3 +26,7 @@ class SupportEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # 创建时的会话事件序号（session_events.seq），作为上下文历史的确定性排序锚点。
+    # created_at 在不同表之间可能落在同一秒，锚点才是一会话内唯一单调的顺序来源。
+    # 事件日志上线前的历史数据为 NULL，读取侧回退 created_at。
+    created_seq: Mapped[int | None] = mapped_column(Integer)

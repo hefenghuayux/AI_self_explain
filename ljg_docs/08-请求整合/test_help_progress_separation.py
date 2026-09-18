@@ -2,11 +2,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from pydantic import ValidationError
 
 from app.api.sessions import apply_support_request_output
-from app.rules.teaching_decision import decide_teaching
-from app.schemas.merged import MergedModelOutput, validate_merged_output
 from app.schemas.support import SupportRequestOutput
 from app.services.ai_evaluation import _render_prompt
 from app.services.ai_support import _render_support_prompt, _validate_support_request
@@ -52,46 +49,6 @@ def test_help_has_no_coverage_and_rejects_removed_action():
         SupportRequestOutput.model_validate({**payload, "action": "CURRENT_STEP_ANSWER"})
 
 
-def merged(progress, points, action):
-    return MergedModelOutput(
-        **reasons(), correctness="CORRECT", completeness="INCOMPLETE",
-        covered_points=points, error_evidence=[], need_human_reason=None,
-        has_progress=progress, teaching_action=action, content="Continue.",
-        questions=[{"id": "q1", "question": "Why?"}] if action == "ASK_FOCUSED_QUESTION" else [],
-    )
-
-
-@pytest.mark.parametrize("progress,points,action,count", [
-    (True, [], "ASK_FOCUSED_QUESTION", 0),
-    (False, [1], "GIVE_HINT", 5),
-])
-def test_progress_is_independent_of_coverage(progress, points, action, count):
-    session = SimpleNamespace(
-        covered_points_current_round=[], covered_points_all=[], no_progress_count=4,
-        round=1, support_count_round=0,
-    )
-    result = decide_teaching(
-        merged_output=merged(progress, points, action), session=session,
-        settings=SimpleNamespace(first_round_support_limit=6, second_round_support_limit=3),
-    )
-    assert result.allowed_action == action
-    assert result.coverage.no_progress_count == count
-
-
-def test_no_progress_cannot_return_question_action():
-    errors = validate_merged_output(merged(False, [], "ASK_FOCUSED_QUESTION"), ["step"], "text")
-    assert "无进展时 teachingAction 必须为 GIVE_HINT" in errors
-
-
-def test_progress_is_required_boolean():
-    payload = merged(True, [], "ASK_FOCUSED_QUESTION").model_dump(by_alias=True)
-    del payload["hasProgress"]
-    with pytest.raises(ValidationError):
-        MergedModelOutput.model_validate(payload)
-    with pytest.raises(ValidationError):
-        MergedModelOutput.model_validate({**payload, "hasProgress": "false"})
-
-
 def test_actual_prompts_separate_help_and_explanation_progress():
     question = SimpleNamespace(
         question_content="Solve.", standard_answer="2", evaluation_mode="FULL_RUBRIC",
@@ -105,8 +62,24 @@ def test_actual_prompts_separate_help_and_explanation_progress():
     help_text = help_request.transport.messages[0].content
     for removed in ("coveredPoints", "forceCurrentStepAnswer", "CURRENT_STEP_ANSWER"):
         assert removed not in help_text
-    history = {"previousExplanations": ["Previous reasoning"],
-               "previousTeaching": [{"content": "Previous hint"}]}
+    history = {
+        "events": [
+            {
+                "seq": 0,
+                "actor": "student",
+                "kind": "explanation",
+                "content": "Previous reasoning",
+                "interactionId": "attempt:1",
+            },
+            {
+                "seq": 1,
+                "actor": "teacher",
+                "kind": "teaching",
+                "content": "Previous hint",
+                "interactionId": "support:1",
+            },
+        ]
+    }
     explanation = _render_prompt(
         **common, attempt=SimpleNamespace(confirmed_text="Alternative reasoning"),
         schema={}, progress_context=history,
@@ -115,4 +88,6 @@ def test_actual_prompts_separate_help_and_explanation_progress():
     assert "Previous reasoning" in text
     assert "Previous hint" in text
     assert "Alternative reasoning" in text
+    assert "previousExplanations" not in text
+    assert "previousTeaching" not in text
     assert explanation.blocks.session_context["progressContext"] == history

@@ -89,6 +89,7 @@ def load_history(
     exclude_attempt_id: int | None = None,
 ) -> HistoryView:
     # The existing event projection is shared without importing AI services eagerly.
+    from app.repositories.sessions import session_run_id
     from app.services.ai_evaluation import build_progress_context
 
     attempts_query = select(ExplanationAttempt).where(
@@ -111,10 +112,26 @@ def load_history(
             .execution_options(populate_existing=True)
         )
     )
+    # 自讲的顺序锚点是提交时写入的 user.message 事件；支持事件用自身 created_seq。
+    submission_seqs = {
+        event.run_id: event.seq
+        for event in database_session.scalars(
+            select(SessionEvent).where(
+                SessionEvent.session_id == session.id,
+                SessionEvent.event_type == "user.message",
+            )
+        )
+    }
+    attempt_seqs = {
+        attempt.id: seq
+        for attempt in attempts
+        if (seq := submission_seqs.get(session_run_id(session.id, attempt.id))) is not None
+    }
     events = build_progress_context(
         previous_attempts=attempts,
         previous_support=supports,
         max_interactions=len(attempts) + len(supports) + 1,
+        attempt_seqs=attempt_seqs,
     )["events"]
     groups = group_history(events)
     unresolved_ids = frozenset(

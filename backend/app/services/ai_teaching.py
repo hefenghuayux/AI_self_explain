@@ -24,7 +24,12 @@ from app.schemas.model_request_snapshot import (
     ModelRequestSnapshot,
     ModelTransportSnapshot,
 )
-from app.schemas.teaching import InstructionFromRules, TeachingContext, TeachingOutput
+from app.schemas.teaching import (
+    InstructionFromRules,
+    ReasonGuidanceExample,
+    TeachingContext,
+    TeachingOutput,
+)
 from app.services.ai_evaluation import AIModelClient, AIModelResponse, AITransportError
 from app.services.ai_reasoning import resolve_reasoning_params
 from app.services.session_event_log import SessionEventLog
@@ -35,6 +40,14 @@ RESPONSE_GOALS = {
     "ASK_FOCUSED_QUESTION": "ASK_ONE_FOCUSED_QUESTION",
     "GIVE_HINT": "GIVE_ONE_LOCAL_HINT",
     "GIVE_CORRECTION": "CORRECT_IDENTIFIED_ERROR",
+}
+REASON_EXAMPLE_DIR = Path(__file__).resolve().parents[1] / "prompts" / "教学策略样例"
+REASON_EXAMPLE_FILES: dict[str, str] = {
+    "表达与输入问题": "01-表达与输入问题.md",
+    "题意理解问题": "02-题意理解问题.md",
+    "知识理解与回忆问题": "03-知识理解与回忆问题.md",
+    "知识应用问题": "04-知识应用问题.md",
+    "执行错误": "05-执行错误.md",
 }
 logger = logging.getLogger(__name__)
 
@@ -279,7 +292,38 @@ def _build_context(
             ],
             response_goal=RESPONSE_GOALS[decision.allowed_action],
         ),
+        reason_guidance_examples=_load_reason_examples(evaluation.main_reason),
     )
+
+
+def _load_reason_examples(main_reason: str | None) -> list[ReasonGuidanceExample]:
+    """根据 mainReason 从教学策略样例目录加载一个代表性例子。
+
+    约束（见共享前缀草案 §7.1）：
+    - 例子只用于参考引导方式，提示词中明确禁止照抄。
+    - 例子不进入评价、疑问支持或子问题评估请求。
+    """
+    if main_reason is None:
+        return []
+    filename = REASON_EXAMPLE_FILES.get(main_reason)
+    if filename is None:
+        return []
+    filepath = REASON_EXAMPLE_DIR / filename
+    if not filepath.exists():
+        return []
+    content = filepath.read_text(encoding="utf-8")
+    sections = content.split("\n## ")
+    examples: list[ReasonGuidanceExample] = []
+    for section in sections:
+        if not section.startswith("样例"):
+            continue
+        lines = section.split("\n")
+        title = lines[0].strip()
+        body = "\n".join(lines[1:]).strip()
+        examples.append(
+            ReasonGuidanceExample(reason=main_reason, example=f"## {title}\n\n{body}")
+        )
+    return examples[:1]  # 只取第一个样例，避免过长
 
 
 def _render_prompt(
@@ -293,18 +337,14 @@ def _render_prompt(
 ) -> ModelRequestSnapshot:
     shared_system = SHARED_SYSTEM_PATH.read_text(encoding="utf-8")
     template = PROMPT_PATH.read_text(encoding="utf-8")
-    schema = TeachingOutput.model_json_schema(by_alias=True)
     # 五层消息
     # messages[0] system：全局共享前缀
     # messages[1] user：会话级稳定上下文（题目数据）
     question_context = dict(context.question)
-    question_message = {k: v for k, v in question_context.items() if k != "outputSchema"}
     # messages[2] user：截至当前任务前的共享历史（教学历史）
     shared_history = {"teachingHistory": context.teaching_history}
-    # messages[3] user：taskType 固定指令 + JSON Schema
-    task_prompt = template.replace(
-        "{{JSON_SCHEMA}}", json.dumps(schema, ensure_ascii=False)
-    )
+    # messages[3] user：taskType 固定指令
+    task_prompt = template
     # messages[4] user：本轮任务数据
     current_data: dict[str, object] = {
         "currentStudentText": context.current_student_text,
@@ -313,6 +353,11 @@ def _render_prompt(
             mode="json", by_alias=True
         ),
     }
+    if context.reason_guidance_examples:
+        current_data["reasonGuidanceExamples"] = [
+            ex.model_dump(mode="json", by_alias=True)
+            for ex in context.reason_guidance_examples
+        ]
     if validation_errors:
         current_data["previousOutput"] = previous_output
         current_data["validationErrors"] = validation_errors
@@ -350,7 +395,7 @@ def _render_prompt(
                 ModelRequestMessage(role="system", content=shared_system),
                 ModelRequestMessage(
                     role="user",
-                    content=json.dumps(question_message, ensure_ascii=False),
+                    content=json.dumps(question_context, ensure_ascii=False),
                 ),
                 ModelRequestMessage(
                     role="user",

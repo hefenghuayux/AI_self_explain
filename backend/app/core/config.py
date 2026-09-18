@@ -29,7 +29,6 @@ class Settings(BaseSettings):
 
     first_round_support_limit: PositiveInt
     second_round_support_limit: PositiveInt
-    guided_question_request_limit: PositiveInt
 
     ai_request_timeout_seconds: PositiveFloat
     ai_transport_max_retries: Annotated[int, Field(ge=0)]
@@ -57,7 +56,6 @@ class Settings(BaseSettings):
     ai_api_key: SecretStr
     ai_model: NonEmptyString
     ai_reasoning_effort: str | None = None
-    progress_context_max_interactions: PositiveInt = 12
     ai_context_window_tokens: PositiveInt = 258000
     ai_max_output_tokens: PositiveInt = 10000
     context_compaction_after_response_ratio: Annotated[float, Field(gt=0, lt=1)] = 0.80

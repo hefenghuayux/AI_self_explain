@@ -84,6 +84,7 @@ class CompactTextFormatter(logging.Formatter):
             "model",
             "durationMs",
             "errorType",
+            "legacyFields",
         ):
             value = getattr(record, field_name, None)
             if value is not None:

@@ -22,13 +22,18 @@ class TeachingSchema(QuestionSchema):
 
 
 class TeachingQuestion(TeachingSchema):
-    id: RequiredText = Field(max_length=100)
-    question: RequiredText = Field(max_length=180)
+    id: RequiredText
+    question: RequiredText
 
 
 class TeachingOutput(TeachingSchema):
-    content: RequiredText = Field(max_length=600)
+    content: RequiredText
     questions: list[TeachingQuestion] = Field(max_length=1)
+
+
+class ReasonGuidanceExample(TeachingSchema):
+    reason: RequiredText
+    example: RequiredText
 
 
 class InstructionFromRules(TeachingSchema):
@@ -45,3 +50,6 @@ class TeachingContext(TeachingSchema):
     latest_evaluation: AIEvaluationOutput
     teaching_history: list[dict[str, object]]
     instruction_from_rules: InstructionFromRules
+    reason_guidance_examples: list[ReasonGuidanceExample] = Field(
+        default_factory=list, alias="reasonGuidanceExamples"
+    )
