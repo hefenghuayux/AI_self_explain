@@ -94,7 +94,7 @@ describe("QuestionListView", () => {
       "/api/sessions",
       expect.objectContaining({ body: JSON.stringify({ questionId: 1, restart: false }) }),
     )
-    expect(wrapper.text()).toContain("重新自讲")
+    expect(wrapper.text()).not.toContain("重新自讲")
   })
 
   it("shows question management actions to a teacher", async () => {
@@ -127,7 +127,9 @@ describe("QuestionListView", () => {
     expect(wrapper.text()).toContain("数学")
     expect(wrapper.text()).toContain("自讲")
     expect(wrapper.text()).toContain("录入题目")
-    expect(wrapper.text()).toContain("编辑")
+    expect(wrapper.text()).toContain("查看")
+    expect(wrapper.text()).not.toContain("编辑")
+    expect(wrapper.text()).not.toContain("重新自讲")
     expect(wrapper.text()).toContain("归档")
   })
 })

@@ -97,12 +97,12 @@ async function changeArchiveScope() {
   await Promise.all([loadFilterOptions(), loadQuestions()])
 }
 
-async function startSelfExplanation(question: QuestionListItem, restart = false) {
+async function startSelfExplanation(question: QuestionListItem) {
   if (question.archivedAt) return
   actingQuestionId.value = question.id
   errorMessage.value = ""
   try {
-    const session = await createSession(String(question.id), restart)
+    const session = await createSession(String(question.id))
     await router.push(`/sessions/${session.id}`)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
@@ -200,7 +200,7 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column
         label="操作"
-        :width="authUser?.role === 'TEACHER' ? 420 : 200"
+        :width="authUser?.role === 'TEACHER' ? 200 : 120"
         fixed="right"
       >
         <template #default="scope">
@@ -214,20 +214,9 @@ onMounted(async () => {
             >
               开始自讲
             </el-button>
-            <el-button
-              v-if="!scope.row.archivedAt"
-              size="small"
-              :loading="actingQuestionId === scope.row.id"
-              @click="startSelfExplanation(scope.row, true)"
-            >
-              重新自讲
-            </el-button>
             <template v-if="authUser?.role === 'TEACHER'">
               <RouterLink :to="`/questions/${scope.row.id}`">
                 <el-button size="small">查看</el-button>
-              </RouterLink>
-              <RouterLink v-if="!scope.row.archivedAt" :to="`/questions/${scope.row.id}/edit`">
-                <el-button size="small">编辑</el-button>
               </RouterLink>
               <el-button
                 size="small"
@@ -256,10 +245,8 @@ onMounted(async () => {
         <div class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         <div class="row-actions">
           <el-button v-if="!question.archivedAt" type="success" :loading="actingQuestionId === question.id" @click="startSelfExplanation(question)">开始自讲</el-button>
-          <el-button v-if="!question.archivedAt" :loading="actingQuestionId === question.id" @click="startSelfExplanation(question, true)">重新自讲</el-button>
           <template v-if="authUser?.role === 'TEACHER'">
             <RouterLink :to="`/questions/${question.id}`"><el-button>查看详情</el-button></RouterLink>
-            <RouterLink v-if="!question.archivedAt" :to="`/questions/${question.id}/edit`"><el-button>编辑</el-button></RouterLink>
             <el-button :type="question.archivedAt ? 'success' : 'warning'" :loading="actingQuestionId === question.id" @click="changeArchiveState(question)">{{ question.archivedAt ? "恢复" : "归档" }}</el-button>
           </template>
         </div>
