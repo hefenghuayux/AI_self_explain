@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Callable
 
 import pytest
 from pydantic import ValidationError
@@ -60,8 +61,12 @@ def test_evaluation_schema_rejects_removed_teaching_fields(field: str) -> None:
         AIEvaluationOutput.model_validate(payload)
 
 
-def collect_evaluation_schema_logs(action: object) -> list[logging.LogRecord]:
-    """直接挂在模块 logger 上收集记录，避免 root handler 被其他测试清空。"""
+def collect_evaluation_schema_logs(action: Callable[[], None]) -> list[logging.LogRecord]:
+    """直接挂在模块 logger 上收集记录。
+
+    alembic/env.py 的 fileConfig 会按默认值禁用已存在的 logger，
+    因此这里显式恢复 logger 状态，保证测试不依赖执行顺序。
+    """
     records: list[logging.LogRecord] = []
 
     class Collector(logging.Handler):
@@ -71,11 +76,14 @@ def collect_evaluation_schema_logs(action: object) -> list[logging.LogRecord]:
     logger = logging.getLogger("app.schemas.ai_evaluation")
     handler = Collector()
     previous_level = logger.level
+    previous_disabled = logger.disabled
     logger.addHandler(handler)
     logger.setLevel(logging.WARNING)
+    logger.disabled = False
     try:
         action()
     finally:
+        logger.disabled = previous_disabled
         logger.setLevel(previous_level)
         logger.removeHandler(handler)
     return records
