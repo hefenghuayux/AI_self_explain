@@ -53,7 +53,7 @@ def test_timeline_persists_visible_feedback_and_hides_structured_details(
     settings, monkeypatch
 ) -> None:
     def fake_evaluate(self, request) -> AIModelResponse:
-        if request.purpose == "AI_SUPPORT":
+        if request.purpose == "AI_TEACHING":
             return AIModelResponse(
                 "{\"choices\": []}",
                 json.dumps({"content": "请重新检查你得出的结果。", "questions": []}),
@@ -64,10 +64,11 @@ def test_timeline_persists_visible_feedback_and_hides_structured_details(
             json.dumps(
                 {
                     "correctness": "WRONG",
-                        "completeness": "COMPLETE",
-                    "missingPoints": [],
-                    "confidence": 1,
-                    "needHumanReason": None,
+                    "completeness": "COMPLETE",
+                    "hasProgress": True,
+                    "mainReason": "执行错误",
+                    "otherReasons": [],
+                    "judgeReason": "学生给出的结果与计算结果不一致。",
                 }
             ),
             8,
@@ -113,8 +114,8 @@ def test_timeline_persists_visible_feedback_and_hides_structured_details(
             "submissionType": None,
             "content": "请重新检查你得出的结果。",
             "correctness": "WRONG",
-                "completeness": "COMPLETE",
-                "action": "GIVE_CORRECTION",
+            "completeness": "COMPLETE",
+            "action": "GIVE_CORRECTION",
             "createdAt": first_items[1]["createdAt"],
         }
     ]

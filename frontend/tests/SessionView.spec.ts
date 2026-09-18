@@ -58,8 +58,6 @@ function createSession(overrides: Partial<Session> = {}): Session {
     noProgressHelpRequestCount: 0,
     solutionExposed: false,
     completionType: null,
-    coveredPointsCurrentRound: [],
-    coveredPointsAll: [],
     currentDraft: "",
     version: 1,
     initialChoice: null,
@@ -293,11 +291,6 @@ describe("SessionView", () => {
         id: 7,
         correctness: "WRONG",
         completeness: "INCOMPLETE",
-        coveredPoints: [],
-        missingPoints: ["正确计算加法"],
-        errorEvidence: [],
-        confidence: 1,
-        needHumanReason: null,
         promptVersion: "v1",
         modelProvider: "test",
         modelName: "test",
@@ -369,11 +362,6 @@ describe("SessionView", () => {
         id: 7,
         correctness: "WRONG",
         completeness: "INCOMPLETE",
-        coveredPoints: [],
-        missingPoints: ["正确计算加法"],
-        errorEvidence: [],
-        confidence: 1,
-        needHumanReason: null,
         promptVersion: "v1",
         modelProvider: "test",
         modelName: "test",
@@ -499,16 +487,6 @@ describe("SessionView", () => {
         id: 4,
         correctness: "WRONG",
         completeness: "INCOMPLETE",
-        coveredPoints: [],
-        missingPoints: ["正确计算加法"],
-        errorEvidence: [{
-          quote: "1 加 1 等于 3。",
-          locationDescription: "计算结果",
-          reason: "两个 1 相加的结果应为 2。",
-          thinkingDirection: "可以用实物计数验证。",
-        }],
-        confidence: 1,
-        needHumanReason: null,
         promptVersion: "test",
         modelProvider: "test",
         modelName: "test",
@@ -533,7 +511,6 @@ describe("SessionView", () => {
 
     expect(wrapper.text()).toContain("最新反馈")
     expect(wrapper.text()).toContain("下一步：请重新检查两个数相加的结果。")
-    expect(wrapper.text()).not.toContain("两个 1 相加的结果应为 2。")
     expect(wrapper.find('[data-testid="request-support"]').exists()).toBe(false)
     expect(wrapper.get(".self-explain-actions").get('[data-testid="submit-explanation"]')).toBeTruthy()
     expect(wrapper.get(".self-explain-actions").findAll('[data-testid="start-voice"]')).toHaveLength(1)
@@ -541,13 +518,9 @@ describe("SessionView", () => {
     expect(wrapper.html().indexOf("最新反馈")).toBeLessThan(
       wrapper.html().indexOf('data-testid="dialog-segmented"'),
     )
-
-    const toggle = wrapper.get('[aria-controls="feedback-details"]')
-    expect(toggle.attributes("aria-expanded")).toBe("false")
-    await toggle.trigger("click")
-
-    expect(toggle.attributes("aria-expanded")).toBe("true")
-    expect(wrapper.text()).toContain("两个 1 相加的结果应为 2。")
+    // 评价响应已不再返回 errorEvidence，反馈区不提供评价依据展开入口。
+    expect(wrapper.find('[aria-controls="feedback-details"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain("查看评价依据")
   })
 
   it("restores saved drafts for each segmented input block", async () => {

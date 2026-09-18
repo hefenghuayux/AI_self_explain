@@ -12,19 +12,10 @@ export type FlowStage =
   | "WAIT_GUIDED_ANSWERS"
   | "SHOWING_FULL_SOLUTION"
 
-export interface ErrorEvidence {
-  quote: string
-  locationDescription: string
-  reason: string
-  thinkingDirection: string
-}
-
 export interface AIEvaluation {
   id: number
   correctness: "CORRECT" | "WRONG"
   completeness: "COMPLETE" | "INCOMPLETE"
-  coveredPoints: number[]
-  errorEvidence: ErrorEvidence[]
   promptVersion: string
   modelProvider: string
   modelName: string
@@ -80,8 +71,6 @@ export interface Session {
   noProgressHelpRequestCount: number
   solutionExposed: boolean
   completionType: "INDEPENDENT" | "WITH_SUPPORT" | "AFTER_SOLUTION" | null
-  coveredPointsCurrentRound: string[]
-  coveredPointsAll: string[]
   currentDraft: string
   version: number
   initialChoice: InitialChoice | null
