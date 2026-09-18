@@ -75,7 +75,7 @@ def test_realtime_voice_transcript_returns_to_editable_draft_without_confirmatio
         return FakeRecognition(kwargs["event_queue"])
 
     def fake_evaluate(self, request) -> AIModelResponse:
-        if request.purpose == "AI_SUPPORT":
+        if request.purpose == "AI_TEACHING":
             return AIModelResponse(
                 raw_response='{"choices": []}',
                 content=(
@@ -84,14 +84,17 @@ def test_realtime_voice_transcript_returns_to_editable_draft_without_confirmatio
                 ),
                 duration_ms=1,
             )
-        prompt = request.transport.messages[0].content
-        assert '"confirmedText": "学生修改后的最终文本"' in prompt
+        assert request.purpose == "AI_EVALUATION"
+        assert (
+            '"confirmedText": "学生修改后的最终文本"'
+            in request.transport.messages[4].content
+        )
         return AIModelResponse(
             raw_response='{"choices": []}',
             content=(
                 '{"correctness":"CORRECT","completeness":"INCOMPLETE",'
-                '"missingPoints":["得出结果 2"],'
-                '"confidence":1,"needHumanReason":null}'
+                '"hasProgress":true,"mainReason":"知识应用问题","otherReasons":[],'
+                '"judgeReason":"学生尚未完成当前推理。"}'
             ),
             duration_ms=1,
         )
@@ -251,13 +254,12 @@ def test_doubt_voice_draft_is_submitted_by_the_original_doubt_action(
         return FakeRecognition(kwargs["event_queue"])
 
     def fake_evaluate(self, request) -> AIModelResponse:
-        prompt = request.transport.messages[0].content
-        assert "教学支持生成器" in prompt
+        assert request.purpose == "AI_SUPPORT"
+        assert "疑问支持生成器" in request.transport.messages[3].content
         return AIModelResponse(
             raw_response='{"choices": []}',
             content=(
                 '{"action":"SIMPLE_DOUBT_ANSWER",'
-                '"missingPoints":["正确计算加法","得出结果 2"],'
                 '"content":"请先说明相加的两个量。","questions":[]}'
             ),
             duration_ms=1,

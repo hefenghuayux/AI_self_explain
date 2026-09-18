@@ -152,7 +152,6 @@ def test_valid_evaluation_and_generated_teaching_are_saved(
         if request.purpose == "AI_TEACHING":
             return AIModelResponse("{\"choices\": []}", focused_teaching_content(), 10)
         prompt = request.transport.messages[4].content
-        schema = request.blocks.question_context["outputSchema"]
         assert "我先计算 1 加 1。" in prompt
         assert "两个 1 合起来是多少？" in request.transport.messages[1].content
         return AIModelResponse("{\"choices\": []}", valid_evaluation_content(), 12)
@@ -210,16 +209,16 @@ def test_valid_evaluation_and_generated_teaching_are_saved(
 def test_schema_retry_exhaustion_requests_human_review_without_support_count(
     settings, monkeypatch
 ) -> None:
+    # 当前评价契约下仍会出现的非法输出：多返回一个已移除的教学字段。
     invalid_content = json.dumps(
         {
             "correctness": "CORRECT",
             "completeness": "INCOMPLETE",
-            "missingPoints": ["得出结果 2"],
+            "hasProgress": True,
+            "mainReason": "知识应用问题",
+            "otherReasons": [],
+            "judgeReason": "学生说明了计算方向，但尚未给出结果。",
             "feedback": "请补充结果。",
-            "confidence": 1,
-            "nextAction": "GIVE_HINT",
-            "needHumanReason": None,
-            "guidedQuestions": [],
         }
     )
 
@@ -294,29 +293,17 @@ def test_coordinate_answer_repair_changes_invalid_hint_to_focused_question(
         {
             "correctness": "CORRECT",
             "completeness": "INCOMPLETE",
-            "missingPoints": [
-                "用 OP = |t| 建立 3|t| = 6 的面积方程。",
-                "得到 P(2, 0) 和 P(-2, 0) 两个坐标。",
-            ],
-            "feedback": "第三问可使用 OP = |t| 列面积方程。",
-            "confidence": 1,
-            "nextAction": "GIVE_HINT",
-            "needHumanReason": None,
-            "guidedQuestions": [],
             "hasProgress": True,
             "mainReason": "知识应用问题",
             "otherReasons": [],
             "judgeReason": "学生完成了前两问，但尚未把距离关系用于第三问。",
+            "nextAction": "GIVE_HINT",
         }
     )
     corrected_content = json.dumps(
         {
             "correctness": "CORRECT",
             "completeness": "INCOMPLETE",
-            "missingPoints": [
-                "用 OP = |t| 建立 3|t| = 6 的面积方程。",
-                "得到 P(2, 0) 和 P(-2, 0) 两个坐标。",
-            ],
             "hasProgress": True,
             "mainReason": "知识应用问题",
             "otherReasons": [],

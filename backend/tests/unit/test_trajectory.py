@@ -174,7 +174,12 @@ def test_trajectory_builds_one_record_per_event_with_kind_and_status(
             4,
             "model.responded",
             {
-                "output": {"correctness": "CORRECT", "confidence": 1, "missingPoints": []},
+                "output": {
+                    "correctness": "CORRECT",
+                    "otherReasons": [],
+                    "hasProgress": True,
+                    "mainReason": "知识应用问题",
+                },
                 "rawContent": '{"correctness": "CORRECT"}',
                 "validation": "valid",
                 "durationMs": 3,
@@ -241,7 +246,9 @@ def test_trajectory_builds_one_record_per_event_with_kind_and_status(
         {"role": "user", "content": "请评价"},
     )
     # 容器字段不再压成“N 项”，摘要只保留标量字段。
-    assert records[4].summary == "correctness=CORRECT · confidence=1 · valid"
+    assert records[4].summary == (
+        "correctness=CORRECT · hasProgress=true · mainReason=知识应用问题 · valid"
+    )
     assert records[4].full_text == '{"correctness": "CORRECT"}'
     assert records[4].status == "complete"
     assert records[4].duration_ms == 3

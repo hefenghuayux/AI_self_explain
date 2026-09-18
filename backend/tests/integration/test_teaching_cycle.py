@@ -42,59 +42,53 @@ def _create_session(client: TestClient) -> dict[str, object]:
     return response.json()
 
 
-def _stub_ai(monkeypatch, evaluation: dict[str, object]) -> None:
+def _stub_ai(monkeypatch, scenario: dict[str, object]) -> None:
+    """按 purpose 返回确定性的模型输出。
+
+    scenario 描述自讲评价场景：correctness、completeness、hasProgress、feedback、
+    guidedQuestions。只走疑问支持路径的用例传空字典即可。
+    """
+
     def fake_evaluate(self, request) -> AIModelResponse:
-        prompt = request.transport.messages[0].content
         if request.purpose == "AI_EVALUATION":
             terminal = (
-                evaluation["correctness"] == "CORRECT"
-                and evaluation["completeness"] == "COMPLETE"
+                scenario["correctness"] == "CORRECT"
+                and scenario["completeness"] == "COMPLETE"
             )
             content = {
-                "correctness": evaluation["correctness"],
-                "completeness": evaluation["completeness"],
-                "hasProgress": evaluation.get("hasProgress", True),
+                "correctness": scenario["correctness"],
+                "completeness": scenario["completeness"],
+                "hasProgress": scenario.get("hasProgress", True),
                 "mainReason": None if terminal else "知识应用问题",
                 "otherReasons": [],
                 "judgeReason": None if terminal else "学生尚未完成当前推理。",
             }
-        elif "instructionFromRules" in request.blocks.session_context:
+        elif request.purpose == "AI_TEACHING":
             action = request.blocks.session_context["instructionFromRules"]["allowedAction"]
             content = {
-                "content": evaluation["feedback"],
+                "content": scenario["feedback"],
                 "questions": (
-                    evaluation["guidedQuestions"]
-                    if action == "ASK_FOCUSED_QUESTION"
-                    else []
+                    scenario["guidedQuestions"] if action == "ASK_FOCUSED_QUESTION" else []
                 ),
             }
-        elif "子问题作答评估器" in prompt:
+        elif request.purpose == "GUIDED_ANSWER_ASSESSMENT":
             content = {
                 "results": [
-                    {"questionId": "q1", "result": "CORRECT"},
-                    {"questionId": "q2", "result": "INCORRECT"},
+                    {"questionId": item["id"], "result": "CORRECT"}
+                    for item in request.blocks.user_input["questions"]
                 ],
                 "content": "你已确认第一个条件；第二个问题的答案是 2，请把这些信息补进过程。",
             }
-        elif "forceCurrentStepAnswer\": true" in prompt:
-            content = {
-                "action": "CURRENT_STEP_ANSWER",
-                "missingPoints": ["正确计算加法", "得出结果 2"],
-                "content": "先把两个 1 合并，再写出这一步得到的结果。",
-                "questions": [],
-            }
-        elif "教学支持生成器" in prompt:
+        else:
+            assert request.purpose == "AI_SUPPORT"
             content = {
                 "action": "GUIDED_QUESTIONS",
-                "missingPoints": ["正确计算加法", "得出结果 2"],
                 "content": "请先回答下面两个问题。",
                 "questions": [
                     {"id": "q1", "question": "第一个 1 表示什么？"},
                     {"id": "q2", "question": "两个 1 合起来是多少？"},
                 ],
             }
-        else:
-            content = evaluation
         return AIModelResponse(raw_response="{}", content=json.dumps(content), duration_ms=1)
 
     monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
@@ -197,36 +191,6 @@ def test_guided_answers_can_be_submitted_separately_without_second_support(
     assert saved["latestSupport"]["followUpContent"].startswith("你已确认")
 
 
-def test_third_consecutive_no_progress_request_sends_current_step_answer(
-    settings, monkeypatch
-) -> None:
-    _stub_ai(monkeypatch, {})
-    with _client(settings, monkeypatch) as client:
-        session = _start_help(client, _create_session(client))
-        engine = create_engine(settings.database_url)
-        try:
-            with engine.begin() as connection:
-                connection.execute(
-                    text(
-                        "UPDATE sessions SET no_progress_help_request_count = 2, "
-                        "last_support_draft = :draft WHERE id = :session_id"
-                    ),
-                    {"draft": "我没有思路。", "session_id": session["id"]},
-                )
-        finally:
-            engine.dispose()
-        response = client.post(
-            f"/api/sessions/{session['id']}/request-support",
-            json={"mainDraft": "我没有思路。", "version": session["version"]},
-        )
-
-    assert response.status_code == 200
-    saved = response.json()
-    assert saved["flowStage"] == "WAIT_STUDENT_ACTION"
-    assert saved["latestSupport"]["supportKind"] == "CURRENT_STEP"
-    assert saved["supportCountRound"] == 1
-
-
 def test_support_limit_does_not_create_the_threshold_support_event(settings, monkeypatch) -> None:
     _stub_ai(monkeypatch, {})
     with _client(settings, monkeypatch) as client:
@@ -306,11 +270,7 @@ def test_focused_question_after_explanation_is_a_non_counting_guided_question(
     evaluation = {
         "correctness": "CORRECT",
         "completeness": "INCOMPLETE",
-        "missingPoints": ["得出结果 2"],
         "feedback": "请补充结果。",
-        "confidence": 1,
-        "nextAction": "ASK_FOCUSED_QUESTION",
-        "needHumanReason": None,
         "guidedQuestions": [{"id": "evaluation-q1", "question": "结果是多少？"}],
     }
     _stub_ai(monkeypatch, evaluation)
@@ -340,11 +300,7 @@ def test_wrong_incomplete_answer_creates_counted_correction_without_question(
     evaluation = {
         "correctness": "WRONG",
         "completeness": "INCOMPLETE",
-        "missingPoints": ["正确计算加法", "得出结果 2"],
         "feedback": "你把 1 加 1 算成了 3，请重新检查。",
-        "confidence": 1,
-        "nextAction": "CORRECT_AND_ASK",
-        "needHumanReason": None,
         "guidedQuestions": [
             {"id": "evaluation-q1", "question": "两个 1 合起来实际是多少？"}
         ],
@@ -375,11 +331,7 @@ def test_doubt_and_appeal_are_allowed_while_evaluation_questions_are_pending(
     evaluation = {
         "correctness": "WRONG",
         "completeness": "INCOMPLETE",
-        "missingPoints": ["正确计算加法", "得出结果 2"],
         "feedback": "请重新检查。",
-        "confidence": 1,
-        "nextAction": "CORRECT_AND_ASK",
-        "needHumanReason": None,
         "guidedQuestions": [{"id": "evaluation-q1", "question": "两个 1 合起来实际是多少？"}],
     }
     _stub_ai(monkeypatch, evaluation)
@@ -457,7 +409,6 @@ def test_full_solution_request_is_refused_without_counting_support(settings, mon
     def fake_evaluate(self, request) -> AIModelResponse:
         content = {
             "action": "REFUSE_FULL_SOLUTION",
-            "missingPoints": ["正确计算加法", "得出结果 2"],
             "content": "我不能直接给出完整答案，请写出你当前的分析后再继续。",
             "questions": [],
         }

@@ -237,21 +237,6 @@ const segmentOptions = computed(() => segmentEntries.map((segment) => ({
 })))
 
 const selfExplainCharacterCount = computed(() => selfExplainDraft.value.length)
-const feedbackDetailsOpen = ref(false)
-
-// const learningProgressSummary = computed(() => {
-//   const rubricPoints = question.value?.rubricPoints ?? []
-//   const rubricPointSet = new Set(rubricPoints)
-//   const coveredPointCount = new Set(
-//     (session.value?.coveredPointsCurrentRound ?? []).filter((point) => rubricPointSet.has(point)),
-//   ).size
-//   const remainingPointCount = Math.max(rubricPoints.length - coveredPointCount, 0)
-//   return `已讲清 ${coveredPointCount} 个关键点，还差 ${remainingPointCount} 个`
-// })
-
-const coveredPointNumbers = computed(() => {
-  return session.value?.latestEvaluation?.coveredPoints ?? []
-})
 
 const hasFollowUpContent = computed(
   () => Boolean(session.value?.latestSupport?.followUpContent),
@@ -261,7 +246,7 @@ const feedbackHeading = computed(() => {
   if (hasFollowUpContent.value && !session.value?.latestEvaluation) {
     return { title: "整合引导", description: "结合子问题答案，继续完成整道题的推理。" }
   }
-  return { title: "最新反馈", description: "先看结论，再按需查看评价依据。" }
+  return { title: "最新反馈", description: "先看结论，再按下一步建议继续。" }
 })
 
 function evaluationClass(value: string) {
@@ -587,26 +572,8 @@ async function respondToSolution(understood: boolean) {
               <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.correctness)"><span>正确性</span><strong>{{ correctnessLabels[session.latestEvaluation.correctness] }}</strong></div>
               <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.completeness)"><span>完整性</span><strong>{{ completenessLabels[session.latestEvaluation.completeness] }}</strong></div>
             </div>
-            <p v-if="coveredPointNumbers.length" class="covered-points">已覆盖评分点：{{ coveredPointNumbers.join('、') }}</p>
             </template>
             <p v-if="session.latestSupport?.content || hasFollowUpContent" class="feedback-next-step"><strong>下一步：</strong>{{ hasFollowUpContent ? session.latestSupport?.followUpContent : session.latestSupport?.content }}</p>
-            <el-button
-              v-if="session.latestEvaluation?.errorEvidence.length"
-              class="feedback-toggle"
-              text
-              type="primary"
-              :aria-expanded="feedbackDetailsOpen"
-              aria-controls="feedback-details"
-              @click="feedbackDetailsOpen = !feedbackDetailsOpen"
-            >{{ feedbackDetailsOpen ? '收起评价依据' : '查看评价依据' }}</el-button>
-            <div v-if="feedbackDetailsOpen && session.latestEvaluation?.errorEvidence.length" id="feedback-details" class="feedback-details">
-              <article v-for="(evidence, index) in session.latestEvaluation.errorEvidence" :key="`${evidence.locationDescription}-${index}`" class="feedback-evidence">
-                <h3>需要调整的地方</h3>
-                <p><strong>你的表达：</strong>{{ evidence.quote }}</p>
-                <p><strong>原因：</strong>{{ evidence.reason }}</p>
-                <p><strong>思考方向：</strong>{{ evidence.thinkingDirection }}</p>
-              </article>
-            </div>
           </div>
         </section>
         <template v-if="session.status !== 'COMPLETED' && session.status !== 'STOPPED_LIMIT'">
@@ -867,11 +834,6 @@ h2 { font-size: var(--font-size-lg); }
 .guided-question .voice-recorder { margin-top: 0; }
 .feedback-card { margin-top: var(--space-4); padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
 .feedback-next-step { margin: var(--space-4) 0 0; padding: var(--space-3); border-left: 3px solid var(--color-brand-600); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--color-brand-50); overflow-wrap: anywhere; }
-.feedback-toggle { min-height: 44px; margin-top: var(--space-2); }
-.feedback-details { display: grid; gap: var(--space-3); margin-top: var(--space-2); padding-top: var(--space-4); border-top: 1px solid var(--color-border); }
-.feedback-evidence { padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-muted); }
-.feedback-evidence h3 { font-size: var(--font-size-base); }
-.feedback-evidence p { margin: var(--space-2) 0 0; overflow-wrap: anywhere; }
 .conversation-scroll {
   height: 480px;
   margin-top: var(--space-3);

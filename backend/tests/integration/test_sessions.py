@@ -20,7 +20,7 @@ from app.services.ai_evaluation import AIModelClient, AIModelResponse
 @pytest.fixture(autouse=True)
 def stub_ai_evaluation(monkeypatch) -> None:
     def fake_evaluate(self, request) -> AIModelResponse:
-        if request.purpose == "AI_SUPPORT":
+        if request.purpose == "AI_TEACHING":
             return AIModelResponse(
                 raw_response='{"choices": []}',
                 content=(
@@ -377,7 +377,8 @@ def test_illegal_stage_and_duplicate_operation_are_rejected(
         )
 
     assert duplicate_response.status_code == 409
-    assert "会话版本已变化" in duplicate_response.json()["detail"]
+    assert duplicate_response.json()["detail"]["code"] == "SESSION_VERSION_CONFLICT"
+    assert "会话版本已变化" in duplicate_response.json()["detail"]["message"]
 
 
 def test_terminal_session_cannot_continue_automatic_flow(settings: Settings, monkeypatch) -> None:
