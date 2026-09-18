@@ -1,7 +1,7 @@
 export type InitialChoice = "KNOW" | "NOT_KNOW" | "HAS_QUESTION"
 export type VoiceInputTarget = "SELF_EXPLANATION" | "GUIDED_ANSWER" | "DOUBT" | "APPEAL"
 
-export type SessionStatus = "IN_PROGRESS" | "COMPLETED" | "STOPPED_LIMIT" | "NEED_HUMAN" | "PAUSED"
+export type SessionStatus = "IN_PROGRESS" | "COMPLETED" | "STOPPED_LIMIT" | "PAUSED"
 
 export type FlowStage =
   | "WAIT_INITIAL_CHOICE"
@@ -64,7 +64,7 @@ export interface LearningTimelineItem {
   content: string
   correctness: AIEvaluation["correctness"] | null
   completeness: AIEvaluation["completeness"] | null
-  action: "COMPLETE" | "NEED_HUMAN" | SupportEvent["supportType"] | null
+  action: "COMPLETE" | SupportEvent["supportType"] | null
   createdAt: string
 }
 

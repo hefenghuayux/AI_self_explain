@@ -21,7 +21,6 @@ from app.rules.session_lifecycle import (
     FLOW_STAGE_WAIT_INITIAL_CHOICE,
     FLOW_STAGE_WAIT_STUDENT_ACTION,
     STATUS_IN_PROGRESS,
-    STATUS_NEED_HUMAN,
     STATUS_PAUSED,
     STATUS_STOPPED_LIMIT,
     flow_stage_after_initial_choice,
@@ -348,7 +347,8 @@ class SessionRepository:
             .where(
                 StateTransitionEvent.session_id == session_id,
                 or_(
-                    StateTransitionEvent.to_status == STATUS_NEED_HUMAN,
+                    # 兼容历史审计数据：早期版本会把 to_status 置为 NEED_HUMAN。
+                    StateTransitionEvent.to_status == "NEED_HUMAN",
                     StateTransitionEvent.trigger_type.in_(HUMAN_REVIEW_TRIGGER_TYPES),
                 ),
             )

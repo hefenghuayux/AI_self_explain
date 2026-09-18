@@ -7,7 +7,7 @@ from app.schemas.ai_evaluation import AIEvaluationResponse, Completeness, Correc
 from app.schemas.question import QuestionSchema, RequiredText
 from app.schemas.support import GuidedAnswer, SupportEventResponse
 
-SessionStatus = Literal["IN_PROGRESS", "COMPLETED", "STOPPED_LIMIT", "NEED_HUMAN", "PAUSED"]
+SessionStatus = Literal["IN_PROGRESS", "COMPLETED", "STOPPED_LIMIT", "PAUSED"]
 FlowStage = Literal[
     "WAIT_INITIAL_CHOICE",
     "CAPTURING_INPUT",
@@ -85,7 +85,7 @@ TimelineSupportType = Literal[
     "GIVE_CORRECTION",
     "CORRECT_AND_ASK",
 ]
-TimelineAction = Literal["COMPLETE", "NEED_HUMAN"] | TimelineSupportType
+TimelineAction = Literal["COMPLETE"] | TimelineSupportType
 
 
 class LearningTimelineItemResponse(QuestionSchema):
