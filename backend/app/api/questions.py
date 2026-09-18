@@ -6,9 +6,11 @@ from app.repositories.questions import QuestionRepository
 from app.schemas.question import (
     QuestionFilterOptionsResponse,
     QuestionInput,
+    QuestionListItemResponse,
     QuestionListQuery,
     QuestionListResponse,
     QuestionPaginationResponse,
+    QuestionProgress,
     QuestionResponse,
 )
 
@@ -22,6 +24,21 @@ def get_question_or_404(repository: QuestionRepository, question_id: int) -> Que
             status_code=status.HTTP_404_NOT_FOUND, detail=f"题目不存在：{question_id}"
         )
     return question
+
+
+def to_list_item(question: Question, progress: QuestionProgress) -> QuestionListItemResponse:
+    return QuestionListItemResponse(
+        id=question.id,
+        question_content=question.question_content,
+        grade_period=question.grade_period,
+        subject=question.subject,
+        q_type=question.q_type,
+        difficulty_level=question.difficulty_level,
+        evaluation_mode=question.evaluation_mode,
+        rubric_point_count=question.rubric_point_count,
+        progress=progress,
+        archived_at=question.archived_at,
+    )
 
 
 @router.post("", response_model=QuestionResponse, status_code=status.HTTP_201_CREATED)
@@ -70,11 +87,11 @@ def list_questions(
         subject=subject,
         keyword=keyword,
     )
-    questions, total = QuestionRepository(session).list_questions(
+    question_entries, total = QuestionRepository(session).list_questions(
         query, include_archived=include_archived, user_id=user.id
     )
     return QuestionListResponse(
-        items=questions,
+        items=[to_list_item(question, progress) for question, progress in question_entries],
         pagination=QuestionPaginationResponse(
             page=query.page,
             page_size=query.page_size,

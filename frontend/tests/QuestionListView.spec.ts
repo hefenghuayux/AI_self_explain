@@ -17,6 +17,7 @@ function question(): QuestionListItem {
     qType: 1,
     difficultyLevel: 1,
     rubricPointCount: 1,
+    progress: "COMPLETED",
     archivedAt: null,
   }
 }
@@ -75,6 +76,8 @@ describe("QuestionListView", () => {
     expect(wrapper.text()).toContain("题目列表")
     expect(wrapper.text()).toContain("初中")
     expect(wrapper.text()).toContain("数学")
+    expect(wrapper.text()).toContain("已完成")
+    expect(wrapper.text()).not.toContain("未尝试")
     expect(wrapper.text()).not.toContain("学段 2")
     expect(wrapper.text()).toContain("自讲")
     expect(wrapper.find('.question-rich-text img').attributes("src")).toBe("https://example.test/question.png")

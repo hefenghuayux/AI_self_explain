@@ -1,11 +1,14 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
+from app.models.explanation_attempt import ExplanationAttempt
 from app.models.question import Question
 from app.models.session import Session as SelfExplainSession
-from app.schemas.question import QuestionInput, QuestionListQuery
+from app.rules.question_progress import question_progress
+from app.rules.session_lifecycle import STATUS_COMPLETED
+from app.schemas.question import QuestionInput, QuestionListQuery, QuestionProgress
 
 
 class QuestionRepository:
@@ -21,7 +24,7 @@ class QuestionRepository:
 
     def list_questions(
         self, query: QuestionListQuery, *, include_archived: bool, user_id: int
-    ) -> tuple[list[Question], int]:
+    ) -> tuple[list[tuple[Question, QuestionProgress]], int]:
         conditions = []
         if not include_archived:
             conditions.append(Question.archived_at.is_(None))
@@ -43,12 +46,37 @@ class QuestionRepository:
             .group_by(SelfExplainSession.question_id)
             .subquery()
         )
+        # 进度只按当前用户聚合：有学习成功终态会话即已完成（不排除重新自讲前的会话），
+        # 否则提交过自讲（文本或已确认的语音转写）即尝试过。
+        progress_by_question = (
+            select(
+                SelfExplainSession.question_id.label("question_id"),
+                func.max(
+                    case((SelfExplainSession.status == STATUS_COMPLETED, 1), else_=0)
+                ).label("has_completed"),
+                func.max(
+                    case((ExplanationAttempt.confirmed_at.is_not(None), 1), else_=0)
+                ).label("has_attempt"),
+            )
+            .outerjoin(ExplanationAttempt, ExplanationAttempt.session_id == SelfExplainSession.id)
+            .where(SelfExplainSession.user_id == user_id)
+            .group_by(SelfExplainSession.question_id)
+            .subquery()
+        )
         total = self.session.scalar(select(func.count()).select_from(Question).where(*conditions))
         statement = (
-            select(Question)
+            select(
+                Question,
+                progress_by_question.c.has_completed,
+                progress_by_question.c.has_attempt,
+            )
             .outerjoin(
                 last_self_explained_at,
                 last_self_explained_at.c.question_id == Question.id,
+            )
+            .outerjoin(
+                progress_by_question,
+                progress_by_question.c.question_id == Question.id,
             )
             .where(*conditions)
             .order_by(
@@ -61,7 +89,16 @@ class QuestionRepository:
             .offset((query.page - 1) * query.page_size)
             .limit(query.page_size)
         )
-        return list(self.session.scalars(statement)), total or 0
+        rows = self.session.execute(statement).all()
+        return [
+            (
+                question,
+                question_progress(
+                    has_completed=bool(has_completed), has_attempt=bool(has_attempt)
+                ),
+            )
+            for question, has_completed, has_attempt in rows
+        ], total or 0
 
     def list_filter_options(self, *, include_archived: bool) -> tuple[list[int], list[str]]:
         conditions = [] if include_archived else [Question.archived_at.is_(None)]

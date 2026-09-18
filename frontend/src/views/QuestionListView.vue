@@ -42,6 +42,20 @@ function evaluationModeTagType(question: QuestionListItem): "success" | "warning
   return "info"
 }
 
+function progressLabel(question: QuestionListItem): string {
+  return {
+    COMPLETED: "已完成",
+    ATTEMPTED: "尝试过",
+    NOT_ATTEMPTED: "未尝试",
+  }[question.progress]
+}
+
+function progressTagType(question: QuestionListItem): "success" | "warning" | "info" {
+  if (question.progress === "COMPLETED") return "success"
+  if (question.progress === "ATTEMPTED") return "warning"
+  return "info"
+}
+
 async function loadQuestions() {
   loading.value = true
   errorMessage.value = ""
@@ -179,6 +193,11 @@ onMounted(async () => {
           <el-tag :type="evaluationModeTagType(scope.row)">{{ evaluationModeLabel(scope.row) }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="自讲进度" width="100">
+        <template #default="scope">
+          <el-tag :type="progressTagType(scope.row)">{{ progressLabel(scope.row) }}</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column
         label="操作"
         :width="authUser?.role === 'TEACHER' ? 420 : 200"
@@ -231,6 +250,7 @@ onMounted(async () => {
             <el-tag v-if="question.gradePeriod != null">{{ gradePeriodName(question.gradePeriod) }}</el-tag>
             <el-tag v-if="question.subject">{{ subjectName(question.subject) }}</el-tag>
             <el-tag :type="evaluationModeTagType(question)">{{ evaluationModeLabel(question) }}</el-tag>
+            <el-tag :type="progressTagType(question)">{{ progressLabel(question) }}</el-tag>
           </div>
         </div>
         <div class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />

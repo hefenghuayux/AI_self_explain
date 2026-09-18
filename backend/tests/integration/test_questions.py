@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, insert, inspect, select
 
 from alembic import command
 from app.core.config import Settings
+from app.models.explanation_attempt import ExplanationAttempt
 from app.models.question import Question
 from app.models.session import Session
 from app.models.user import User
@@ -187,6 +188,87 @@ def test_question_list_orders_by_latest_self_explanation(
         "AI_GENERAL",
         "AI_GENERAL",
     ]
+
+
+def test_question_list_reports_self_explanation_progress(
+    question_client: TestClient, migrated_settings: Settings
+) -> None:
+    completed = question_client.post("/api/questions", json={"questionContent": "已完成"}).json()
+    restarted = question_client.post(
+        "/api/questions", json={"questionContent": "重新自讲前已完成"}
+    ).json()
+    attempted = question_client.post("/api/questions", json={"questionContent": "尝试过"}).json()
+    stopped = question_client.post(
+        "/api/questions", json={"questionContent": "支持次数用尽"}
+    ).json()
+    unconfirmed = question_client.post(
+        "/api/questions", json={"questionContent": "语音未确认"}
+    ).json()
+    never = question_client.post("/api/questions", json={"questionContent": "未尝试"}).json()
+
+    engine = create_engine(migrated_settings.database_url)
+    try:
+        with engine.begin() as connection:
+            user_id = connection.scalar(select(User.id).where(User.username == "test-teacher"))
+            active_at = datetime(2026, 1, 3, tzinfo=UTC)
+            session_ids = {}
+            for key, question, session_status, lifecycle_status in (
+                ("completed", completed, "COMPLETED", "active"),
+                ("restarted", restarted, "COMPLETED", "restarted"),
+                ("attempted", attempted, "IN_PROGRESS", "active"),
+                ("stopped", stopped, "STOPPED_LIMIT", "active"),
+                ("unconfirmed", unconfirmed, "IN_PROGRESS", "active"),
+            ):
+                result = connection.execute(
+                    insert(Session).values(
+                        {
+                            **self_explanation_session(question["id"], user_id, active_at),
+                            "status": session_status,
+                            "lifecycle_status": lifecycle_status,
+                        }
+                    )
+                )
+                session_ids[key] = result.inserted_primary_key[0]
+            connection.execute(
+                insert(ExplanationAttempt),
+                [
+                    {
+                        "session_id": session_ids["attempted"],
+                        "round": 1,
+                        "input_mode": "TEXT",
+                        "confirmed_text": "文本自讲",
+                        "confirmed_at": active_at,
+                    },
+                    {
+                        "session_id": session_ids["stopped"],
+                        "round": 2,
+                        "input_mode": "TEXT",
+                        "confirmed_text": "文本自讲",
+                        "confirmed_at": active_at,
+                    },
+                    {
+                        "session_id": session_ids["unconfirmed"],
+                        "round": 1,
+                        "input_mode": "VOICE",
+                        "confirmed_text": None,
+                        "confirmed_at": None,
+                    },
+                ],
+            )
+    finally:
+        engine.dispose()
+
+    response = question_client.get("/api/questions")
+
+    assert response.status_code == 200
+    assert {item["id"]: item["progress"] for item in response.json()["items"]} == {
+        completed["id"]: "COMPLETED",
+        restarted["id"]: "COMPLETED",
+        attempted["id"]: "ATTEMPTED",
+        stopped["id"]: "ATTEMPTED",
+        unconfirmed["id"]: "NOT_ATTEMPTED",
+        never["id"]: "NOT_ATTEMPTED",
+    }
 
 
 @pytest.mark.parametrize(
