@@ -7,14 +7,18 @@ from typing import TypeVar
 
 import httpx
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session as DatabaseSession
 
 from app.core.config import Settings
+from app.models.ai_evaluation import AIEvaluation
+from app.models.explanation_attempt import ExplanationAttempt
 from app.models.external_call_record import ExternalCallRecord
 from app.models.question import Question
 from app.models.session import Session
 from app.models.support_event import SupportEvent
 from app.repositories.sessions import SessionRepository
+from app.services.ai_evaluation import build_progress_context
 from app.schemas.model_request_snapshot import (
     ModelRequestBlocks,
     ModelRequestMessage,
@@ -36,6 +40,10 @@ SUPPORT_PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "generat
 ASSESSMENT_PROMPT_PATH = (
     Path(__file__).resolve().parents[1] / "prompts" / "assess_guided_answers.md"
 )
+KNOWN_QUESTION_CONTEXT_KEYS = frozenset({
+    "questionContent", "standardAnswer", "rubricPoints", "commonErrors",
+    "alternativeSolutions", "layeredHints", "guidedQuestions", "fullSolution",
+})
 OutputType = TypeVar("OutputType", SupportRequestOutput, GuidedAnswerAssessmentOutput)
 logger = logging.getLogger(__name__)
 
@@ -48,6 +56,26 @@ class AISupportService:
         self.settings = settings
         self.client = AIModelClient(settings, http_client)
 
+    def _build_progress_context(self, session: Session) -> dict[str, object]:
+        previous_attempts = self.repository.database_session.scalars(
+            select(ExplanationAttempt)
+            .where(
+                ExplanationAttempt.session_id == session.id,
+                ExplanationAttempt.round == session.round,
+                ExplanationAttempt.id.in_(select(AIEvaluation.attempt_id)),
+            )
+            .order_by(ExplanationAttempt.id)
+        ).all()
+        previous_support = self.repository.database_session.scalars(
+            select(SupportEvent)
+            .where(SupportEvent.session_id == session.id, SupportEvent.round == session.round)
+            .order_by(SupportEvent.id)
+        ).all()
+        return build_progress_context(
+            previous_attempts=previous_attempts,
+            previous_support=previous_support,
+        )
+
     def generate_request(
         self,
         *,
@@ -57,6 +85,7 @@ class AISupportService:
         doubt_text: str | None,
     ) -> SupportRequestOutput | None:
         reasoning_effort = self.settings.ai_reasoning_effort
+        progress_context = self._build_progress_context(session)
         result = self._generate(
             session=session,
             request_builder=lambda validation_errors: _render_support_prompt(
@@ -68,6 +97,7 @@ class AISupportService:
                 model=self.settings.ai_model,
                 prompt_version=self.settings.prompt_version,
                 reasoning_effort=reasoning_effort,
+                progress_context=progress_context,
             ),
             output_type=SupportRequestOutput,
             validator=_validate_support_request,
@@ -83,6 +113,7 @@ class AISupportService:
         answers: list[GuidedAnswer],
     ) -> GuidedAnswerAssessmentOutput | None:
         reasoning_effort = self.settings.ai_reasoning_effort
+        progress_context = self._build_progress_context(session)
         result = self._generate(
             session=session,
             request_builder=lambda validation_errors: _render_answer_assessment_prompt(
@@ -94,6 +125,7 @@ class AISupportService:
                 model=self.settings.ai_model,
                 prompt_version=self.settings.prompt_version,
                 reasoning_effort=reasoning_effort,
+                progress_context=progress_context,
             ),
             output_type=GuidedAnswerAssessmentOutput,
             validator=lambda output: _validate_answer_assessment(output, support_event),
@@ -312,6 +344,7 @@ def _render_support_prompt(
     model: str,
     prompt_version: str,
     reasoning_effort: str | None = None,
+    progress_context: dict[str, object] | None = None,
 ) -> ModelRequestSnapshot:
     template = SUPPORT_PROMPT_PATH.read_text(encoding="utf-8")
     question_context = _question_context(question)
@@ -331,6 +364,7 @@ def _render_support_prompt(
         validation_errors=validation_errors,
         model=model,
         reasoning_effort=reasoning_effort,
+        progress_context=progress_context,
     )
 
 
@@ -344,6 +378,7 @@ def _render_answer_assessment_prompt(
     model: str,
     prompt_version: str,
     reasoning_effort: str | None = None,
+    progress_context: dict[str, object] | None = None,
 ) -> ModelRequestSnapshot:
     template = ASSESSMENT_PROMPT_PATH.read_text(encoding="utf-8")
     question_context = _question_context(question)
@@ -364,6 +399,7 @@ def _render_answer_assessment_prompt(
         validation_errors=validation_errors,
         model=model,
         reasoning_effort=reasoning_effort,
+        progress_context=progress_context,
     )
 
 
@@ -398,9 +434,10 @@ def _model_request(
     validation_errors: list[str],
     model: str,
     reasoning_effort: str | None = None,
+    progress_context: dict[str, object] | None = None,
 ) -> ModelRequestSnapshot:
     shared_system = SHARED_SYSTEM_PATH.read_text(encoding="utf-8")
-    shared_history = {"events": []}
+    shared_history = progress_context or {"events": []}
     current_data = dict(user_input)
     if validation_errors:
         current_data["validationErrors"] = validation_errors
@@ -422,7 +459,11 @@ def _model_request(
             messages=[
                 ModelRequestMessage(role="system", content=shared_system),
                 ModelRequestMessage(
-                    role="user", content=json.dumps(question_context, ensure_ascii=False)
+                    role="user",
+                    content=json.dumps(
+                        {k: v for k, v in question_context.items() if k in KNOWN_QUESTION_CONTEXT_KEYS},
+                        ensure_ascii=False,
+                    ),
                 ),
                 ModelRequestMessage(
                     role="user", content=json.dumps(shared_history, ensure_ascii=False)
@@ -445,15 +486,6 @@ def _model_request(
 
 
 def _validate_support_request(output: SupportRequestOutput) -> list[str]:
-    no_reason = output.action == "REFUSE_FULL_SOLUTION"
-    if no_reason and (
-        output.main_reason is not None
-        or output.other_reasons
-        or output.judge_reason is not None
-    ):
-        return ["拒绝完整答案时不能返回困难原因"]
-    if not no_reason and (output.main_reason is None or output.judge_reason is None):
-        return ["非拒答支持必须返回具体困难原因和判断依据"]
     if output.action == "GUIDED_QUESTIONS" and not output.questions:
         return ["GUIDED_QUESTIONS 必须提供至少一个子问题"]
     if output.action != "GUIDED_QUESTIONS" and output.questions:
@@ -471,13 +503,4 @@ def _validate_answer_assessment(
     result_ids = [item.question_id for item in output.results]
     if set(result_ids) != expected_ids or len(result_ids) != len(expected_ids):
         return ["子问题评估结果必须与已发送问题一一对应"]
-    all_correct = all(item.result == "CORRECT" for item in output.results)
-    if all_correct and (
-        output.main_reason is not None
-        or output.other_reasons
-        or output.judge_reason is not None
-    ):
-        return ["子问题全部答对时不能返回困难原因"]
-    if not all_correct and (output.main_reason is None or output.judge_reason is None):
-        return ["存在错误或不完整作答时必须返回具体困难原因和判断依据"]
     return []
