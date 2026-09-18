@@ -90,7 +90,6 @@ const actionLabels: Record<NonNullable<LearningTimelineItem["action"]>, string> 
   GIVE_CORRECTION: "纠错",
   CORRECT_AND_ASK: "纠错与追问",
   GIVE_HINT: "提示",
-  NEED_HUMAN: "已申请人工复核",
 }
 
 const timelineEventLabels: Record<LearningTimelineItem["eventType"], string> = {
@@ -610,7 +609,7 @@ async function respondToSolution(understood: boolean) {
             </div>
           </div>
         </section>
-        <template v-if="session.status !== 'NEED_HUMAN' && session.status !== 'COMPLETED' && session.status !== 'STOPPED_LIMIT'">
+        <template v-if="session.status !== 'COMPLETED' && session.status !== 'STOPPED_LIMIT'">
           <section class="session-section input-section" aria-label="当前输入与主操作">
             <el-segmented
               v-model="activeSegment"
@@ -790,8 +789,7 @@ async function respondToSolution(understood: boolean) {
           <section v-else-if="session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2>完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析；确认后需要从头完成第二轮自讲。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，开始第二轮自讲</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
         </template>
         <section v-if="session.needHumanReason && session.status === 'IN_PROGRESS'" class="session-section"><el-alert title="已申请人工复核，你可以继续自讲。" type="warning" :closable="false" show-icon /></section>
-        <section v-if="session.status === 'NEED_HUMAN'" class="session-section"><h2>需要人工处理</h2><el-alert title="自动学习流程已停止" :description="session.needHumanReason || '已转人工帮助。'" type="error" :closable="false" show-icon /></section>
-        <section v-else-if="session.status === 'COMPLETED'" class="session-section completion-state"><h2>本轮自讲已完成</h2><p>你已经正确、完整地讲清了这道题。</p></section>
+        <section v-if="session.status === 'COMPLETED'" class="session-section completion-state"><h2>本轮自讲已完成</h2><p>你已经正确、完整地讲清了这道题。</p></section>
         <section v-else-if="session.status === 'STOPPED_LIMIT'" class="session-section solution-state"><h2>已达到本轮支持上限</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
         <section class="session-section timeline-section" aria-labelledby="timeline-title">
           <h2 id="timeline-title">历史记录</h2>

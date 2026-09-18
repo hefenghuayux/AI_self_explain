@@ -433,7 +433,7 @@ describe("SessionView", () => {
     fetchSession
       .mockResolvedValueOnce(createSession({ flowStage: "CAPTURING_INPUT", version: 2 }))
       .mockResolvedValueOnce(createSession({
-        status: "NEED_HUMAN",
+        status: "IN_PROGRESS",
         flowStage: "WAIT_STUDENT_ACTION",
         version: 4,
         needHumanReason: "教学生成失败，会话已进入人工处理",
@@ -454,7 +454,7 @@ describe("SessionView", () => {
 
     expect(fetchSession).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain("教学生成失败，会话已进入人工处理")
-    expect(wrapper.text()).toContain("需要人工处理")
+    expect(wrapper.text()).toContain("已申请人工复核，你可以继续自讲。")
   })
 
   it("renders student submissions and AI replies in the self-explanation record", async () => {
