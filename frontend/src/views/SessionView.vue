@@ -12,6 +12,7 @@ import {
   submitAppeal,
   submitGuidedAnswers,
   submitInitialChoice,
+  submitMasteryCheckAnswers,
   submitSolutionUnderstanding,
   submitTextAttempt,
 } from "../api/sessions"
@@ -20,6 +21,7 @@ import { fetchQuestion } from "../api/questions"
 import { authUser } from "../stores/auth"
 import type {
   AIEvaluation,
+  GuidedAnswer,
   InitialChoice,
   LearningTimelineItem,
   Session,
@@ -28,11 +30,12 @@ import type {
 import type { Question } from "../types/question"
 import { sanitizeQuestionHtml } from "../utils/questionHtml"
 
-type SegmentKey = "selfExplain" | "guidedAnswers" | "doubt" | "appeal"
+type SegmentKey = "selfExplain" | "guidedAnswers" | "masteryCheck" | "doubt" | "appeal"
 
 interface DialogDrafts {
   selfExplain: string
   guidedAnswers: Record<string, string>
+  masteryCheck: Record<string, string>
   doubt: string
   appeal: string
 }
@@ -45,6 +48,7 @@ const timeline = ref<LearningTimelineItem[]>([])
 const activeSegment = ref<SegmentKey>("selfExplain")
 const selfExplainDraft = ref("")
 const guidedAnswerText = ref<Record<string, string>>({})
+const masteryAnswerText = ref<Record<string, string>>({})
 const doubtDraft = ref("")
 const appealDraft = ref("")
 const loading = ref(true)
@@ -63,6 +67,7 @@ let dialogDraftsReady = false
 const segmentEntries: Array<{ label: string; value: SegmentKey }> = [
   { label: "自讲", value: "selfExplain" },
   { label: "回答子问题", value: "guidedAnswers" },
+  { label: "掌握度核验", value: "masteryCheck" },
   { label: "我有疑问", value: "doubt" },
 ]
 
@@ -73,6 +78,9 @@ const studentInterruptionFlowStages = new Set<Session["flowStage"]>([
   "WAIT_GUIDED_ANSWERS",
   "SHOWING_FULL_SOLUTION",
 ])
+
+// 终态与后端规则层保持一致：结束后的会话不再接受新的学生动作。
+const terminalStatuses = new Set<Session["status"]>(["COMPLETED", "STOPPED_LIMIT", "NEEDS_REVIEW"])
 
 const correctnessLabels: Record<AIEvaluation["correctness"], string> = {
   CORRECT: "正确",
@@ -98,6 +106,9 @@ const timelineEventLabels: Record<LearningTimelineItem["eventType"], string> = {
   SUPPORT: "学习支持",
   GUIDED_QUESTIONS: "子问题",
   FOLLOW_UP: "整合引导",
+  MASTERY_QUESTIONS: "掌握度核验问题",
+  MASTERY_ANSWER: "核验回答",
+  MASTERY_RESULT: "核验结论",
   FULL_SOLUTION: "完整解析",
   NEED_HUMAN: "人工复核已申请",
 }
@@ -114,12 +125,19 @@ const submissionTypeLabels: Record<NonNullable<LearningTimelineItem["submissionT
   GUIDED_ANSWER: "回答子问题",
   DOUBT: "我有疑问",
   APPEAL: "AI说错了",
+  MASTERY_ANSWER: "核验回答",
+}
+
+const masteryOutcomeLabels: Record<"COMPLETED" | "NEEDS_REVIEW", string> = {
+  COMPLETED: "核验通过，本题学习成功",
+  NEEDS_REVIEW: "核验仍有未解决问题，本题结束并记录待复核",
 }
 
 function emptyDialogDrafts(): DialogDrafts {
   return {
     selfExplain: "",
     guidedAnswers: {},
+    masteryCheck: {},
     doubt: "",
     appeal: "",
   }
@@ -139,6 +157,9 @@ function readDialogDrafts(): { hasStoredDrafts: boolean; drafts: DialogDrafts } 
         guidedAnswers: parsed.guidedAnswers && typeof parsed.guidedAnswers === "object"
           ? parsed.guidedAnswers
           : {},
+        masteryCheck: parsed.masteryCheck && typeof parsed.masteryCheck === "object"
+          ? parsed.masteryCheck
+          : {},
         doubt: typeof parsed.doubt === "string" ? parsed.doubt : "",
         appeal: typeof parsed.appeal === "string" ? parsed.appeal : "",
       },
@@ -156,6 +177,7 @@ function persistDialogDrafts() {
     JSON.stringify({
       selfExplain: selfExplainDraft.value,
       guidedAnswers: guidedAnswerText.value,
+      masteryCheck: masteryAnswerText.value,
       doubt: doubtDraft.value,
       appeal: appealDraft.value,
     }),
@@ -168,13 +190,18 @@ function applyStoredDialogDrafts(currentDraft: string) {
     ? savedDraftState.drafts.selfExplain
     : currentDraft
   guidedAnswerText.value = savedDraftState.drafts.guidedAnswers
+  masteryAnswerText.value = savedDraftState.drafts.masteryCheck
   doubtDraft.value = savedDraftState.drafts.doubt
   appealDraft.value = savedDraftState.drafts.appeal
   dialogDraftsReady = true
   persistDialogDrafts()
 }
 
-watch([selfExplainDraft, guidedAnswerText, doubtDraft, appealDraft], persistDialogDrafts, { deep: true })
+watch(
+  [selfExplainDraft, guidedAnswerText, masteryAnswerText, doubtDraft, appealDraft],
+  persistDialogDrafts,
+  { deep: true },
+)
 
 async function loadSessionData() {
   const loadedSession = await fetchSession(sessionId)
@@ -183,6 +210,11 @@ async function loadSessionData() {
   for (const answer of loadedSession.latestSupport?.guidedAnswers ?? []) {
     if (!guidedAnswerText.value[answer.questionId]) {
       guidedAnswerText.value[answer.questionId] = answer.answer
+    }
+  }
+  for (const answer of loadedSession.masteryCheck?.answers ?? []) {
+    if (!masteryAnswerText.value[answer.questionId]) {
+      masteryAnswerText.value[answer.questionId] = answer.answer
     }
   }
   syncActiveSegmentWithStage()
@@ -229,6 +261,7 @@ function canUseSegment(segment: SegmentKey) {
     )
   }
   if (segment === "guidedAnswers") return session.value.flowStage === "WAIT_GUIDED_ANSWERS"
+  if (segment === "masteryCheck") return session.value.flowStage === "WAIT_MASTERY_CHECK"
   if (segment === "doubt") return canSubmitStudentInterruption()
   return hasAppealableAiResponse() && canSubmitStudentInterruption()
 }
@@ -258,7 +291,9 @@ function evaluationClass(value: string) {
 function syncActiveSegmentWithStage() {
   if (session.value?.flowStage === "WAIT_GUIDED_ANSWERS") {
     activeSegment.value = "guidedAnswers"
-  } else if (activeSegment.value === "guidedAnswers") {
+  } else if (session.value?.flowStage === "WAIT_MASTERY_CHECK") {
+    activeSegment.value = "masteryCheck"
+  } else if (activeSegment.value === "guidedAnswers" || activeSegment.value === "masteryCheck") {
     activeSegment.value = "selfExplain"
   }
 }
@@ -266,6 +301,10 @@ function syncActiveSegmentWithStage() {
 function canSubmitStudentInterruption() {
   return session.value?.status === "IN_PROGRESS"
     && studentInterruptionFlowStages.has(session.value.flowStage)
+}
+
+function isTerminalSession() {
+  return session.value ? terminalStatuses.has(session.value.status) : false
 }
 
 function hasAppealableAiResponse() {
@@ -475,6 +514,47 @@ function guidedAnswerSubmitted(questionId: string) {
   ) ?? false
 }
 
+function masteryCheckCompleted() {
+  return Boolean(session.value?.masteryCheck?.results?.length)
+}
+
+function masteryAnswerFor(questionId: string) {
+  return session.value?.masteryCheck?.answers?.find(
+    (answer) => answer.questionId === questionId,
+  )?.answer
+}
+
+function masteryResultFor(questionId: string) {
+  return session.value?.masteryCheck?.results?.find(
+    (result) => result.questionId === questionId,
+  )
+}
+
+async function submitMasteryAnswers() {
+  const masteryCheck = session.value?.masteryCheck
+  if (!session.value || !masteryCheck) return
+  const answers: GuidedAnswer[] = []
+  for (const masteryQuestion of masteryCheck.questions) {
+    const answer = masteryAnswerText.value[masteryQuestion.id]?.trim() ?? ""
+    if (!answer) {
+      errorMessage.value = "请先回答全部核验问题再提交"
+      return
+    }
+    answers.push({ questionId: masteryQuestion.id, answer })
+  }
+  submitting.value = true
+  errorMessage.value = ""
+  try {
+    session.value = await submitMasteryCheckAnswers(sessionId, answers, session.value.version)
+    syncActiveSegmentWithStage()
+    await refreshTimeline()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    submitting.value = false
+  }
+}
+
 async function submitGuidedQuestionAnswer(questionId: string) {
   if (!session.value || !session.value.latestSupport?.guidedQuestions) return
   const answer = guidedAnswerText.value[questionId]?.trim() ?? ""
@@ -576,7 +656,7 @@ async function respondToSolution(understood: boolean) {
             <p v-if="session.latestSupport?.content || hasFollowUpContent" class="feedback-next-step"><strong>下一步：</strong>{{ hasFollowUpContent ? session.latestSupport?.followUpContent : session.latestSupport?.content }}</p>
           </div>
         </section>
-        <template v-if="session.status !== 'COMPLETED' && session.status !== 'STOPPED_LIMIT'">
+        <template v-if="!isTerminalSession()">
           <section class="session-section input-section" aria-label="当前输入与主操作">
             <el-segmented
               v-model="activeSegment"
@@ -675,6 +755,31 @@ async function respondToSolution(understood: boolean) {
                 </template>
                 <el-empty v-else description="暂无子问题" />
               </div>
+              <div v-show="activeSegment === 'masteryCheck'" class="dialog-pane">
+                <template v-if="session.masteryCheck?.questions?.length">
+                  <p class="mastery-check-hint">本题不支持重新完整自讲。请回答下面的核验问题，确认你是否真的掌握。</p>
+                  <div v-for="item in session.masteryCheck.questions" :key="item.id" class="guided-question">
+                    <p>{{ item.question }}</p>
+                    <el-input
+                      v-model="masteryAnswerText[item.id]"
+                      :data-testid="`mastery-answer-${item.id}`"
+                      type="textarea"
+                      :rows="5"
+                      :disabled="submitting || masteryCheckCompleted()"
+                    />
+                  </div>
+                  <div class="actions">
+                    <el-button
+                      data-testid="submit-mastery-check"
+                      type="primary"
+                      :loading="submitting"
+                      :disabled="submitting || masteryCheckCompleted() || session.flowStage !== 'WAIT_MASTERY_CHECK'"
+                      @click="submitMasteryAnswers"
+                    >提交核验回答</el-button>
+                  </div>
+                </template>
+                <el-empty v-else description="暂无核验问题" />
+              </div>
               <div v-show="activeSegment === 'doubt'" class="dialog-pane">
                 <el-input
                   v-model="doubtDraft"
@@ -751,11 +856,29 @@ async function respondToSolution(understood: boolean) {
             </div>
           </section>
           <section v-if="session.flowStage === 'AI_EVALUATING'" class="session-section"><h2>AI 正在评价</h2><p>请等待评价结果返回。</p></section>
-          <section v-else-if="session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2>完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析；确认后需要从头完成第二轮自讲。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，开始第二轮自讲</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
+          <section v-else-if="session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2>完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析。本题不会再要求完整重讲，确认后直接进入掌握度核验。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，进入掌握度核验</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
+          <section v-else-if="session.flowStage === 'WAIT_MASTERY_CHECK'" class="session-section mastery-check-state">
+            <h2>掌握度核验</h2>
+            <p class="mastery-check-note">请到上方「掌握度核验」中回答下面的问题；全部通过即完成本题。</p>
+          </section>
         </template>
         <section v-if="session.needHumanReason && session.status === 'IN_PROGRESS'" class="session-section"><el-alert title="已申请人工复核，你可以继续自讲。" type="warning" :closable="false" show-icon /></section>
-        <section v-if="session.status === 'COMPLETED'" class="session-section completion-state"><h2>本轮自讲已完成</h2><p>你已经正确、完整地讲清了这道题。</p></section>
+        <section v-if="session.status === 'COMPLETED'" class="session-section completion-state"><h2>本轮自讲已完成</h2><p>{{ session.masteryCheck?.outcome === 'COMPLETED' ? masteryOutcomeLabels.COMPLETED : '你已经正确、完整地讲清了这道题。' }}</p></section>
+        <section v-else-if="session.status === 'NEEDS_REVIEW'" class="session-section solution-state"><h2>本题已结束，仍有未解决问题</h2><p>{{ masteryOutcomeLabels.NEEDS_REVIEW }}</p><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
         <section v-else-if="session.status === 'STOPPED_LIMIT'" class="session-section solution-state"><h2>已达到本轮支持上限</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
+        <section v-if="session.masteryCheck?.results?.length" class="session-section mastery-check-state">
+          <h2>掌握度核验结论</h2>
+          <div v-for="item in session.masteryCheck.questions" :key="item.id" class="guided-question">
+            <p>{{ item.question }}</p>
+            <p class="mastery-answer">你的回答：{{ masteryAnswerFor(item.id) ?? "未作答" }}</p>
+            <p
+              class="mastery-result"
+              :class="masteryResultFor(item.id)?.passed ? 'is-positive' : 'is-attention'"
+            >
+              {{ masteryResultFor(item.id)?.passed ? "通过" : "未通过" }}：{{ masteryResultFor(item.id)?.basis }}
+            </p>
+          </div>
+        </section>
         <section class="session-section timeline-section" aria-labelledby="timeline-title">
           <h2 id="timeline-title">历史记录</h2>
           <p class="section-description">按时间查看你的表达、AI 评价、提示与系统反馈。</p>
@@ -829,6 +952,12 @@ h2 { font-size: var(--font-size-lg); }
 .guided-question + .guided-question { margin-top: var(--space-4); }
 .guided-question p { margin: 0 0 var(--space-2); color: var(--color-text-primary); font-weight: 600; }
 .guided-question .voice-recorder { margin-top: 0; }
+.mastery-check-hint { margin: 0 0 var(--space-4); color: var(--color-text-secondary); font-weight: 400; }
+.mastery-answer { margin: 0 0 var(--space-2); color: var(--color-text-secondary); font-weight: 400; }
+.mastery-result { margin: var(--space-2) 0 0; font-weight: 400; }
+.mastery-result.is-positive { color: var(--color-success, #15803d); }
+.mastery-result.is-attention { color: var(--color-warning, #b45309); }
+.mastery-check-note { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
 .feedback-card { margin-top: var(--space-4); padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
 .feedback-next-step { margin: var(--space-4) 0 0; padding: var(--space-3); border-left: 3px solid var(--color-brand-600); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--color-brand-50); overflow-wrap: anywhere; }
 .conversation-scroll {

@@ -151,12 +151,14 @@ class AIMasteryCheckService:
         attempt: ExplanationAttempt,
         evaluation_id: int,
     ) -> MasteryCheckEvidence | None:
-        """读取最近一次有效评价的结构化输出作为问题生成证据。
+        """读取最近一次非终态评价的结构化输出作为问题生成证据。
 
-        评价的 mainReason、otherReasons 和 judgeReason 保存在模型响应事件中，
-        这里集中解析一次，避免调用点各自解析原始事件 JSON。
+        终态评价（正确且完整）没有 mainReason 和 judgeReason；核验问题只围绕
+        学生仍然暴露的薄弱点，因此证据取最近一次未解决问题的评价。评价的
+        mainReason、otherReasons 和 judgeReason 保存在模型响应事件中，这里集中
+        解析一次，避免调用点各自解析原始事件 JSON。
         """
-        evaluation = self.repository.get_latest_valid_evaluation(session.id)
+        evaluation = self.repository.get_latest_non_terminal_evaluation(session.id)
         if evaluation is None or evaluation.id != evaluation_id:
             return None
         if evaluation.attempt_id != attempt.id:
@@ -176,6 +178,11 @@ class AIMasteryCheckService:
     def _latest_evaluation_output(
         self, session: Session, attempt_id: int
     ) -> AIEvaluationOutput | None:
+        """读取该次尝试最近一次结构合法的评价输出。
+
+        同一次尝试里还可能有教学、支持等其他模型响应，它们与评价共用 run_id，
+        所以这里按输出结构筛选，遇到不属于评价的响应继续往前找。
+        """
         events = SessionEventLog(self.repository.database_session).event_store.list_events(
             session.id
         )
@@ -187,11 +194,11 @@ class AIMasteryCheckService:
                 continue
             output = event.data.get("output")
             if not isinstance(output, dict):
-                return None
+                continue
             try:
                 return AIEvaluationOutput.model_validate(output)
             except ValidationError:
-                return None
+                continue
         return None
 
     def _build_progress_context(self, session: Session) -> dict[str, object]:

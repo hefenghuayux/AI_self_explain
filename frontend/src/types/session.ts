@@ -1,7 +1,7 @@
 export type InitialChoice = "KNOW" | "NOT_KNOW" | "HAS_QUESTION"
 export type VoiceInputTarget = "SELF_EXPLANATION" | "GUIDED_ANSWER" | "DOUBT" | "APPEAL"
 
-export type SessionStatus = "IN_PROGRESS" | "COMPLETED" | "STOPPED_LIMIT" | "PAUSED"
+export type SessionStatus = "IN_PROGRESS" | "COMPLETED" | "STOPPED_LIMIT" | "PAUSED" | "NEEDS_REVIEW"
 
 export type FlowStage =
   | "WAIT_INITIAL_CHOICE"
@@ -10,6 +10,7 @@ export type FlowStage =
   | "AI_EVALUATING"
   | "WAIT_STUDENT_ACTION"
   | "WAIT_GUIDED_ANSWERS"
+  | "WAIT_MASTERY_CHECK"
   | "SHOWING_FULL_SOLUTION"
 
 export interface AIEvaluation {
@@ -47,6 +48,24 @@ export interface GuidedAnswer {
   answer: string
 }
 
+export interface MasteryCheckQuestion {
+  id: string
+  question: string
+}
+
+export interface MasteryCheckResult {
+  questionId: string
+  passed: boolean
+  basis: string
+}
+
+export interface MasteryCheck {
+  questions: MasteryCheckQuestion[]
+  answers: GuidedAnswer[] | null
+  results: MasteryCheckResult[] | null
+  outcome: "COMPLETED" | "NEEDS_REVIEW" | null
+}
+
 export interface LearningTimelineItem {
   id: string
   eventType:
@@ -55,10 +74,20 @@ export interface LearningTimelineItem {
     | "SUPPORT"
     | "GUIDED_QUESTIONS"
     | "FOLLOW_UP"
+    | "MASTERY_QUESTIONS"
+    | "MASTERY_ANSWER"
+    | "MASTERY_RESULT"
     | "FULL_SOLUTION"
     | "NEED_HUMAN"
   speaker: "STUDENT" | "AI" | "SYSTEM"
-  submissionType: "SELF_EXPLANATION" | "SUPPORT_REQUEST" | "GUIDED_ANSWER" | "DOUBT" | "APPEAL" | null
+  submissionType:
+    | "SELF_EXPLANATION"
+    | "SUPPORT_REQUEST"
+    | "GUIDED_ANSWER"
+    | "DOUBT"
+    | "APPEAL"
+    | "MASTERY_ANSWER"
+    | null
   content: string
   correctness: AIEvaluation["correctness"] | null
   completeness: AIEvaluation["completeness"] | null
@@ -77,7 +106,7 @@ export interface Session {
   noProgressCount: number
   noProgressHelpRequestCount: number
   solutionExposed: boolean
-  completionType: "INDEPENDENT" | "WITH_SUPPORT" | "AFTER_SOLUTION" | null
+  completionType: "INDEPENDENT" | "WITH_SUPPORT" | "AFTER_SOLUTION" | "AFTER_MASTERY_CHECK" | null
   currentDraft: string
   version: number
   initialChoice: InitialChoice | null
@@ -88,4 +117,5 @@ export interface Session {
     | { status: "NOT_REQUIRED" }
     | { status: "SUCCEEDED"; supportEventId: number }
     | null
+  masteryCheck: MasteryCheck | null
 }

@@ -30,6 +30,7 @@ vi.mock("../src/api/sessions", () => ({
   submitAppeal: vi.fn(),
   submitGuidedAnswers: vi.fn(),
   submitInitialChoice: vi.fn(),
+  submitMasteryCheckAnswers: vi.fn(),
   submitSolutionUnderstanding: vi.fn(),
   submitTextAttempt: vi.fn(),
 }))
@@ -43,6 +44,7 @@ const fetchQuestion = vi.mocked(questionApi.fetchQuestion)
 const submitAppeal = vi.mocked(sessionApi.submitAppeal)
 const submitGuidedAnswers = vi.mocked(sessionApi.submitGuidedAnswers)
 const submitInitialChoice = vi.mocked(sessionApi.submitInitialChoice)
+const submitMasteryCheckAnswers = vi.mocked(sessionApi.submitMasteryCheckAnswers)
 const submitTextAttempt = vi.mocked(sessionApi.submitTextAttempt)
 
 function createSession(overrides: Partial<Session> = {}): Session {
@@ -65,6 +67,7 @@ function createSession(overrides: Partial<Session> = {}): Session {
     latestEvaluation: null,
     latestSupport: null,
     teachingGeneration: null,
+    masteryCheck: null,
     ...overrides,
   }
 }
@@ -548,6 +551,7 @@ describe("SessionView", () => {
       JSON.stringify({
         selfExplain: "上次的自讲内容",
         guidedAnswers: { q1: "上次的答案" },
+        masteryCheck: { mc1: "上次的核验回答" },
         doubt: "我的疑问",
         appeal: "我不同意",
       }),
@@ -566,5 +570,92 @@ describe("SessionView", () => {
     expect((wrapper.get('[data-testid="appeal-draft"]').element as HTMLTextAreaElement).value).toBe(
       "我不同意",
     )
+  })
+
+  it("asks for a mastery check instead of a second full self-explanation", async () => {
+    fetchSession.mockResolvedValue(createSession({
+      flowStage: "SHOWING_FULL_SOLUTION",
+      solutionExposed: true,
+      version: 9,
+    }))
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.get('[data-testid="understood-solution"]').text()).toBe("我会了，进入掌握度核验")
+    expect(wrapper.text()).not.toContain("第二轮自讲")
+  })
+
+  it("submits mastery check answers and shows the per-question result", async () => {
+    fetchSession.mockResolvedValue(createSession({
+      flowStage: "WAIT_MASTERY_CHECK",
+      version: 9,
+      masteryCheck: {
+        questions: [
+          { id: "mc1", question: "你在合并两个数量时依据的是什么？" },
+          { id: "mc2", question: "为什么结果一定是 2？" },
+        ],
+        answers: null,
+        results: null,
+        outcome: null,
+      },
+    }))
+    submitMasteryCheckAnswers.mockResolvedValue(createSession({
+      flowStage: "WAIT_STUDENT_ACTION",
+      status: "NEEDS_REVIEW",
+      completionType: "AFTER_MASTERY_CHECK",
+      version: 10,
+      masteryCheck: {
+        questions: [
+          { id: "mc1", question: "你在合并两个数量时依据的是什么？" },
+          { id: "mc2", question: "为什么结果一定是 2？" },
+        ],
+        answers: [
+          { questionId: "mc1", answer: "依据是把两个 1 合起来。" },
+          { questionId: "mc2", answer: "因为 1 加 1 等于 2。" },
+        ],
+        results: [
+          { questionId: "mc1", passed: true, basis: "学生说明了依据。" },
+          { questionId: "mc2", passed: false, basis: "学生只是复述了结论。" },
+        ],
+        outcome: "NEEDS_REVIEW",
+      },
+    }))
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.get('[data-testid="dialog-segmented"]').text()).toContain("掌握度核验")
+    await wrapper.get('[data-testid="mastery-answer-mc1"]').setValue("依据是把两个 1 合起来。")
+    await wrapper.get('[data-testid="mastery-answer-mc2"]').setValue("因为 1 加 1 等于 2。")
+    await wrapper.get('[data-testid="submit-mastery-check"]').trigger("click")
+    await flushPromises()
+
+    expect(submitMasteryCheckAnswers).toHaveBeenCalledWith(
+      "12",
+      [
+        { questionId: "mc1", answer: "依据是把两个 1 合起来。" },
+        { questionId: "mc2", answer: "因为 1 加 1 等于 2。" },
+      ],
+      9,
+    )
+    expect(wrapper.text()).toContain("核验仍有未解决问题，本题结束并记录待复核")
+    expect(wrapper.text()).toContain("未通过：学生只是复述了结论。")
+  })
+
+  it("requires every mastery check question to be answered before submitting", async () => {
+    fetchSession.mockResolvedValue(createSession({
+      flowStage: "WAIT_MASTERY_CHECK",
+      version: 9,
+      masteryCheck: {
+        questions: [{ id: "mc1", question: "你在合并两个数量时依据的是什么？" }],
+        answers: null,
+        results: null,
+        outcome: null,
+      },
+    }))
+    const wrapper = await mountSessionView()
+
+    await wrapper.get('[data-testid="submit-mastery-check"]').trigger("click")
+    await flushPromises()
+
+    expect(submitMasteryCheckAnswers).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain("请先回答全部核验问题再提交")
   })
 })

@@ -24,6 +24,7 @@ from app.rules.session_lifecycle import (
     FLOW_STAGE_SHOWING_FULL_SOLUTION,
     FLOW_STAGE_WAIT_GUIDED_ANSWERS,
     FLOW_STAGE_WAIT_INITIAL_CHOICE,
+    FLOW_STAGE_WAIT_MASTERY_CHECK,
     FLOW_STAGE_WAIT_STUDENT_ACTION,
     STATUS_IN_PROGRESS,
     STATUS_PAUSED,
@@ -34,6 +35,7 @@ from app.rules.session_lifecycle import (
 )
 from app.rules.teaching_decision import decide_teaching
 from app.schemas.ai_evaluation import AIEvaluationResponse
+from app.schemas.mastery_check import MasteryCheckQuestion
 from app.schemas.session import (
     AppealInput,
     CreateSessionInput,
@@ -42,6 +44,8 @@ from app.schemas.session import (
     HelpRequestInput,
     InitialChoiceInput,
     LearningTimelineItemResponse,
+    MasteryCheckAnswersInput,
+    MasteryCheckResponse,
     SessionResponse,
     SolutionUnderstandingInput,
     StudentActionInput,
@@ -53,6 +57,7 @@ from app.schemas.session import (
 )
 from app.schemas.support import GuidedAnswer, SupportEventResponse
 from app.services.ai_evaluation import AIEvaluationService
+from app.services.ai_mastery_check import AIMasteryCheckService, MasteryCheckQuestionInput
 from app.services.ai_support import AISupportService
 from app.services.ai_teaching import AITeachingService
 from app.services.audio_storage import AudioStorage, AudioStorageError
@@ -114,6 +119,7 @@ def to_session_response(
 ) -> SessionResponse:
     latest_support = repository.get_latest_valid_support(session.id)
     latest_evaluation = repository.get_latest_valid_evaluation(session.id)
+    mastery_check = repository.get_latest_mastery_check(session.id)
     return SessionResponse.model_validate(session).model_copy(
         update={
             "latest_evaluation": (
@@ -127,7 +133,72 @@ def to_session_response(
                 else None
             ),
             "teaching_generation": teaching_generation,
+            "mastery_check": (
+                _mastery_check_response(mastery_check) if mastery_check is not None else None
+            ),
         }
+    )
+
+
+def _mastery_check_response(mastery_check) -> MasteryCheckResponse:
+    """只投影学生可见字段：问题、回答、评价结论；证据引用与内部字段不外发。"""
+    return MasteryCheckResponse.model_validate(
+        {
+            "questions": [
+                {"id": question["id"], "question": question["question"]}
+                for question in mastery_check.questions
+                if isinstance(question, dict) and "id" in question and "question" in question
+            ],
+            "answers": mastery_check.answers,
+            "results": mastery_check.results,
+            "outcome": mastery_check.outcome,
+        }
+    )
+
+
+def start_mastery_check(
+    *,
+    repository: SessionRepository,
+    session: Session,
+    question: Question,
+    settings,
+    http_client,
+) -> Session:
+    """生成并保存核验问题。
+
+    核验问题以最近一次非终态评价为证据。缺少证据或生成失败时不进入核验，
+    走现有人工复核路径，学生仍可继续自讲；会话不会停在 `WAIT_MASTERY_CHECK`。
+    """
+    evidence_evaluation = repository.get_latest_non_terminal_evaluation(session.id)
+    evidence_attempt = (
+        None
+        if evidence_evaluation is None
+        else repository.get_attempt(session.id, evidence_evaluation.attempt_id)
+    )
+    if evidence_evaluation is not None and evidence_attempt is not None:
+        output = AIMasteryCheckService(
+            repository.database_session, settings, http_client
+        ).generate_questions(
+            question=question,
+            session=session,
+            attempt=evidence_attempt,
+            evaluation_id=evidence_evaluation.id,
+        )
+        if output is not None:
+            repository.record_mastery_questions(
+                session=session,
+                attempt_id=evidence_attempt.id,
+                evaluation_id=evidence_evaluation.id,
+                questions=output.questions,
+            )
+            return session
+        if session.flow_stage != FLOW_STAGE_WAIT_MASTERY_CHECK:
+            # AI 结构或传输失败时，核验服务已经申请过人工复核。
+            return session
+    return repository.request_human_review(
+        session=session,
+        need_human_reason="缺少可用于核验的评价证据，已转人工复核",
+        trigger_type="AI_MASTERY_CHECK_EVIDENCE_MISSING",
     )
 
 
@@ -310,6 +381,14 @@ def submit_text_attempt(
             teaching_output=None,
             run_id=session_run_id(session.id, attempt.id),
         )
+        if decision.start_mastery_check:
+            decided_session = start_mastery_check(
+                repository=repository,
+                session=decided_session,
+                question=question,
+                settings=request.app.state.settings,
+                http_client=request.app.state.ai_http_client,
+            )
         return to_session_response(
             repository,
             decided_session,
@@ -632,17 +711,98 @@ def respond_to_first_solution(
     understanding_input: SolutionUnderstandingInput,
     database_session: DatabaseSession,
     current_user: CurrentUser,
+    request: Request,
 ) -> SessionResponse:
     repository = SessionRepository(database_session)
     session = get_session_or_404(repository, session_id, current_user)
     validate_in_progress(session)
     validate_version(session, understanding_input.version)
-    if session.flow_stage != FLOW_STAGE_SHOWING_FULL_SOLUTION or session.round != 1:
+    if session.flow_stage != FLOW_STAGE_SHOWING_FULL_SOLUTION:
         reject_operation(f"当前流程阶段不能确认第一轮解析理解情况：{session.flow_stage}")
+    latest_evaluation = repository.get_latest_valid_evaluation(session.id)
     responded_session = repository.respond_to_first_solution(
-        session=session, understood=understanding_input.understood
+        session=session,
+        evaluation_id=None if latest_evaluation is None else latest_evaluation.id,
+        understood=understanding_input.understood,
     )
+    if responded_session.flow_stage == FLOW_STAGE_WAIT_MASTERY_CHECK:
+        question = database_session.get(Question, responded_session.question_id)
+        if question is None:
+            raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
+        responded_session = start_mastery_check(
+            repository=repository,
+            session=responded_session,
+            question=question,
+            settings=request.app.state.settings,
+            http_client=request.app.state.ai_http_client,
+        )
     return to_session_response(repository, responded_session)
+
+
+@router.post("/{session_id}/mastery-check-answers", response_model=SessionResponse)
+def submit_mastery_check_answers(
+    session_id: int,
+    answers_input: MasteryCheckAnswersInput,
+    database_session: DatabaseSession,
+    current_user: CurrentUser,
+    request: Request,
+) -> SessionResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id, current_user)
+    validate_in_progress(session)
+    validate_version(session, answers_input.version)
+    if session.flow_stage != FLOW_STAGE_WAIT_MASTERY_CHECK:
+        reject_operation(f"当前流程阶段不能提交核验回答：{session.flow_stage}")
+    mastery_check = repository.get_latest_mastery_check(session.id)
+    if mastery_check is None:
+        raise RuntimeError(f"会话 {session.id} 缺少待回答的核验记录")
+    if mastery_check.outcome is not None:
+        reject_operation("本次核验已经提交过回答")
+    stored_questions = [
+        MasteryCheckQuestion.model_validate(question)
+        for question in mastery_check.questions
+        if isinstance(question, dict)
+    ]
+    expected_ids = [question.id for question in stored_questions]
+    submitted_ids = [answer.question_id for answer in answers_input.answers]
+    if set(submitted_ids) != set(expected_ids) or len(submitted_ids) != len(expected_ids):
+        reject_operation("核验回答必须与已发送问题一一对应")
+    question = database_session.get(Question, session.question_id)
+    if question is None:
+        raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
+    question_inputs = [
+        MasteryCheckQuestionInput(
+            question_id=item.id,
+            question=item.question,
+            evidence_refs=[ref.model_dump() for ref in item.evidence_refs],
+        )
+        for item in stored_questions
+    ]
+    try:
+        output = AIMasteryCheckService(
+            database_session, request.app.state.settings, request.app.state.ai_http_client
+        ).evaluate_answers(
+            question=question,
+            session=session,
+            questions=question_inputs,
+            answers=answers_input.answers,
+        )
+    except CompactionError as error:
+        repository.request_human_review(
+            session=session,
+            need_human_reason=f"AI 核验上下文恢复失败：{error.code}",
+            trigger_type="AI_MASTERY_CHECK_CONTEXT_FAILED",
+        )
+        raise
+    if output is None:
+        return to_session_response(repository, session)
+    updated_session, _ = repository.record_mastery_answers(
+        session=session,
+        mastery_check=mastery_check,
+        answers=answers_input.answers,
+        results=output.results,
+    )
+    return to_session_response(repository, updated_session)
 
 
 async def reject_voice_stream(websocket: WebSocket, detail: str) -> None:

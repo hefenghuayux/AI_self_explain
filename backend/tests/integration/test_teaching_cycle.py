@@ -192,6 +192,7 @@ def test_guided_answers_can_be_submitted_separately_without_second_support(
 
 
 def test_support_limit_does_not_create_the_threshold_support_event(settings, monkeypatch) -> None:
+    """计数已达上限时，下一次请求只展示完整解析，不再新增支持事件。"""
     _stub_ai(monkeypatch, {})
     with _client(settings, monkeypatch) as client:
         session = _start_help(client, _create_session(client))
@@ -204,8 +205,8 @@ def test_support_limit_does_not_create_the_threshold_support_event(settings, mon
                         "support_count_total = :total_count WHERE id = :session_id"
                     ),
                     {
-                        "round_count": settings.first_round_support_limit - 1,
-                        "total_count": settings.first_round_support_limit - 1,
+                        "round_count": settings.first_round_support_limit,
+                        "total_count": settings.first_round_support_limit,
                         "session_id": session["id"],
                     },
                 )
@@ -218,7 +219,8 @@ def test_support_limit_does_not_create_the_threshold_support_event(settings, mon
 
     assert response.status_code == 200
     assert response.json()["flowStage"] == "SHOWING_FULL_SOLUTION"
-    assert response.json()["supportCountTotal"] == settings.first_round_support_limit - 1
+    assert response.json()["supportCountTotal"] == settings.first_round_support_limit
+    assert response.json()["latestSupport"] is None
 
 
 def test_not_understanding_first_solution_requests_review_and_allows_continuing(
@@ -236,7 +238,7 @@ def test_not_understanding_first_solution_requests_review_and_allows_continuing(
                         "WHERE id = :session_id"
                     ),
                     {
-                        "support_count": settings.first_round_support_limit - 1,
+                        "support_count": settings.first_round_support_limit,
                         "session_id": session["id"],
                     },
                 )

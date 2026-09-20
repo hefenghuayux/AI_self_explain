@@ -154,3 +154,14 @@ export function submitSolutionUnderstanding(
     body: JSON.stringify({ understood, version }),
   })
 }
+
+export function submitMasteryCheckAnswers(
+  sessionId: string,
+  answers: GuidedAnswer[],
+  version: number,
+): Promise<Session> {
+  return requestSessionApi<Session>(`/api/sessions/${sessionId}/mastery-check-answers`, {
+    method: "POST",
+    body: JSON.stringify({ answers, version }),
+  })
+}

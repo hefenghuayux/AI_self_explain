@@ -1,13 +1,17 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.schemas.ai_evaluation import AIEvaluationResponse, Completeness, Correctness
+from app.schemas.mastery_check import (
+    MasteryCheckAnswer,
+    MasteryCheckAnswerResult,
+)
 from app.schemas.question import QuestionSchema, RequiredText
 from app.schemas.support import GuidedAnswer, SupportEventResponse
 
-SessionStatus = Literal["IN_PROGRESS", "COMPLETED", "STOPPED_LIMIT", "PAUSED"]
+SessionStatus = Literal["IN_PROGRESS", "COMPLETED", "STOPPED_LIMIT", "PAUSED", "NEEDS_REVIEW"]
 FlowStage = Literal[
     "WAIT_INITIAL_CHOICE",
     "CAPTURING_INPUT",
@@ -15,6 +19,7 @@ FlowStage = Literal[
     "AI_EVALUATING",
     "WAIT_STUDENT_ACTION",
     "WAIT_GUIDED_ANSWERS",
+    "WAIT_MASTERY_CHECK",
     "SHOWING_FULL_SOLUTION",
 ]
 InitialChoice = Literal["KNOW", "NOT_KNOW", "HAS_QUESTION"]
@@ -55,6 +60,19 @@ class GuidedAnswersInput(StudentActionInput):
     voice_attempt_id: int | None = Field(default=None, gt=0)
 
 
+class MasteryCheckAnswersInput(StudentActionInput):
+    """核验提交只携带问题 ID、学生回答和版本号，问题正文由服务端保存的记录提供。"""
+
+    answers: list[MasteryCheckAnswer] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def reject_duplicate_question_ids(self) -> "MasteryCheckAnswersInput":
+        question_ids = [answer.question_id for answer in self.answers]
+        if len(question_ids) != len(set(question_ids)):
+            raise ValueError("同一次提交不能包含重复的核验问题答案")
+        return self
+
+
 class AppealInput(StudentActionInput):
     reason: RequiredText
     voice_attempt_id: int | None = Field(default=None, gt=0)
@@ -70,6 +88,9 @@ TimelineEventType = Literal[
     "SUPPORT",
     "GUIDED_QUESTIONS",
     "FOLLOW_UP",
+    "MASTERY_QUESTIONS",
+    "MASTERY_ANSWER",
+    "MASTERY_RESULT",
     "FULL_SOLUTION",
     "NEED_HUMAN",
 ]
@@ -80,6 +101,7 @@ TimelineSubmissionType = Literal[
     "GUIDED_ANSWER",
     "DOUBT",
     "APPEAL",
+    "MASTERY_ANSWER",
 ]
 TimelineSupportType = Literal[
     "ASK_FOCUSED_QUESTION",
@@ -114,6 +136,20 @@ class TeachingSucceededResponse(QuestionSchema):
 TeachingGenerationResponse = TeachingNotRequiredResponse | TeachingSucceededResponse
 
 
+class MasteryCheckQuestionResponse(QuestionSchema):
+    id: str
+    question: str
+
+
+class MasteryCheckResponse(QuestionSchema):
+    """学生可见的核验记录。不包含证据引用、原始 JSON 或内部计数。"""
+
+    questions: list[MasteryCheckQuestionResponse]
+    answers: list[MasteryCheckAnswer] | None
+    results: list[MasteryCheckAnswerResult] | None
+    outcome: Literal["COMPLETED", "NEEDS_REVIEW"] | None
+
+
 class SessionResponse(QuestionSchema):
     id: int
     question_id: int
@@ -137,3 +173,4 @@ class SessionResponse(QuestionSchema):
     latest_evaluation: AIEvaluationResponse | None = None
     latest_support: SupportEventResponse | None = None
     teaching_generation: TeachingGenerationResponse | None = None
+    mastery_check: MasteryCheckResponse | None = None

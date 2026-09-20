@@ -28,7 +28,6 @@ class Settings(BaseSettings):
     )
 
     first_round_support_limit: PositiveInt
-    second_round_support_limit: PositiveInt
 
     ai_request_timeout_seconds: PositiveFloat
     ai_transport_max_retries: Annotated[int, Field(ge=0)]

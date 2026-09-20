@@ -233,7 +233,7 @@ def test_timeline_records_solution_display_without_revealing_solution_content(
                         "support_count_round = :support_count WHERE id = :session_id"
                     ),
                     {
-                        "support_count": settings.first_round_support_limit - 1,
+                        "support_count": settings.first_round_support_limit,
                         "session_id": started_session["id"],
                     },
                 )

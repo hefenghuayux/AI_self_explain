@@ -1,34 +1,58 @@
+import pytest
+
 from app.rules.teaching_cycle import (
     completion_type_for,
+    needs_mastery_check,
+    support_limit_for,
     support_limit_reached,
 )
 
 
-def test_support_limits_are_derived_from_settings(settings) -> None:
-    assert not support_limit_reached(
-        round_number=1,
-        support_count_round=settings.first_round_support_limit - 2,
-        settings=settings,
-    )
-    assert support_limit_reached(
-        round_number=1,
-        support_count_round=settings.first_round_support_limit - 1,
-        settings=settings,
-    )
-    assert support_limit_reached(
-        round_number=2,
-        support_count_round=settings.second_round_support_limit - 1,
-        settings=settings,
+def test_support_limit_allows_the_configured_number_of_supports(settings) -> None:
+    limit = settings.first_round_support_limit
+
+    assert not support_limit_reached(support_count_round=0, settings=settings)
+    assert not support_limit_reached(support_count_round=limit - 1, settings=settings)
+    # 计数等于上限表示“上限次支持已经发送”，下一次请求才触发完整解析。
+    assert support_limit_reached(support_count_round=limit, settings=settings)
+    assert support_limit_reached(support_count_round=limit + 1, settings=settings)
+    assert support_limit_for(settings=settings) == limit
+
+
+@pytest.mark.parametrize(
+    ("support_count_round", "solution_exposed", "expected"),
+    [
+        (0, False, False),
+        (1, False, False),
+        (1, True, False),
+        (2, False, False),
+        (2, True, True),
+        (3, False, True),
+        (3, True, True),
+        (6, True, True),
+    ],
+)
+def test_mastery_check_trigger_depends_only_on_support_count_and_solution(
+    support_count_round: int, solution_exposed: bool, expected: bool
+) -> None:
+    assert (
+        needs_mastery_check(
+            support_count_round=support_count_round, solution_exposed=solution_exposed
+        )
+        is expected
     )
 
 
 def test_completion_type_uses_only_deterministic_session_facts() -> None:
     assert completion_type_for(
-        solution_exposed=False, round_number=1, support_count_total=0
+        support_count_round=0, mastery_check_completed=False
     ) == "INDEPENDENT"
     assert completion_type_for(
-        solution_exposed=False, round_number=1, support_count_total=1
+        support_count_round=1, mastery_check_completed=False
     ) == "WITH_SUPPORT"
     assert completion_type_for(
-        solution_exposed=True, round_number=2, support_count_total=0
-    ) == "AFTER_SOLUTION"
+        support_count_round=2, mastery_check_completed=True
+    ) == "AFTER_MASTERY_CHECK"
+    assert completion_type_for(
+        support_count_round=6, mastery_check_completed=True
+    ) == "AFTER_MASTERY_CHECK"

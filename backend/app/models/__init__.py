@@ -4,6 +4,7 @@ from app.models.auth_session import AuthSession
 from app.models.base import Base
 from app.models.explanation_attempt import ExplanationAttempt
 from app.models.external_call_record import ExternalCallRecord
+from app.models.mastery_check import MasteryCheck
 from app.models.question import Question
 from app.models.session import Session
 from app.models.session_event import SessionEvent
@@ -19,6 +20,7 @@ __all__ = [
     "Base",
     "ExplanationAttempt",
     "ExternalCallRecord",
+    "MasteryCheck",
     "Question",
     "Session",
     "SessionEvent",

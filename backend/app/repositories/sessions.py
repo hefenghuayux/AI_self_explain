@@ -9,6 +9,7 @@ from app.models.ai_evaluation import AIEvaluation
 from app.models.audio_file import AudioFile
 from app.models.explanation_attempt import ExplanationAttempt
 from app.models.external_call_record import ExternalCallRecord
+from app.models.mastery_check import MasteryCheck
 from app.models.session import Session
 from app.models.state_transition_event import StateTransitionEvent
 from app.models.student_submission import StudentSubmission
@@ -19,19 +20,27 @@ from app.rules.session_lifecycle import (
     FLOW_STAGE_SHOWING_FULL_SOLUTION,
     FLOW_STAGE_WAIT_GUIDED_ANSWERS,
     FLOW_STAGE_WAIT_INITIAL_CHOICE,
+    FLOW_STAGE_WAIT_MASTERY_CHECK,
     FLOW_STAGE_WAIT_STUDENT_ACTION,
+    STATUS_COMPLETED,
     STATUS_IN_PROGRESS,
     STATUS_PAUSED,
-    STATUS_STOPPED_LIMIT,
     flow_stage_after_initial_choice,
 )
 from app.rules.teaching_cycle import (
     COUNTED_SUPPORT_TYPES,
+    completion_type_for,
+    needs_mastery_check,
     support_limit_for,
     support_limit_reached,
 )
-from app.rules.teaching_decision import TeachingDecision
+from app.rules.teaching_decision import TeachingDecision, decide_mastery_check_outcome
 from app.schemas.ai_evaluation import AIEvaluationOutput
+from app.schemas.mastery_check import (
+    MasteryCheckAnswer,
+    MasteryCheckAnswerResult,
+    MasteryCheckQuestion,
+)
 from app.schemas.model_request_snapshot import ModelRequestSnapshot
 from app.schemas.support import GuidedAnswer, GuidedQuestion
 from app.schemas.teaching import TeachingOutput
@@ -47,6 +56,10 @@ HUMAN_REVIEW_TRIGGER_TYPES = frozenset(
         "AI_SUPPORT_SCHEMA_RETRY_EXHAUSTED",
         "AI_SUPPORT_TRANSPORT_RETRY_EXHAUSTED",
         "AI_TEACHING_RETRY_EXHAUSTED",
+        "AI_MASTERY_CHECK_CONTEXT_FAILED",
+        "AI_MASTERY_CHECK_EVIDENCE_MISSING",
+        "AI_MASTERY_CHECK_SCHEMA_RETRY_EXHAUSTED",
+        "AI_MASTERY_CHECK_TRANSPORT_RETRY_EXHAUSTED",
         "STUDENT_APPEAL",
         "DID_NOT_UNDERSTAND_FIRST_SOLUTION",
     }
@@ -200,6 +213,36 @@ class SessionRepository:
             .order_by(AIEvaluation.id.desc())
         )
         return self.database_session.scalars(statement).first()
+
+    def get_latest_non_terminal_evaluation(self, session_id: int) -> AIEvaluation | None:
+        """返回最近一次非终态评价，用于核验问题的证据。
+
+        终态评价（正确且完整）没有 mainReason 和 judgeReason，不能作为核验
+        证据；核验问题只围绕学生仍然暴露的薄弱点，因此要往前找最近一次未
+        解决问题的评价。
+        """
+        statement = (
+            select(AIEvaluation)
+            .where(
+                AIEvaluation.session_id == session_id,
+                AIEvaluation.validation_status == "VALID",
+                AIEvaluation.correctness.in_(("CORRECT", "WRONG")),
+                ~(
+                    (AIEvaluation.correctness == "CORRECT")
+                    & (AIEvaluation.completeness == "COMPLETE")
+                ),
+            )
+            .order_by(AIEvaluation.id.desc())
+        )
+        return self.database_session.scalars(statement).first()
+
+    def get_attempt(self, session_id: int, attempt_id: int) -> ExplanationAttempt | None:
+        return self.database_session.scalar(
+            select(ExplanationAttempt).where(
+                ExplanationAttempt.session_id == session_id,
+                ExplanationAttempt.id == attempt_id,
+            )
+        )
 
     def get_latest_valid_support(self, session_id: int) -> SupportEvent | None:
         statement = (
@@ -384,7 +427,60 @@ class SessionRepository:
                     "created_at": transition.created_at,
                 }
             )
+        timeline.extend(self._mastery_check_timeline(session_id))
         return sorted(timeline, key=_timeline_sort_key)
+
+    def _mastery_check_timeline(self, session_id: int) -> list[dict[str, object]]:
+        """核验的问题、学生回答与结论各自成条，时间线不隐藏任何一步。"""
+        mastery_checks = self.database_session.scalars(
+            select(MasteryCheck)
+            .where(MasteryCheck.session_id == session_id)
+            .order_by(MasteryCheck.created_at, MasteryCheck.id)
+        )
+        timeline: list[dict[str, object]] = []
+        for mastery_check in mastery_checks:
+            questions = [
+                MasteryCheckQuestion.model_validate(question)
+                for question in mastery_check.questions
+                if isinstance(question, dict)
+            ]
+            timeline.append(
+                {
+                    "id": f"mastery-questions-{mastery_check.id}",
+                    "event_type": "MASTERY_QUESTIONS",
+                    "speaker": "AI",
+                    "submission_type": None,
+                    "content": _format_mastery_questions_for_timeline(questions),
+                    "correctness": None,
+                    "completeness": None,
+                    "action": None,
+                    "created_at": mastery_check.created_at,
+                }
+            )
+            if mastery_check.results is None or mastery_check.completed_at is None:
+                continue
+            results = [
+                MasteryCheckAnswerResult.model_validate(result)
+                for result in mastery_check.results
+                if isinstance(result, dict)
+            ]
+            passed_by_id = {result.question_id: result.passed for result in results}
+            timeline.append(
+                {
+                    "id": f"mastery-result-{mastery_check.id}",
+                    "event_type": "MASTERY_RESULT",
+                    "speaker": "AI",
+                    "submission_type": None,
+                    "content": _format_mastery_results_for_timeline(
+                        mastery_check.questions, results
+                    ),
+                    "correctness": None,
+                    "completeness": None,
+                    "action": "COMPLETE" if all(passed_by_id.values()) else None,
+                    "created_at": mastery_check.completed_at,
+                }
+            )
+        return timeline
 
     def choose_initial_choice(self, session: Session, choice: str) -> Session:
         before_snapshot = session_snapshot(session)
@@ -811,7 +907,6 @@ class SessionRepository:
         self, *, session: Session, settings: Settings, trigger_type: str
     ) -> Session | None:
         if not support_limit_reached(
-            round_number=session.round,
             support_count_round=session.support_count_round,
             settings=settings,
         ):
@@ -1153,30 +1248,142 @@ class SessionRepository:
             related_evaluation_id=evaluation_id,
         )
 
-    def respond_to_first_solution(self, *, session: Session, understood: bool) -> Session:
-        if understood:
-            before_snapshot = session_snapshot(session)
-            session.round = 2
-            session.support_count_round = 0
-            session.no_progress_count = 0
-            session.no_progress_help_request_count = 0
-            session.flow_stage = FLOW_STAGE_CAPTURING_INPUT
-            trigger_type = "UNDERSTOOD_FIRST_SOLUTION"
-        else:
+    def respond_to_first_solution(
+        self, *, session: Session, evaluation_id: int | None, understood: bool
+    ) -> Session:
+        """第一轮完整解析后的学生确认。
+
+        理解时按有效支持数决定进入掌握度核验还是直接结束本题；不理解时保留
+        现有人工复核路径，不进入核验。
+        """
+        if not understood:
             return self.request_human_review(
                 session=session,
                 need_human_reason="学生在第一轮完整解析后仍表示不会",
                 trigger_type="DID_NOT_UNDERSTAND_FIRST_SOLUTION",
+                related_evaluation_id=evaluation_id,
             )
+        before_snapshot = session_snapshot(session)
+        if needs_mastery_check(
+            support_count_round=session.support_count_round,
+            solution_exposed=session.solution_exposed,
+        ):
+            session.flow_stage = FLOW_STAGE_WAIT_MASTERY_CHECK
+            trigger_type = "ENTER_MASTERY_CHECK_AFTER_SOLUTION"
+        else:
+            session.status = STATUS_COMPLETED
+            session.flow_stage = FLOW_STAGE_WAIT_STUDENT_ACTION
+            session.completion_type = completion_type_for(
+                support_count_round=session.support_count_round,
+                mastery_check_completed=False,
+            )
+            session.finished_at = datetime.now(UTC)
+            trigger_type = "UNDERSTOOD_FIRST_SOLUTION"
         session.version += 1
         self._record_transition(
             session=session,
             trigger_type=trigger_type,
             before_snapshot=before_snapshot,
+            related_evaluation_id=evaluation_id,
         )
         self.database_session.commit()
         self.database_session.refresh(session)
         return session
+
+    def get_latest_mastery_check(self, session_id: int) -> MasteryCheck | None:
+        statement = (
+            select(MasteryCheck)
+            .where(MasteryCheck.session_id == session_id)
+            .order_by(MasteryCheck.id.desc())
+        )
+        return self.database_session.scalars(statement).first()
+
+    def record_mastery_questions(
+        self,
+        *,
+        session: Session,
+        attempt_id: int,
+        evaluation_id: int,
+        questions: list[MasteryCheckQuestion],
+    ) -> MasteryCheck:
+        """保存本次核验问题并把会话推进到等待核验阶段。"""
+        if session.flow_stage != FLOW_STAGE_WAIT_MASTERY_CHECK:
+            raise ValueError(f"会话 {session.id} 当前阶段不能记录核验问题：{session.flow_stage}")
+        before_snapshot = session_snapshot(session)
+        mastery_check = MasteryCheck(
+            session_id=session.id,
+            attempt_id=attempt_id,
+            evaluation_id=evaluation_id,
+            questions=[item.model_dump() for item in questions],
+        )
+        self.database_session.add(mastery_check)
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="GENERATE_MASTERY_CHECK_QUESTIONS",
+            before_snapshot=before_snapshot,
+            related_attempt_id=attempt_id,
+            related_evaluation_id=evaluation_id,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(mastery_check)
+        self.database_session.refresh(session)
+        return mastery_check
+
+    def record_mastery_answers(
+        self,
+        *,
+        session: Session,
+        mastery_check: MasteryCheck,
+        answers: list[MasteryCheckAnswer],
+        results: list[MasteryCheckAnswerResult],
+    ) -> tuple[Session, MasteryCheck]:
+        """保存核验回答与回答评价，并按“全部通过”确定性判定终态。"""
+        if session.flow_stage != FLOW_STAGE_WAIT_MASTERY_CHECK:
+            raise ValueError(f"会话 {session.id} 当前阶段不能提交核验回答：{session.flow_stage}")
+        if mastery_check.outcome is not None:
+            raise ValueError(f"核验 {mastery_check.id} 已经提交过回答")
+        expected_ids = [
+            str(question["id"])
+            for question in mastery_check.questions
+            if isinstance(question, dict) and "id" in question
+        ]
+        submitted_ids = [answer.question_id for answer in answers]
+        if set(submitted_ids) != set(expected_ids) or len(submitted_ids) != len(expected_ids):
+            raise ValueError("核验回答必须与已发送问题一一对应")
+        result_ids = [result.question_id for result in results]
+        if set(result_ids) != set(expected_ids) or len(result_ids) != len(expected_ids):
+            raise ValueError("核验回答评价必须与已发送问题一一对应")
+        decision = decide_mastery_check_outcome(
+            all_passed=all(result.passed for result in results)
+        )
+        before_snapshot = session_snapshot(session)
+        mastery_check.answers = [answer.model_dump() for answer in answers]
+        mastery_check.results = [result.model_dump() for result in results]
+        mastery_check.outcome = decision.next_status
+        mastery_check.completed_at = datetime.now(UTC)
+        self._record_student_submission(
+            session=session,
+            submission_type="MASTERY_ANSWER",
+            content=_format_mastery_answers_for_timeline(
+                mastery_check.questions, [answer.model_dump() for answer in answers]
+            ),
+            context={"masteryCheckId": mastery_check.id},
+        )
+        session.status = decision.next_status
+        session.flow_stage = decision.next_flow_stage
+        session.completion_type = decision.completion_type
+        session.finished_at = datetime.now(UTC)
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type="SUBMIT_MASTERY_ANSWERS",
+            before_snapshot=before_snapshot,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        self.database_session.refresh(mastery_check)
+        return session, mastery_check
 
     def _record_student_submission(
         self,
@@ -1312,20 +1519,12 @@ class SessionRepository:
         if support_type not in COUNTED_SUPPORT_TYPES:
             raise ValueError(f"不支持的计数支持类型：{support_type}")
         if support_limit_reached(
-            round_number=session.round,
             support_count_round=session.support_count_round,
             settings=settings,
         ):
-            session.support_count_round = support_limit_for(
-                round_number=session.round, settings=settings
-            )
+            session.support_count_round = support_limit_for(settings=settings)
             session.solution_exposed = True
-            if session.round == 1:
-                session.flow_stage = FLOW_STAGE_SHOWING_FULL_SOLUTION
-            else:
-                session.status = STATUS_STOPPED_LIMIT
-                session.flow_stage = FLOW_STAGE_SHOWING_FULL_SOLUTION
-                session.finished_at = datetime.now(UTC)
+            session.flow_stage = FLOW_STAGE_SHOWING_FULL_SOLUTION
             return None
         support_event = SupportEvent(
             session_id=session.id,
@@ -1415,6 +1614,45 @@ def _format_guided_answers_for_timeline(
     return "\n\n".join(answer_blocks)
 
 
+def _format_mastery_questions_for_timeline(questions: list[MasteryCheckQuestion]) -> str:
+    return "\n".join(
+        f"{index}. {question.question}"
+        for index, question in enumerate(questions, start=1)
+    )
+
+
+def _format_mastery_answers_for_timeline(
+    questions: list[dict[str, object]], answers: list[dict[str, object]]
+) -> str:
+    question_by_id = {
+        str(question["id"]): str(question["question"])
+        for question in questions
+        if isinstance(question, dict) and "id" in question and "question" in question
+    }
+    answer_blocks = []
+    for index, answer in enumerate(answers, start=1):
+        question_id = str(answer.get("questionId", ""))
+        question = question_by_id.get(question_id, f"第 {index} 个核验问题")
+        answer_blocks.append(f"{question}\n答：{answer.get('answer', '')}")
+    return "\n\n".join(answer_blocks)
+
+
+def _format_mastery_results_for_timeline(
+    questions: list[dict[str, object]], results: list[MasteryCheckAnswerResult]
+) -> str:
+    question_by_id = {
+        str(question["id"]): str(question["question"])
+        for question in questions
+        if isinstance(question, dict) and "id" in question and "question" in question
+    }
+    lines = [
+        f"{'通过' if result.passed else '未通过'}："
+        f"{question_by_id.get(result.question_id, result.question_id)}（{result.basis}）"
+        for result in results
+    ]
+    return "\n".join(lines)
+
+
 def _timeline_sort_key(item: dict[str, object]) -> tuple[object, int, str]:
     """同一秒内按教学流程排列。
 
@@ -1437,8 +1675,14 @@ def _timeline_sort_key(item: dict[str, object]) -> tuple[object, int, str]:
         event_order = 50
     elif event_type == "FOLLOW_UP":
         event_order = 60
-    else:
+    elif event_type == "MASTERY_QUESTIONS":
         event_order = 70
+    elif event_type == "SUBMISSION" and submission_type == "MASTERY_ANSWER":
+        event_order = 80
+    elif event_type == "MASTERY_RESULT":
+        event_order = 90
+    else:
+        event_order = 100
     return (
         item["created_at"],
         event_order,
