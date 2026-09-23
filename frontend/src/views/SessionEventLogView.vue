@@ -13,11 +13,13 @@ import type { Trajectory, TrajectoryRecord } from "../types/session-event"
 const LEDGER_WINDOW = 200
 /** 超过该记录数时默认收起运行，避免首次进入就铺满整屏。 */
 const AUTO_COLLAPSE_THRESHOLD = 40
+/** 运行下拉里的“全部运行”：把整个会话的运行合并成一条按事件序排列的记录流。 */
+const ALL_RUNS = "__all__"
 
 const route = useRoute()
 const sessionId = String(route.params.sessionId)
 const trajectory = ref<Trajectory>()
-const selectedRunId = ref("")
+const selectedRunId = ref(ALL_RUNS)
 const selectedSeq = ref<number>()
 const timelineMode = ref<"sequence" | "duration">("sequence")
 const searchQuery = ref("")
@@ -30,16 +32,40 @@ const errorMessage = ref("")
 
 const runs = computed(() => trajectory.value?.runs ?? [])
 
+const allRunsSelected = computed(() => selectedRunId.value === ALL_RUNS)
+
+const totalRecordCount = computed(() =>
+  runs.value.reduce((total, run) => total + run.records.length, 0),
+)
+
 const selectedRun = computed(() =>
   runs.value.find((run) => run.runId === selectedRunId.value),
 )
 
 const runLabel = computed(() => {
+  if (allRunsSelected.value) return "全部运行"
   const index = runs.value.findIndex((run) => run.runId === selectedRunId.value)
   return index < 0 ? "当前运行" : `第 ${index + 1} 次运行`
 })
 
-const runRecords = computed<TrajectoryRecord[]>(() => selectedRun.value?.records ?? [])
+/**
+ * 账本记录：单次运行取该运行的记录；全部运行把各运行按事件序拼起来。
+ * 运行本身按首次出现的 seq 排序，运行内部也按 seq 排列，拼接后仍是全局事件序。
+ */
+const runRecords = computed<TrajectoryRecord[]>(() =>
+  allRunsSelected.value
+    ? runs.value.flatMap((run) => run.records)
+    : (selectedRun.value?.records ?? []),
+)
+
+/** 全部运行没有单一 run，起止时间取最早一次运行，关键步骤数按所有运行累加。 */
+const noteStartedAt = computed(() => selectedRun.value?.startedAt ?? runs.value[0]?.startedAt)
+
+const noteStepCount = computed(() =>
+  allRunsSelected.value
+    ? runs.value.reduce((total, run) => total + run.steps.length, 0)
+    : (selectedRun.value?.steps.length ?? 0),
+)
 
 /** 时间线与账本共用同一份范围规则，否则会留下点不到的色块（账本里那条已被隐藏）。 */
 const timelineRecords = computed(() => scopeRecords(runRecords.value, ledgerScope.value))
@@ -55,7 +81,11 @@ const selectedRecord = computed<TrajectoryRecord | undefined>(() =>
   runRecords.value.find((record) => record.eventSeq === selectedSeq.value),
 )
 
-const runCollapsed = computed(() => collapsedRunIds.value.has(selectedRunId.value))
+const runCollapsed = computed(() =>
+  allRunsSelected.value
+    ? allRunsCollapsed.value
+    : collapsedRunIds.value.has(selectedRunId.value),
+)
 
 const collapsibleRuns = computed(() =>
   runs.value.filter((run) => run.records.length > 1).map((run) => run.runId),
@@ -88,8 +118,27 @@ function toggleAllRuns() {
     : new Set(collapsibleRuns.value)
 }
 
+/** 账本收起按钮在两种视图下的含义不同：单次运行收起自己，全部运行收起所有运行。 */
+function toggleSelectedRun() {
+  if (allRunsSelected.value) toggleAllRuns()
+  else toggleRun(selectedRunId.value)
+}
+
 function loadOlder(): void {
   ledgerWindow.value += LEDGER_WINDOW
+}
+
+/** 切换运行后重置选中记录与账本窗口；记录多时默认收起，避免首次进入就铺满整屏。 */
+function resetRunView() {
+  selectedSeq.value = undefined
+  ledgerWindow.value = LEDGER_WINDOW
+  if (runRecords.value.length <= AUTO_COLLAPSE_THRESHOLD) {
+    collapsedRunIds.value = new Set()
+    return
+  }
+  collapsedRunIds.value = allRunsSelected.value
+    ? new Set(collapsibleRuns.value)
+    : new Set([selectedRunId.value])
 }
 
 async function loadTrajectory() {
@@ -98,14 +147,10 @@ async function loadTrajectory() {
   try {
     const result = await fetchSessionTrajectory(sessionId)
     trajectory.value = result
-    const first = result.runs[0]
-    selectedRunId.value = first?.runId ?? ""
-    selectedSeq.value = undefined
-    ledgerWindow.value = LEDGER_WINDOW
-    collapsedRunIds.value =
-      first !== undefined && first.records.length > AUTO_COLLAPSE_THRESHOLD
-        ? new Set([first.runId])
-        : new Set()
+    // 默认落在最后一次运行：进入页面先看到最近一轮，而不是会话最早的那一轮。
+    const latest = result.runs[result.runs.length - 1]
+    selectedRunId.value = latest?.runId ?? ALL_RUNS
+    resetRunView()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -115,13 +160,7 @@ async function loadTrajectory() {
 
 onMounted(loadTrajectory)
 
-watch(selectedRunId, () => {
-  const records = runRecords.value
-  selectedSeq.value = undefined
-  ledgerWindow.value = LEDGER_WINDOW
-  collapsedRunIds.value =
-    records.length > AUTO_COLLAPSE_THRESHOLD ? new Set([selectedRunId.value]) : new Set()
-})
+watch(selectedRunId, resetRunView)
 
 // 切回精简范围后，被隐藏记录的详情面板不该继续留着，否则面板与账本口径不一致。
 watch(ledgerScope, () => {
@@ -156,6 +195,7 @@ watch(ledgerScope, () => {
               <option v-for="(run, index) in runs" :key="run.runId" :value="run.runId">
                 第 {{ index + 1 }} 次运行（{{ run.records.length }} 条记录）
               </option>
+              <option :value="ALL_RUNS">全部运行（{{ totalRecordCount }} 条记录）</option>
             </select>
           </label>
           <label class="mode-toggle">
@@ -195,10 +235,10 @@ watch(ledgerScope, () => {
         @select="selectRecord"
       />
 
-      <p v-if="selectedRun" class="section-note">
-        {{ runLabel }} · 开始时间 {{ displayTime(selectedRun.startedAt) }} ·
-        共 {{ runRecords.length }} 条记录<template v-if="selectedRun.steps.length">
-          ，其中 {{ selectedRun.steps.length }} 个关键步骤</template>
+      <p v-if="noteStartedAt" class="section-note">
+        {{ runLabel }} · 开始时间 {{ displayTime(noteStartedAt) }} ·
+        共 {{ runRecords.length }} 条记录<template v-if="noteStepCount">
+          ，其中 {{ noteStepCount }} 个关键步骤</template>
       </p>
 
       <div class="trajectory-split" :class="{ 'with-details': selectedRecord !== undefined }">
@@ -212,7 +252,7 @@ watch(ledgerScope, () => {
           :search-query="searchQuery"
           :has-older-records="hasOlderRecords"
           @select="selectRecord"
-          @toggle="toggleRun(selectedRunId)"
+          @toggle="toggleSelectedRun"
           @load-older="loadOlder"
         />
         <EventDetails

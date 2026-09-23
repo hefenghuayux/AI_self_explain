@@ -122,14 +122,18 @@ export interface StateChangeRecordDetail {
   reason: string
 }
 
+/**
+ * 每条记录只带本次真正用到的那一个键；未使用的键在后端显式省略，
+ * 旧后端版本会序列化成 null，所以两种形态都要允许。
+ */
 export interface TrajectoryRecordDetail {
-  session?: Record<string, never>
-  user?: UserRecordDetail
-  context?: ContextRecordDetail
-  modelRequest?: ModelRequestRecordDetail
-  modelResponse?: ModelResponseRecordDetail
-  modelError?: ModelErrorRecordDetail
-  stateChange?: StateChangeRecordDetail
+  session?: Record<string, never> | null
+  user?: UserRecordDetail | null
+  context?: ContextRecordDetail | null
+  modelRequest?: ModelRequestRecordDetail | null
+  modelResponse?: ModelResponseRecordDetail | null
+  modelError?: ModelErrorRecordDetail | null
+  stateChange?: StateChangeRecordDetail | null
 }
 
 export interface TrajectoryRecord {
@@ -150,7 +154,7 @@ export interface TrajectoryRecord {
   /** 后端显式输出 null 表示该事件类型不记录耗时。 */
   durationMs?: number | null
   occurredAt: string
-  parentEventId?: string
+  parentEventId?: string | null
   detail: TrajectoryRecordDetail
 }
 

@@ -126,8 +126,57 @@ function trajectoryPayload(): Trajectory {
   }
 }
 
-async function openTab(wrapper: ReturnType<typeof mount>, label: string) {
-  const tab = wrapper.findAll('[role="tab"]').find((candidate) => candidate.text() === label)
+const DETAIL_KEYS = [
+  "session",
+  "user",
+  "context",
+  "modelRequest",
+  "modelResponse",
+  "modelError",
+  "stateChange",
+] as const
+
+/** 旧后端把未使用的 detail 键序列化成 null，而不是省略；线上响应就是这个形状。 */
+function withNullDetails(payload: Trajectory): Trajectory {
+  const fill = (record: TrajectoryRecord): TrajectoryRecord => {
+    const detail = record.detail as Record<string, unknown>
+    return {
+      ...record,
+      detail: Object.fromEntries(DETAIL_KEYS.map((key) => [key, detail[key] ?? null])) as
+        TrajectoryRecord["detail"],
+    }
+  }
+  return {
+    ...payload,
+    runs: payload.runs.map((run) => ({ ...run, records: run.records.map(fill) })),
+    events: payload.events.map(fill),
+  }
+}
+
+/** 两次运行的会话：第 1 次是自讲闭环，第 2 次是它的后续运行。 */
+function twoRunPayload(): Trajectory {
+  const payload = trajectoryPayload()
+  const secondRecords = payload.runs[0].records.map((record) => ({
+    ...record,
+    eventSeq: record.eventSeq + 10,
+    eventId: `${record.eventId}_second`,
+  }))
+  return {
+    sessionId: payload.sessionId,
+    runs: [
+      payload.runs[0],
+      {
+        runId: "run-2",
+        startedAt: "2026-08-20T11:00:00Z",
+        steps: [],
+        records: secondRecords,
+      },
+    ],
+    events: [...payload.events, ...secondRecords],
+  }
+}
+
+async function openTab(wrapper: ReturnType<typeof mount>, label: string) {  const tab = wrapper.findAll('[role="tab"]').find((candidate) => candidate.text() === label)
   if (tab === undefined) throw new Error(`缺少页签：${label}`)
   await tab.trigger("click")
   await flushPromises()
@@ -420,5 +469,67 @@ describe("SessionEventLogView", () => {
     expect(wrapper.findAll("div.record-row")).toHaveLength(0)
     expect(wrapper.get("div.group-row").text()).toContain("已收起")
     expect(wrapper.get("div.group-row").text()).toContain("当前范围 3 条记录")
+  })
+
+  it("detail 未使用的键是显式 null 时详情面板仍能打开，之后按钮继续生效", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(withNullDetails(trajectoryPayload())))
+    vi.stubGlobal("fetch", fetchMock)
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const wrapper = await mountView()
+    await wrapper.findAll("div.record-row")[0].trigger("click")
+    await flushPromises()
+
+    // 渲染期抛错会打断组件树的 patch，之后所有按钮都失效。
+    expect(errorSpy).not.toHaveBeenCalled()
+    const details = wrapper.get("aside.details")
+    expect(details.text()).toContain("学生")
+    // null 表示没有这份数据，不该凭空多出「消息」「输出」页签。
+    expect(details.findAll('[role="tab"]').map((tab) => tab.text())).toEqual([
+      "概述",
+      "内容",
+      "原始 JSON",
+    ])
+
+    await showAllRecords(wrapper)
+    expect(wrapper.findAll("div.record-row")).toHaveLength(5)
+
+    await wrapper.findAll("div.record-row")[1].get("button.expand-button").trigger("click")
+    await flushPromises()
+    expect(wrapper.findAll("pre.record-full")).toHaveLength(1)
+    expect(errorSpy).not.toHaveBeenCalled()
+
+    errorSpy.mockRestore()
+  })
+
+  it("默认选中最后一次运行，切到「全部运行」后按事件序合并所有运行", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(twoRunPayload()))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const wrapper = await mountView()
+    expect((wrapper.get("select").element as HTMLSelectElement).value).toBe("run-2")
+    expect(wrapper.findAll("div.record-row")).toHaveLength(3)
+    expect(wrapper.get(".section-note").text()).toContain("第 2 次运行")
+
+    const allOption = wrapper
+      .findAll("option")
+      .find((option) => option.text().startsWith("全部运行"))
+    if (allOption === undefined) throw new Error("缺少「全部运行」选项")
+    await wrapper.get("select").setValue(allOption.attributes("value")!)
+    await flushPromises()
+
+    // 两次运行各 5 条记录，精简范围各留 3 条；合并后按事件序排列。
+    expect(wrapper.findAll("div.record-row")).toHaveLength(6)
+    expect(wrapper.findAll("div.record-row").map((row) => row.find(".record-index").text())).toEqual([
+      "#1",
+      "#2",
+      "#4",
+      "#11",
+      "#12",
+      "#14",
+    ])
+    const note = wrapper.get(".section-note").text()
+    expect(note).toContain("全部运行")
+    expect(note).toContain("共 10 条记录")
   })
 })

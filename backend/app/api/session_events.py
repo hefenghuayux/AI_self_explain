@@ -66,7 +66,13 @@ def get_session_surface(
         raise _session_not_found(error) from error
 
 
-@router.get("/{session_id}/trajectory", response_model=Trajectory)
+@router.get(
+    "/{session_id}/trajectory",
+    response_model=Trajectory,
+    # detail 只保留本次记录真正使用的那一个键：FastAPI 默认会把未使用的键
+    # 序列化成 null，而前端按“键是否存在”决定展示哪些页签。
+    response_model_exclude_none=True,
+)
 def get_session_trajectory(
     session_id: int, database_session: DatabaseSession
 ) -> Trajectory:

@@ -67,6 +67,30 @@ def _set_support_counts(settings: Settings, session_id: object, count: int, expo
         engine.dispose()
 
 
+def _events_of_type(
+    settings: Settings, session_id: object, event_type: str
+) -> list[dict[str, object]]:
+    """按 seq 读取一个会话里某类会话事件。"""
+    engine = create_engine(settings.database_url)
+    try:
+        with engine.begin() as connection:
+            rows = (
+                connection.execute(
+                    text(
+                        "SELECT run_id, data FROM session_events "
+                        "WHERE session_id = :session_id AND event_type = :event_type "
+                        "ORDER BY seq"
+                    ),
+                    {"session_id": session_id, "event_type": event_type},
+                )
+                .mappings()
+                .all()
+            )
+    finally:
+        engine.dispose()
+    return [{"run_id": row["run_id"], "data": json.loads(row["data"])} for row in rows]
+
+
 def _stub_ai(monkeypatch, *, passed: bool = True) -> None:
     """按 purpose 返回确定性输出。
 
@@ -196,6 +220,40 @@ def test_all_passed_mastery_check_completes_the_session(settings, monkeypatch) -
         "MASTERY_RESULT",
     ]
     assert timeline[-2]["submissionType"] == "MASTERY_ANSWER"
+
+
+def test_mastery_answers_write_user_message_event(settings, monkeypatch) -> None:
+    """核验回答也要写 user.message，并与回答评价共用一次运行。
+
+    事件文本与对话页显示的同一次提交保持一致，避免两处各写一份格式。
+    """
+    with _client(settings, monkeypatch) as client:
+        prompted = _reach_mastery_check(client, settings, monkeypatch)
+        response = client.post(
+            f"/api/sessions/{prompted['id']}/mastery-check-answers",
+            json={
+                "version": prompted["version"],
+                "answers": [
+                    {"questionId": MASTERY_QUESTION_ID, "answer": "依据是把两个 1 合起来。"}
+                ],
+            },
+        )
+        assert response.status_code == 200
+        timeline = client.get(f"/api/sessions/{prompted['id']}/timeline").json()
+        messages = _events_of_type(settings, prompted["id"], "user.message")
+        requests = _events_of_type(settings, prompted["id"], "model.requested")
+
+    submitted = next(
+        item for item in timeline if item.get("submissionType") == "MASTERY_ANSWER"
+    )
+    assert messages[-1]["data"]["text"] == submitted["content"]
+    assert "依据是把两个 1 合起来。" in messages[-1]["data"]["text"]
+    assert messages[-1]["data"]["inputType"] == "text"
+    assert messages[-1]["run_id"] == (
+        f"run_session_{prompted['id']}_mastery_check_"
+        f"MASTERY_CHECK_ASSESSMENT_{prompted['version']}"
+    )
+    assert requests[-1]["run_id"] == messages[-1]["run_id"]
 
 
 def test_failed_mastery_check_ends_as_needs_review(settings, monkeypatch) -> None:

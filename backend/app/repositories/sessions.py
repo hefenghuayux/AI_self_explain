@@ -74,6 +74,11 @@ def session_run_id(session_id: int, attempt_id: int) -> str:
     return f"run_session_{session_id}_attempt_{attempt_id}"
 
 
+def session_appeal_run_id(session_id: int, version: int) -> str:
+    """申诉没有后续 AI 调用，用提交时的会话版本单独成一次运行。"""
+    return f"run_session_{session_id}_appeal_{version}"
+
+
 def session_snapshot(session: Session) -> dict[str, object]:
     return {
         "status": session.status,
@@ -967,6 +972,26 @@ class SessionRepository:
             doubt_text=doubt_text,
         )
 
+    def record_user_message(
+        self,
+        *,
+        session: Session,
+        run_id: str,
+        text: str,
+        input_type: str,
+    ) -> None:
+        """补写学生输入事件。
+
+        run_id 由调用方给定，与学生动作触发的 AI 调用共用同一次运行，
+        这样轨迹里学生的输入和它引起的模型请求属于同一次运行。
+        """
+        SessionEventLog(self.database_session).append_user_message(
+            session_id=session.id,
+            run_id=run_id,
+            text=text,
+            input_type=input_type,
+        )
+
     def record_guided_questions(
         self,
         *,
@@ -1234,12 +1259,23 @@ class SessionRepository:
         self.database_session.refresh(session)
         return session
 
-    def appeal(self, *, session: Session, reason: str, evaluation_id: int | None) -> Session:
+    def appeal(
+        self,
+        *,
+        session: Session,
+        reason: str,
+        evaluation_id: int | None,
+        run_id: str,
+        input_type: str,
+    ) -> Session:
         self._record_student_submission(
             session=session,
             submission_type="APPEAL",
             content=reason,
             context={"evaluationId": evaluation_id, "round": session.round},
+        )
+        self.record_user_message(
+            session=session, run_id=run_id, text=reason, input_type=input_type
         )
         return self.request_human_review(
             session=session,

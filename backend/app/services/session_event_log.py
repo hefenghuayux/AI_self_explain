@@ -19,6 +19,29 @@ class SessionEventLog:
                 return event.event_id
         return None
 
+    def append_user_message(
+        self,
+        *,
+        session_id: int,
+        run_id: str,
+        text: str,
+        input_type: str,
+    ) -> SessionEvent:
+        """写入学生输入事件。
+
+        自讲提交由 repository 在提交时直接写；其余学生动作（回答子问题、疑问、
+        申诉、核验回答）在这里补写，使轨迹与学生看到的对话一致。
+        """
+        event = self.event_store.append(
+            session_id=session_id,
+            event_type="user.message",
+            run_id=run_id,
+            data={"text": text, "inputType": input_type},
+        )
+        self.database_session.commit()
+        self.database_session.refresh(event)
+        return event
+
     def append_contexts(
         self,
         *,

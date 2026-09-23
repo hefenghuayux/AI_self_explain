@@ -148,6 +148,11 @@ def test_session_event_projection_apis(settings, monkeypatch) -> None:
     session_events = trajectory.json()["events"]
     assert [record["eventSeq"] for record in session_events] == [0, 1, 2, 3, 4, 5]
     assert session_events[0]["kind"] == "session"
+    # detail 只带该记录真正用到的键：未使用的键必须省略而不是输出 null，
+    # 前端按“键是否存在”决定展示哪些页签，读到 null 会直接抛错。
+    for record in [*records, *session_events]:
+        assert len(record["detail"]) == 1, record["detail"]
+        assert None not in record["detail"].values(), record["detail"]
     roots = trace.json()["roots"]
     assert roots[0]["eventType"] == "user.message"
     assert roots[0]["children"][1]["eventType"] == "model.requested"

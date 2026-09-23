@@ -44,18 +44,20 @@ watch(
   },
 )
 
+// detail 的键按“是否存在”判断：后端只输出本次记录用到的键，但旧后端会把
+// 未使用的键序列化成 null，null 同样表示没有这份数据。
 const tabs = computed<TabItem[]>(() => {
   const items: TabItem[] = [{ id: "overview", label: "概述" }]
   const detail = props.record.detail
-  if (detail.user !== undefined || detail.context !== undefined) {
+  if (detail.user != null || detail.context != null) {
     items.push({ id: "content", label: "内容" })
   }
   const request = detail.modelRequest
-  if (request !== undefined) {
+  if (request != null) {
     items.push({ id: "messages", label: `消息（${request.messages.length}）` })
     items.push({ id: "surface", label: "模型上下文" })
   }
-  if (detail.modelResponse !== undefined || detail.modelError !== undefined) {
+  if (detail.modelResponse != null || detail.modelError != null) {
     items.push({ id: "output", label: "输出" })
   }
   items.push({ id: "raw", label: "原始 JSON" })
@@ -92,7 +94,7 @@ function messageContent(message: Record<string, unknown>): string {
 
 async function loadSurface() {
   const request = props.record.detail.modelRequest
-  if (request === undefined) return
+  if (request == null) return
   surfaceLoading.value = true
   surfaceError.value = ""
   try {

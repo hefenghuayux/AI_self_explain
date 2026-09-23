@@ -52,6 +52,14 @@ OutputType = TypeVar("OutputType", MasteryCheckQuestionsOutput, MasteryCheckAsse
 logger = logging.getLogger(__name__)
 
 
+def mastery_check_run_id(session: Session, purpose: str) -> str:
+    """一次核验运行的标识。
+
+    调用方（API 层）写学生核验回答事件时要用同一个值，因此暴露为模块函数。
+    """
+    return f"run_session_{session.id}_mastery_check_{purpose}_{session.version}"
+
+
 @dataclass(frozen=True)
 class MasteryCheckEvidence:
     """核验问题生成的证据集合。
@@ -121,6 +129,7 @@ class AIMasteryCheckService:
         session: Session,
         questions: list[MasteryCheckQuestionInput],
         answers: list[MasteryCheckAnswer],
+        run_id: str | None = None,
     ) -> MasteryCheckAssessmentOutput | None:
         if not questions:
             raise ValueError("核验回答评价缺少已发送问题")
@@ -128,6 +137,7 @@ class AIMasteryCheckService:
         progress_context = self._build_progress_context(session)
         return self._generate(
             session=session,
+            run_id=run_id,
             request_builder=lambda validation_errors: _render_assessment_prompt(
                 question=question,
                 session=session,
@@ -214,10 +224,11 @@ class AIMasteryCheckService:
         output_type: type[OutputType],
         validator: Callable[[OutputType], list[str]],
         purpose: str,
+        run_id: str | None = None,
     ) -> OutputType | None:
         validation_errors: list[str] = []
         external_attempt_number = 0
-        run_id = self._run_id(session, purpose)
+        run_id = run_id or self._run_id(session, purpose)
         event_log = SessionEventLog(self.repository.database_session)
         for schema_attempt in range(self.settings.ai_schema_max_retries + 1):
             request = request_builder(validation_errors)
@@ -415,7 +426,7 @@ class AIMasteryCheckService:
 
     @staticmethod
     def _run_id(session: Session, purpose: str) -> str:
-        return f"run_session_{session.id}_mastery_check_{purpose}_{session.version}"
+        return mastery_check_run_id(session, purpose)
 
 
 def _render_generation_prompt(

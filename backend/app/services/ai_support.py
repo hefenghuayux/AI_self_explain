@@ -46,6 +46,15 @@ OutputType = TypeVar("OutputType", SupportRequestOutput, GuidedAnswerAssessmentO
 logger = logging.getLogger(__name__)
 
 
+def support_run_id(session: Session) -> str:
+    """一次教学支持运行的标识。
+
+    调用方（API 层）在写学生输入事件时也要用同一个值，因此暴露为模块函数，
+    避免两处各写一份命名规则。
+    """
+    return f"run_session_{session.id}_support_{session.version}"
+
+
 class AISupportService:
     def __init__(
         self, database_session: DatabaseSession, settings: Settings, http_client: httpx.Client
@@ -66,11 +75,13 @@ class AISupportService:
         session: Session,
         main_draft: str,
         doubt_text: str | None,
+        run_id: str | None = None,
     ) -> SupportRequestOutput | None:
         reasoning_effort = self.settings.ai_reasoning_effort
         progress_context = self._build_progress_context(session)
         result = self._generate(
             session=session,
+            run_id=run_id,
             request_builder=lambda validation_errors: _render_support_prompt(
                 question=question,
                 session=session,
@@ -94,11 +105,13 @@ class AISupportService:
         session: Session,
         support_event: SupportEvent,
         answers: list[GuidedAnswer],
+        run_id: str | None = None,
     ) -> GuidedAnswerAssessmentOutput | None:
         reasoning_effort = self.settings.ai_reasoning_effort
         progress_context = self._build_progress_context(session)
         result = self._generate(
             session=session,
+            run_id=run_id,
             request_builder=lambda validation_errors: _render_answer_assessment_prompt(
                 question=question,
                 session=session,
@@ -122,10 +135,11 @@ class AISupportService:
         request_builder: Callable[[list[str]], ModelRequestSnapshot],
         output_type: type[OutputType],
         validator,
+        run_id: str | None = None,
     ) -> OutputType | None:
         validation_errors: list[str] = []
         external_attempt_number = 0
-        run_id = self._run_id(session)
+        run_id = run_id or self._run_id(session)
         event_log = SessionEventLog(self.repository.database_session)
         for schema_attempt in range(self.settings.ai_schema_max_retries + 1):
             request = request_builder(validation_errors)
@@ -323,7 +337,7 @@ class AISupportService:
 
     @staticmethod
     def _run_id(session: Session) -> str:
-        return f"run_session_{session.id}_support_{session.version}"
+        return support_run_id(session)
 
 
 def _render_support_prompt(

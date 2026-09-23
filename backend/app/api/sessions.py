@@ -18,7 +18,14 @@ from app.core.auth import CurrentUser, DatabaseSession, get_current_user
 from app.core.logging import bind_trace_context, new_correlation_id, reset_trace_context
 from app.models.question import Question
 from app.models.session import Session
-from app.repositories.sessions import SessionRepository, SessionVersionConflict, session_run_id
+from app.repositories.sessions import (
+    SessionRepository,
+    SessionVersionConflict,
+    _format_guided_answers_for_timeline,
+    _format_mastery_answers_for_timeline,
+    session_appeal_run_id,
+    session_run_id,
+)
 from app.rules.session_lifecycle import (
     FLOW_STAGE_CAPTURING_INPUT,
     FLOW_STAGE_SHOWING_FULL_SOLUTION,
@@ -57,8 +64,12 @@ from app.schemas.session import (
 )
 from app.schemas.support import GuidedAnswer, SupportEventResponse
 from app.services.ai_evaluation import AIEvaluationService
-from app.services.ai_mastery_check import AIMasteryCheckService, MasteryCheckQuestionInput
-from app.services.ai_support import AISupportService
+from app.services.ai_mastery_check import (
+    AIMasteryCheckService,
+    MasteryCheckQuestionInput,
+    mastery_check_run_id,
+)
+from app.services.ai_support import AISupportService, support_run_id
 from app.services.ai_teaching import AITeachingService
 from app.services.audio_storage import AudioStorage, AudioStorageError
 from app.services.context_compaction import CompactionError
@@ -479,6 +490,16 @@ def request_support(
         main_draft=action_input.main_draft,
         doubt_text=None,
     )
+    # 学生输入与随后的支持生成共用一次运行，轨迹里两者属于同一轮。
+    run_id = support_run_id(session)
+    # main_draft 允许为空（学生没写草稿就直接请求提示），空文本没有可记录的内容。
+    if action_input.main_draft.strip():
+        repository.record_user_message(
+            session=session,
+            run_id=run_id,
+            text=action_input.main_draft,
+            input_type="text",
+        )
     limited_session = repository.resolve_support_limit(
         session=session,
         settings=request.app.state.settings,
@@ -494,6 +515,7 @@ def request_support(
         session=session,
         main_draft=action_input.main_draft,
         doubt_text=None,
+        run_id=run_id,
     )
     if output is None:
         return to_session_response(repository, session)
@@ -544,6 +566,14 @@ def ask_doubt(
         main_draft=action_input.main_draft,
         doubt_text=action_input.doubt_text,
     )
+    # 学生输入与随后的支持生成共用一次运行，轨迹里两者属于同一轮。
+    run_id = support_run_id(session)
+    repository.record_user_message(
+        session=session,
+        run_id=run_id,
+        text=action_input.doubt_text,
+        input_type="voice" if action_input.voice_attempt_id is not None else "text",
+    )
     support_service = AISupportService(
         database_session, request.app.state.settings, request.app.state.ai_http_client
     )
@@ -552,6 +582,7 @@ def ask_doubt(
         session=session,
         main_draft=action_input.main_draft,
         doubt_text=action_input.doubt_text,
+        run_id=run_id,
     )
     if output is None:
         return to_session_response(repository, session)
@@ -622,6 +653,15 @@ def submit_guided_answers(
             repository.mark_voice_attempt_submitted(
                 attempt=voice_attempt, confirmed_text=answer.answer
             )
+        # 只答了一部分子问题时没有 AI 调用，这次输入自成一次运行。
+        repository.record_user_message(
+            session=session,
+            run_id=support_run_id(session),
+            text=_format_guided_answers_for_timeline(
+                support_event.guided_questions or [], action_input.answers
+            ),
+            input_type="voice" if action_input.voice_attempt_id is not None else "text",
+        )
         updated_session = repository.record_partial_guided_answers(
             session=session,
             support_event=support_event,
@@ -653,11 +693,22 @@ def submit_guided_answers(
     support_service = AISupportService(
         database_session, request.app.state.settings, request.app.state.ai_http_client
     )
+    # 学生输入与随后的答案评估共用一次运行，轨迹里两者属于同一轮。
+    run_id = support_run_id(session)
+    repository.record_user_message(
+        session=session,
+        run_id=run_id,
+        text=_format_guided_answers_for_timeline(
+            support_event.guided_questions or [], action_input.answers
+        ),
+        input_type="voice" if action_input.voice_attempt_id is not None else "text",
+    )
     assessment = support_service.assess_guided_answers(
         question=question,
         session=session,
         support_event=support_event,
         answers=merged_answers,
+        run_id=run_id,
     )
     if assessment is None:
         return to_session_response(repository, session)
@@ -701,6 +752,8 @@ def appeal(
         session=session,
         reason=appeal_input.reason,
         evaluation_id=evaluation.id if evaluation is not None else None,
+        run_id=session_appeal_run_id(session.id, session.version),
+        input_type="voice" if appeal_input.voice_attempt_id is not None else "text",
     )
     return to_session_response(repository, appealed_session)
 
@@ -778,6 +831,16 @@ def submit_mastery_check_answers(
         )
         for item in stored_questions
     ]
+    # 学生输入与随后的回答评价共用一次运行，轨迹里两者属于同一轮。
+    run_id = mastery_check_run_id(session, "MASTERY_CHECK_ASSESSMENT")
+    repository.record_user_message(
+        session=session,
+        run_id=run_id,
+        text=_format_mastery_answers_for_timeline(
+            mastery_check.questions, [answer.model_dump() for answer in answers_input.answers]
+        ),
+        input_type="text",
+    )
     try:
         output = AIMasteryCheckService(
             database_session, request.app.state.settings, request.app.state.ai_http_client
@@ -786,6 +849,7 @@ def submit_mastery_check_answers(
             session=session,
             questions=question_inputs,
             answers=answers_input.answers,
+            run_id=run_id,
         )
     except CompactionError as error:
         repository.request_human_review(
