@@ -5,6 +5,7 @@ import { useRoute } from "vue-router"
 import EventLedger from "../components/EventLedger.vue"
 import EventTimeline from "../components/EventTimeline.vue"
 import { fetchSessionTrajectory } from "../api/session-events"
+import { summarizeDeepSeekCache } from "../utils/deepseekCache"
 import { scopeRecords, type TrajectoryScope } from "../utils/trajectoryScope"
 import type { Trajectory, TrajectoryRecord } from "../types/session-event"
 
@@ -74,6 +75,9 @@ const visibleRecords = computed<TrajectoryRecord[]>(() =>
 )
 
 const hasOlderRecords = computed(() => visibleRecords.value.length < runRecords.value.length)
+
+/** 表头缓存统计按当前选中的运行聚合（窗口与范围过滤不参与），「全部运行」时跨运行累加。 */
+const deepseekCacheUsage = computed(() => summarizeDeepSeekCache(runRecords.value))
 
 const runCollapsed = computed(() =>
   allRunsSelected.value
@@ -238,6 +242,7 @@ watch(selectedRunId, resetRunView)
         :collapsed="runCollapsed"
         :search-query="searchQuery"
         :has-older-records="hasOlderRecords"
+        :cache-usage="deepseekCacheUsage"
         @select="selectRecord"
         @toggle="toggleSelectedRun"
         @load-older="loadOlder"

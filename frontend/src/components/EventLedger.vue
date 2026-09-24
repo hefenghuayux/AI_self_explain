@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
 
+import { formatCacheHitRate, type DeepSeekCacheUsage } from "../utils/deepseekCache"
 import { formatDuration, formatTime } from "../utils/trajectoryTime"
 import { scopeRecords, type TrajectoryScope } from "../utils/trajectoryScope"
 import type { TrajectoryRecord } from "../types/session-event"
@@ -14,6 +15,8 @@ const props = withDefaults(
     collapsed?: boolean
     searchQuery?: string
     hasOlderRecords?: boolean
+    /** 当前运行的 DeepSeek 缓存用量；非 DeepSeek 或未返回缓存字段时为 undefined。 */
+    cacheUsage?: DeepSeekCacheUsage
   }>(),
   {
     scope: "core",
@@ -21,6 +24,7 @@ const props = withDefaults(
     collapsed: false,
     searchQuery: "",
     hasOlderRecords: false,
+    cacheUsage: undefined,
   },
 )
 
@@ -71,6 +75,16 @@ function scopeHint(): string {
   return `${scopedRecords.value.length} / ${props.records.length} 条记录可见`
 }
 
+/** 表头右上角两行：第一行缓存命中口径，第二行模型、输入输出 token 与调用次数。 */
+const cacheLines = computed(() => {
+  const usage = props.cacheUsage
+  if (usage === undefined) return undefined
+  return {
+    cache: `DeepSeek 缓存命中 ${formatCacheHitRate(usage)}（命中 ${usage.hitTokens} · 未命中 ${usage.missTokens} tok）`,
+    tokens: `${usage.models.join(" · ")} · 输入 ${usage.inputTokens} tok · 输出 ${usage.outputTokens} tok · ${usage.callCount} 次调用`,
+  }
+})
+
 /** 3 万字符级的正文靠人工选中复制不现实，展开区提供复制全文。 */
 const copiedSeq = ref<number>()
 const copyErrorSeq = ref<number>()
@@ -113,9 +127,13 @@ async function copyFullText(record: TrajectoryRecord) {
       <button type="button" class="link-button" @click="emit('loadOlder')">加载更早的记录</button>
     </p>
 
-    <div class="ledger-head" aria-hidden="true">
-      <span>事件</span>
-      <span>内容</span>
+    <div class="ledger-head">
+      <span class="head-cell" aria-hidden="true">事件</span>
+      <span class="head-cell" aria-hidden="true">内容</span>
+      <p v-if="cacheLines" class="head-cache">
+        <span>{{ cacheLines.cache }}</span>
+        <span>{{ cacheLines.tokens }}</span>
+      </p>
     </div>
 
     <div class="ledger-body">
@@ -202,9 +220,13 @@ async function copyFullText(record: TrajectoryRecord) {
 .ledger-note { margin: 0; padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .link-button { padding: 0; border: none; color: var(--color-brand-700); background: none; cursor: pointer; font: inherit; }
 /* 用 grid 而不是 table：td 上挂 display:flex 会破坏表格列算法，把内容列压成 0 宽。 */
-.ledger-head, .record-row, .group-row { display: grid; grid-template-columns: 190px minmax(0, 1fr); }
-.ledger-head { border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 12px; }
-.ledger-head span { padding: var(--space-2) var(--space-4); }
+.record-row, .group-row { display: grid; grid-template-columns: 190px minmax(0, 1fr); }
+/* 表头用 flex：右侧还要放 DeepSeek 用量，继续用 grid 会新开一列，把「内容」标签挤得与记录行错位。 */
+.ledger-head { display: flex; align-items: center; border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 12px; }
+.ledger-head .head-cell { padding: var(--space-2) var(--space-4); }
+.ledger-head .head-cell:first-child { flex: 0 0 190px; }
+.ledger-head .head-cell:nth-child(2) { flex: 1 1 auto; }
+.head-cache { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 2px; margin: 0; padding: var(--space-2) var(--space-4); color: var(--color-text-secondary); text-align: right; }
 .ledger-body { display: block; }
 .record-row { border-top: 1px solid var(--color-border); cursor: pointer; }
 .record-row:first-child { border-top: none; }
@@ -251,7 +273,10 @@ async function copyFullText(record: TrajectoryRecord) {
 .group-summary { min-width: 0; overflow: hidden; color: var(--color-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .empty-state { margin: 0; padding: var(--space-4); color: var(--color-text-muted); }
 @media (max-width: 640px) {
-  .ledger-head, .record-row, .group-row { grid-template-columns: 128px minmax(0, 1fr); }
+  .record-row, .group-row { grid-template-columns: 128px minmax(0, 1fr); }
+  .ledger-head { flex-wrap: wrap; }
+  .ledger-head .head-cell:first-child { flex-basis: 128px; }
+  .head-cache { flex-basis: 100%; align-items: flex-start; padding-top: 0; text-align: left; }
   .event-cell, .content-cell { padding: var(--space-2) var(--space-3); }
   .record-time { display: none; }
 }

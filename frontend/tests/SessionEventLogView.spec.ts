@@ -3,7 +3,11 @@ import { createMemoryHistory, createRouter } from "vue-router"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import SessionEventLogView from "../src/views/SessionEventLogView.vue"
-import type { Trajectory, TrajectoryRecord } from "../src/types/session-event"
+import type {
+  ModelResponseRecordDetail,
+  Trajectory,
+  TrajectoryRecord,
+} from "../src/types/session-event"
 
 function response(body: unknown) {
   return { ok: true, json: async () => body }
@@ -174,6 +178,33 @@ function twoRunPayload(): Trajectory {
     ],
     events: [...payload.events, ...secondRecords],
   }
+}
+
+const DEEPSEEK_USAGE: Partial<ModelResponseRecordDetail> = {
+  inputTokens: 2766,
+  outputTokens: 1460,
+  promptCacheHitTokens: 384,
+  promptCacheMissTokens: 2382,
+}
+
+/** 把默认 payload 换成 DeepSeek 调用：模型名改 deepseek，回复按传入的用量字段补齐。 */
+function deepseekPayload(usage: Partial<ModelResponseRecordDetail> = DEEPSEEK_USAGE): Trajectory {
+  const payload = trajectoryPayload()
+  const records = payload.runs[0].records.map((record) => {
+    const request = record.detail.modelRequest
+    if (request != null) {
+      return {
+        ...record,
+        detail: { modelRequest: { ...request, provider: "OPENAI", model: "deepseek-flash" } },
+      }
+    }
+    const response = record.detail.modelResponse
+    if (response == null) return record
+    return { ...record, detail: { modelResponse: { ...response, ...usage } } }
+  })
+  payload.runs[0].records = records
+  payload.events = records
+  return payload
 }
 
 async function showAllRecords(wrapper: ReturnType<typeof mount>) {
@@ -442,5 +473,53 @@ describe("SessionEventLogView", () => {
     const note = wrapper.get(".section-note").text()
     expect(note).toContain("全部运行")
     expect(note).toContain("共 10 条记录")
+  })
+
+  it("DeepSeek 运行在账本表头分两行显示缓存命中率与 token 数", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(deepseekPayload()))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const wrapper = await mountView()
+
+    const lines = wrapper.get(".head-cache").findAll("span").map((line) => line.text())
+    expect(lines).toEqual([
+      "DeepSeek 缓存命中 13.9%（命中 384 · 未命中 2382 tok）",
+      "deepseek-flash · 输入 2766 tok · 输出 1460 tok · 1 次调用",
+    ])
+  })
+
+  it("非 DeepSeek 运行的表头不显示缓存统计", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const wrapper = await mountView()
+
+    expect(wrapper.get(".ledger-head").text()).toBe("事件内容")
+    expect(wrapper.find(".head-cache").exists()).toBe(false)
+  })
+
+  it("DeepSeek 未返回 prompt_cache_* 字段时表头不显示缓存统计", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(deepseekPayload({ inputTokens: 2862, outputTokens: 974 })))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const wrapper = await mountView()
+
+    expect(wrapper.find(".head-cache").exists()).toBe(false)
+  })
+
+  it("账本范围与窗口不改变表头统计口径，始终按当前运行聚合", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(deepseekPayload()))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const wrapper = await mountView()
+    const before = wrapper.get(".head-cache").text()
+
+    await showAllRecords(wrapper)
+
+    // 完整范围多显示模型请求与状态变化，缓存统计仍来自整个运行。
+    expect(wrapper.findAll("div.record-row")).toHaveLength(5)
+    expect(wrapper.get(".head-cache").text()).toBe(before)
   })
 })
