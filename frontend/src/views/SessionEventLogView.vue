@@ -2,7 +2,6 @@
 import { computed, onMounted, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 
-import EventDetails from "../components/EventDetails.vue"
 import EventLedger from "../components/EventLedger.vue"
 import EventTimeline from "../components/EventTimeline.vue"
 import { fetchSessionTrajectory } from "../api/session-events"
@@ -75,11 +74,6 @@ const visibleRecords = computed<TrajectoryRecord[]>(() =>
 )
 
 const hasOlderRecords = computed(() => visibleRecords.value.length < runRecords.value.length)
-
-// 选中记录从整个运行里查，而不是当前账本窗口，避免窗口变化把详情面板挤掉。
-const selectedRecord = computed<TrajectoryRecord | undefined>(() =>
-  runRecords.value.find((record) => record.eventSeq === selectedSeq.value),
-)
 
 const runCollapsed = computed(() =>
   allRunsSelected.value
@@ -161,13 +155,6 @@ async function loadTrajectory() {
 onMounted(loadTrajectory)
 
 watch(selectedRunId, resetRunView)
-
-// 切回精简范围后，被隐藏记录的详情面板不该继续留着，否则面板与账本口径不一致。
-watch(ledgerScope, () => {
-  const seq = selectedSeq.value
-  if (seq === undefined) return
-  if (!timelineRecords.value.some((record) => record.eventSeq === seq)) selectedSeq.value = undefined
-})
 </script>
 
 <template>
@@ -241,30 +228,20 @@ watch(ledgerScope, () => {
           ，其中 {{ noteStepCount }} 个关键步骤</template>
       </p>
 
-      <div class="trajectory-split" :class="{ 'with-details': selectedRecord !== undefined }">
-        <EventLedger
-          :key="`${selectedRunId}-${ledgerScope}`"
-          :records="visibleRecords"
-          :run-label="runLabel"
-          :scope="ledgerScope"
-          :selected-seq="selectedSeq"
-          :collapsed="runCollapsed"
-          :search-query="searchQuery"
-          :has-older-records="hasOlderRecords"
-          @select="selectRecord"
-          @toggle="toggleSelectedRun"
-          @load-older="loadOlder"
-        />
-        <EventDetails
-          v-if="selectedRecord"
-          :key="selectedRecord.eventSeq"
-          :record="selectedRecord"
-          :session-id="sessionId"
-          :records="visibleRecords"
-          @close="selectedSeq = undefined"
-          @select="selectRecord"
-        />
-      </div>
+      <EventLedger
+        :key="`${selectedRunId}-${ledgerScope}`"
+        class="ledger-block"
+        :records="visibleRecords"
+        :run-label="runLabel"
+        :scope="ledgerScope"
+        :selected-seq="selectedSeq"
+        :collapsed="runCollapsed"
+        :search-query="searchQuery"
+        :has-older-records="hasOlderRecords"
+        @select="selectRecord"
+        @toggle="toggleSelectedRun"
+        @load-older="loadOlder"
+      />
     </template>
 
     <p v-else class="empty-state">当前会话没有可展示的运行轨迹。</p>
@@ -287,13 +264,9 @@ watch(ledgerScope, () => {
 .toolbar-button:hover { border-color: var(--color-brand-700); color: var(--color-brand-700); }
 .toolbar-search input { min-width: 240px; min-height: 34px; padding: 0 var(--space-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface); font: inherit; font-size: var(--font-size-sm); }
 .section-note { margin: var(--space-3) 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.trajectory-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); margin-top: var(--space-4); align-items: start; }
-.trajectory-split.with-details { grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); }
+.ledger-block { margin-top: var(--space-4); }
 .loading-state, .empty-state { color: var(--color-text-muted); }
 .error-state { padding: var(--space-3); border-radius: var(--radius-md); color: var(--color-error-700); background: var(--color-error-100); overflow-wrap: anywhere; }
-@media (max-width: 960px) {
-  .trajectory-split.with-details { grid-template-columns: minmax(0, 1fr); }
-}
 @media (max-width: 640px) {
   .log-page { padding: var(--space-6) var(--space-4) var(--space-8); }
   .log-header { align-items: flex-start; flex-direction: column; }

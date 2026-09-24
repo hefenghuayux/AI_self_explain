@@ -176,12 +176,6 @@ function twoRunPayload(): Trajectory {
   }
 }
 
-async function openTab(wrapper: ReturnType<typeof mount>, label: string) {  const tab = wrapper.findAll('[role="tab"]').find((candidate) => candidate.text() === label)
-  if (tab === undefined) throw new Error(`缺少页签：${label}`)
-  await tab.trigger("click")
-  await flushPromises()
-}
-
 async function showAllRecords(wrapper: ReturnType<typeof mount>) {
   const button = wrapper
     .findAll("button.toolbar-button")
@@ -318,7 +312,7 @@ describe("SessionEventLogView", () => {
     expect(lines).toEqual(["{", '  "correctness": "CORRECT",', '  "missingPoints": []', "}"])
   })
 
-  it("点击记录行后展示结构化详情，并能跳转到父事件", async () => {
+  it("点击记录行只高亮该行，详情改由展开区承载", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
     vi.stubGlobal("fetch", fetchMock)
 
@@ -329,87 +323,11 @@ describe("SessionEventLogView", () => {
     await wrapper.findAll("div.record-row")[2].trigger("click")
     await flushPromises()
 
-    const details = wrapper.get("aside.details")
-    expect(details.text()).toContain("模型请求")
-    expect(details.findAll('[role="tab"]').map((tab) => tab.text())).toEqual([
-      "概述",
-      "消息（1）",
-      "模型上下文",
-      "原始 JSON",
-    ])
-    // 概述页给出层级导航：父事件与直接结果都可点击跳转。
-    expect(details.text()).toContain("#2 上下文")
-    expect(details.text()).toContain("#4 模型回复")
-
-    await openTab(wrapper, "消息（1）")
-    expect(wrapper.get("aside.details").text()).toContain("test-ai / test-model · 1 条消息")
-    expect(wrapper.get("aside.details").text()).toContain("请评价")
-
-    await openTab(wrapper, "概述")
-    await wrapper.get("aside.details").findAll("button.link")[0].trigger("click")
-    await flushPromises()
-    expect(wrapper.get("aside.details").text()).toContain("上下文")
-    expect(wrapper.get("aside.details").text()).toContain("#2")
-  })
-
-  it("模型请求详情可按 surfaceSeq 读取模型上下文", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(response(trajectoryPayload()))
-      .mockResolvedValueOnce(
-        response({
-          sessionId: 42,
-          asOfSeq: 2,
-          messages: [{ seq: 1, role: "user", content: "1 加 1 等于 2。" }],
-          contexts: [
-            { seq: 2, kind: "question", source: "question:1", content: { questionContent: "计算 1 + 1。" } },
-          ],
-        }),
-      )
-    vi.stubGlobal("fetch", fetchMock)
-
-    const wrapper = await mountView()
-    await showAllRecords(wrapper)
-    await wrapper.findAll("div.record-row")[2].trigger("click")
-    await flushPromises()
-
-    await openTab(wrapper, "模型上下文")
-
-    expect(fetchMock).toHaveBeenLastCalledWith(
-      "/api/sessions/42/surface?asOfSeq=2",
-      expect.any(Object),
-    )
-    const details = wrapper.get("aside.details")
-    expect(details.text()).toContain("1 加 1 等于 2。")
-    expect(details.text()).toContain("question")
-    expect(details.text()).toContain("计算 1 + 1。")
-  })
-
-  it("历史模型回复缺少 rawContent 时给出明确说明而不是空白", async () => {
-    const payload = trajectoryPayload()
-    const records = payload.runs[0].records
-    records[3] = {
-      ...records[3],
-      detail: {
-        modelResponse: {
-          output: { correctness: "CORRECT" },
-          validation: "valid",
-        },
-      },
-    }
-    payload.events = records
-    const fetchMock = vi.fn().mockResolvedValueOnce(response(payload))
-    vi.stubGlobal("fetch", fetchMock)
-
-    const wrapper = await mountView()
-    // 默认精简范围下，模型回复是第 3 行。
-    await wrapper.findAll("div.record-row")[2].trigger("click")
-    await flushPromises()
-    await openTab(wrapper, "输出")
-
-    const details = wrapper.get("aside.details")
-    expect(details.text()).toContain("correctness")
-    expect(details.text()).toContain("该历史事件未保存模型原始回复。")
+    // 详情面板已移除：点击只做高亮，不再渲染任何页签容器。
+    expect(wrapper.find("aside.details").exists()).toBe(false)
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(0)
+    expect(wrapper.findAll("div.record-row.selected")).toHaveLength(1)
+    expect(wrapper.get("div.record-row.selected").attributes("data-kind")).toBe("model_request")
   })
 
   it("时间线色块跟随账本范围，精简范围不显示状态变化与模型请求", async () => {
@@ -429,7 +347,7 @@ describe("SessionEventLogView", () => {
     expect(wrapper.findAll("button.timeline-block")[4].attributes("data-kind")).toBe("state_change")
   })
 
-  it("切回精简范围时关闭已被隐藏记录的详情面板", async () => {
+  it("切回精简范围后账本与色块同步收敛，不残留被隐藏记录的选中态", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
     vi.stubGlobal("fetch", fetchMock)
 
@@ -438,7 +356,7 @@ describe("SessionEventLogView", () => {
     // 完整范围下第 5 行是状态变化，精简范围会把它藏掉。
     await wrapper.findAll("div.record-row")[4].trigger("click")
     await flushPromises()
-    expect(wrapper.get("aside.details").text()).toContain("状态变化")
+    expect(wrapper.findAll("div.record-row.selected")).toHaveLength(1)
 
     const backButton = wrapper
       .findAll("button.toolbar-button")
@@ -447,8 +365,10 @@ describe("SessionEventLogView", () => {
     await backButton.trigger("click")
     await flushPromises()
 
-    expect(wrapper.find("aside.details").exists()).toBe(false)
     expect(wrapper.findAll("button.timeline-block")).toHaveLength(3)
+    expect(wrapper.findAll("div.record-row")).toHaveLength(3)
+    // 被范围隐藏的记录不再出现在账本里，因此也没有残留高亮。
+    expect(wrapper.findAll("div.record-row.selected")).toHaveLength(0)
   })
 
   it("搜索高亮命中记录，收起运行后只保留一行摘要", async () => {
@@ -471,25 +391,16 @@ describe("SessionEventLogView", () => {
     expect(wrapper.get("div.group-row").text()).toContain("当前范围 3 条记录")
   })
 
-  it("detail 未使用的键是显式 null 时详情面板仍能打开，之后按钮继续生效", async () => {
+  it("detail 未使用的键是显式 null 时轨迹页仍能渲染，展开按钮继续生效", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(response(withNullDetails(trajectoryPayload())))
     vi.stubGlobal("fetch", fetchMock)
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 
     const wrapper = await mountView()
-    await wrapper.findAll("div.record-row")[0].trigger("click")
-    await flushPromises()
 
     // 渲染期抛错会打断组件树的 patch，之后所有按钮都失效。
     expect(errorSpy).not.toHaveBeenCalled()
-    const details = wrapper.get("aside.details")
-    expect(details.text()).toContain("学生")
-    // null 表示没有这份数据，不该凭空多出「消息」「输出」页签。
-    expect(details.findAll('[role="tab"]').map((tab) => tab.text())).toEqual([
-      "概述",
-      "内容",
-      "原始 JSON",
-    ])
+    expect(wrapper.findAll("div.record-row")).toHaveLength(3)
 
     await showAllRecords(wrapper)
     expect(wrapper.findAll("div.record-row")).toHaveLength(5)

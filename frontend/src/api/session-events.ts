@@ -1,12 +1,7 @@
 import { requestSessionApi } from "./sessions"
-import type { Surface, Trajectory } from "../types/session-event"
+import type { Trajectory } from "../types/session-event"
 
-/** 轨迹页只消费 /trajectory；/surface 仅供详情面板按 surfaceSeq 重建模型上下文。 */
+/** 轨迹页只消费 /trajectory；展开区展示后端投影好的 fullText，不再单独取 /surface。 */
 export function fetchSessionTrajectory(sessionId: string): Promise<Trajectory> {
   return requestSessionApi<Trajectory>(`/api/sessions/${sessionId}/trajectory`)
-}
-
-export function fetchSessionSurface(sessionId: string, asOfSeq?: number): Promise<Surface> {
-  const query = typeof asOfSeq === "number" ? `?asOfSeq=${asOfSeq}` : ""
-  return requestSessionApi<Surface>(`/api/sessions/${sessionId}/surface${query}`)
 }

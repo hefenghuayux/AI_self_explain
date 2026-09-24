@@ -9,7 +9,8 @@ export type EventType =
 
 /**
  * 事件、Surface、Trace 类型保留为后端接口契约的镜像。
- * 轨迹页不再调用 /events 与 /trace，但后端接口仍在，离线排查时按同一份契约读取。
+ * 轨迹页不再调用 /events、/trace 与 /surface（详情面板已移除，模型上下文不再单独重建），
+ * 但后端接口仍在，离线排查时按同一份契约读取。
  */
 export interface SessionEvent {
   sessionId: number
