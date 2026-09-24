@@ -572,6 +572,16 @@ describe("SessionView", () => {
     )
   })
 
+  it("hides the mastery check segment until the session enters that stage", async () => {
+    fetchSession.mockResolvedValue(createSession({
+      flowStage: "WAIT_STUDENT_ACTION",
+      version: 9,
+    }))
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.get('[data-testid="dialog-segmented"]').text()).not.toContain("掌握度核验")
+  })
+
   it("asks for a mastery check instead of a second full self-explanation", async () => {
     fetchSession.mockResolvedValue(createSession({
       flowStage: "SHOWING_FULL_SOLUTION",

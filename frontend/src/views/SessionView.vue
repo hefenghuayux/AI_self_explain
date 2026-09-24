@@ -266,10 +266,14 @@ function canUseSegment(segment: SegmentKey) {
   return hasAppealableAiResponse() && canSubmitStudentInterruption()
 }
 
-const segmentOptions = computed(() => segmentEntries.map((segment) => ({
-  ...segment,
-  disabled: !canUseSegment(segment.value),
-})))
+// 掌握度核验只在进入核验阶段后出现，其他阶段不提前暴露该入口。
+const segmentOptions = computed(() => segmentEntries
+  .filter((segment) => segment.value !== "masteryCheck"
+    || session.value?.flowStage === "WAIT_MASTERY_CHECK")
+  .map((segment) => ({
+    ...segment,
+    disabled: !canUseSegment(segment.value),
+  })))
 
 const hasFollowUpContent = computed(
   () => Boolean(session.value?.latestSupport?.followUpContent),
