@@ -82,7 +82,11 @@ async function mountSessionView() {
   })
   await router.push("/sessions/12")
   await router.isReady()
-  const wrapper = mount(SessionView, { global: { plugins: [ElementPlus, router] } })
+  const wrapper = mount(SessionView, {
+    // 页面操作按钮通过 Teleport 渲染到 App.vue 顶栏容器；本文件只挂载 SessionView，
+    // 因此把 Teleport 替换为就地渲染的桩件，按钮仍可通过 wrapper 查询。
+    global: { plugins: [ElementPlus, router], stubs: { teleport: true } },
+  })
   await flushPromises()
   return wrapper
 }
@@ -481,6 +485,8 @@ describe("SessionView", () => {
     expect(wrapper.text()).toContain("AI")
     const contents = wrapper.findAll('[data-testid="timeline-content"]').map((item) => item.text())
     expect(contents).toEqual(["1 加 1 等于 2。", "还需要说明为什么是 2。"])
+    expect(wrapper.text()).not.toContain("正确性")
+    expect(wrapper.text()).not.toContain("完整性")
   })
 
   it("shows compact progress and feedback before the self-explanation actions", async () => {
@@ -524,6 +530,9 @@ describe("SessionView", () => {
     // 评价响应已不再返回 errorEvidence，反馈区不提供评价依据展开入口。
     expect(wrapper.find('[aria-controls="feedback-details"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain("查看评价依据")
+    expect(wrapper.find(".evaluation-results").exists()).toBe(false)
+    expect(wrapper.text()).not.toContain("正确性")
+    expect(wrapper.text()).not.toContain("完整性")
   })
 
   it("restores saved drafts for each segmented input block", async () => {

@@ -20,7 +20,6 @@ import VoiceRecorder from "../components/VoiceRecorder.vue"
 import { fetchQuestion } from "../api/questions"
 import { authUser } from "../stores/auth"
 import type {
-  AIEvaluation,
   GuidedAnswer,
   InitialChoice,
   LearningTimelineItem,
@@ -81,16 +80,6 @@ const studentInterruptionFlowStages = new Set<Session["flowStage"]>([
 
 // 终态与后端规则层保持一致：结束后的会话不再接受新的学生动作。
 const terminalStatuses = new Set<Session["status"]>(["COMPLETED", "STOPPED_LIMIT", "NEEDS_REVIEW"])
-
-const correctnessLabels: Record<AIEvaluation["correctness"], string> = {
-  CORRECT: "正确",
-  WRONG: "有错误",
-}
-
-const completenessLabels: Record<AIEvaluation["completeness"], string> = {
-  COMPLETE: "完整",
-  INCOMPLETE: "不完整",
-}
 
 const actionLabels: Record<NonNullable<LearningTimelineItem["action"]>, string> = {
   COMPLETE: "本轮完成",
@@ -285,12 +274,6 @@ const feedbackHeading = computed(() => {
   }
   return { title: "最新反馈", description: "先看结论，再按下一步建议继续。" }
 })
-
-function evaluationClass(value: string) {
-  if (value === "CORRECT" || value === "COMPLETE") return "is-positive"
-  if (value === "WRONG") return "is-negative"
-  return "is-attention"
-}
 
 function syncActiveSegmentWithStage() {
   if (session.value?.flowStage === "WAIT_GUIDED_ANSWERS") {
@@ -630,14 +613,13 @@ async function respondToSolution(understood: boolean) {
 <template>
   <main class="session-page" :aria-busy="loading || submitting">
     <div class="session-shell">
-      <div class="page-header">
-        <div><h1>自讲学习</h1><p>用自己的语言讲清思路，在反馈中逐步完善。</p></div>
-        <div class="page-actions">
-          <el-button v-if="session" data-testid="restart-self-explanation" :loading="submitting" @click="restartSelfExplanation">重新自讲</el-button>
-          <RouterLink v-if="session && authUser?.role === 'TEACHER'" :to="`/sessions/${session.id}/logs`"><el-button>查看运行日志</el-button></RouterLink>
-          <RouterLink v-if="session" to="/"><el-button>返回题目列表</el-button></RouterLink>
+      <Teleport to="#app-header-actions">
+        <div v-if="session" class="page-actions">
+          <el-button data-testid="restart-self-explanation" :loading="submitting" @click="restartSelfExplanation">重新自讲</el-button>
+          <RouterLink v-if="authUser?.role === 'TEACHER'" :to="`/sessions/${session.id}/logs`"><el-button>查看运行日志</el-button></RouterLink>
+          <RouterLink to="/"><el-button>返回题目列表</el-button></RouterLink>
         </div>
-      </div>
+      </Teleport>
       <div v-if="errorMessage" class="error-state" role="alert">
         <el-alert :title="errorMessage" type="error" :closable="false" show-icon />
         <el-button data-testid="continue-session" type="primary" @click="continueAfterError">继续自讲</el-button>
@@ -651,12 +633,6 @@ async function respondToSolution(understood: boolean) {
         <section v-if="session.latestEvaluation || hasFollowUpContent" class="session-section feedback-section" aria-labelledby="feedback-title" aria-live="polite">
           <div class="section-heading feedback-heading"><div><h2 id="feedback-title">{{ feedbackHeading.title }}</h2><p>{{ feedbackHeading.description }}</p></div></div>
           <div class="feedback-card">
-            <template v-if="session.latestEvaluation">
-            <div class="evaluation-results">
-              <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.correctness)"><span>正确性</span><strong>{{ correctnessLabels[session.latestEvaluation.correctness] }}</strong></div>
-              <div class="evaluation-result" :class="evaluationClass(session.latestEvaluation.completeness)"><span>完整性</span><strong>{{ completenessLabels[session.latestEvaluation.completeness] }}</strong></div>
-            </div>
-            </template>
             <p v-if="session.latestSupport?.content || hasFollowUpContent" class="feedback-next-step"><strong>下一步：</strong>{{ hasFollowUpContent ? session.latestSupport?.followUpContent : session.latestSupport?.content }}</p>
           </div>
         </section>
@@ -901,9 +877,6 @@ async function respondToSolution(understood: boolean) {
                   <span class="conversation-event">{{ timelineTitle(item) }}</span>
                   <time>{{ new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false }) }}</time>
                 </div>
-                <p v-if="item.correctness && item.completeness" class="timeline-evaluation">
-                  正确性：{{ correctnessLabels[item.correctness] }}；完整性：{{ completenessLabels[item.completeness] }}
-                </p>
                 <p data-testid="timeline-content" class="conversation-content">{{ item.content }}</p>
               </article>
             </div>
@@ -917,14 +890,11 @@ async function respondToSolution(understood: boolean) {
 <style scoped>
 .session-page { max-width: 1040px; margin: 0 auto; padding: var(--space-8) var(--space-6) var(--space-12); }
 .session-shell { min-width: 0; }
-.page-header, .page-actions, .actions { display: flex; align-items: center; gap: var(--space-2); }
-.page-header { justify-content: space-between; margin-bottom: var(--space-6); }
-.page-header p { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
+.page-actions, .actions { display: flex; align-items: center; gap: var(--space-2); }
 .actions { flex-wrap: wrap; margin-top: var(--space-4); }
 .error-state { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
 .error-state .el-alert { flex: 1; }
-h1, h2, h3 { margin: 0; line-height: 1.4; }
-h1 { font-size: var(--font-size-2xl); }
+h2, h3 { margin: 0; line-height: 1.4; }
 h2 { font-size: var(--font-size-lg); }
 .question-content { padding: var(--space-6); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
 .question-rich-text { max-width: var(--reading-width); margin-top: var(--space-3); color: var(--color-text-primary); font-size: var(--font-size-lg); font-weight: 600; line-height: 1.75; overflow-wrap: anywhere; }
@@ -935,13 +905,6 @@ h2 { font-size: var(--font-size-lg); }
 .session-section p { color: var(--color-text-secondary); }
 .section-heading { display: flex; justify-content: space-between; gap: var(--space-4); }
 .section-description, .section-heading p { margin: var(--space-1) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.evaluation-results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
-.evaluation-result { padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-muted); }
-.evaluation-result span { display: block; color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.evaluation-result strong { display: block; margin-top: var(--space-1); font-size: var(--font-size-lg); }
-.evaluation-result.is-positive { color: var(--color-success-700); background: var(--color-success-100); }
-.evaluation-result.is-negative { color: var(--color-error-700); background: var(--color-error-100); }
-.evaluation-result.is-attention { color: var(--color-action-700); background: var(--color-action-100); }
 .dialog-segmented { width: 100%; margin-top: var(--space-4); }
 .dialog-segmented :deep(.el-segmented__item) { min-height: 44px; }
 .dialog-panel {
@@ -1018,7 +981,6 @@ h2 { font-size: var(--font-size-lg); }
   word-break: break-word;
   color: var(--color-text-primary);
 }
-.timeline-evaluation { margin: var(--space-2) 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
 .completion-state { color: var(--color-success-700); }
 .solution-state p { max-width: var(--reading-width); white-space: pre-wrap; color: var(--color-text-primary); }
 @media (max-width: 768px) {
@@ -1027,8 +989,6 @@ h2 { font-size: var(--font-size-lg); }
 }
 @media (max-width: 640px) {
   .session-page { padding: var(--space-6) var(--space-4) var(--space-8); }
-  .page-header { align-items: flex-start; flex-direction: column; }
-  .page-header a, .page-header .el-button { width: 100%; }
   .question-content { padding: var(--space-4); }
   .dialog-panel { padding: var(--space-4); }
   .actions .el-button { flex: 1 1 100%; }

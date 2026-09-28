@@ -26,6 +26,8 @@ async function signOut() {
       </nav>
       <div class="account-area">
         <span class="user-name">{{ authUser?.fullName }}</span>
+        <!-- 页面级操作由各视图 Teleport 到此容器，与「退出登录」同处顶栏一行。 -->
+        <div id="app-header-actions" class="header-actions" />
         <el-button class="logout-button" plain @click="signOut">退出登录</el-button>
       </div>
     </div>
@@ -130,6 +132,12 @@ nav {
   white-space: nowrap;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 @media (max-width: 640px) {
   .header-inner {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -142,6 +150,11 @@ nav {
   .user-name,
   nav {
     display: none;
+  }
+
+  .account-area {
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .logout-button {
