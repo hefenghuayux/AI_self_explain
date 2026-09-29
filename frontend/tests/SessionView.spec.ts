@@ -61,6 +61,7 @@ function createSession(overrides: Partial<Session> = {}): Session {
     solutionExposed: false,
     completionType: null,
     currentDraft: "",
+    currentStepId: null,
     version: 1,
     initialChoice: null,
     needHumanReason: null,

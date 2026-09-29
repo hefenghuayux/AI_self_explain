@@ -1,5 +1,11 @@
 export type InitialChoice = "KNOW" | "NOT_KNOW" | "HAS_QUESTION"
-export type VoiceInputTarget = "SELF_EXPLANATION" | "GUIDED_ANSWER" | "DOUBT" | "APPEAL"
+export type VoiceInputTarget =
+  | "SELF_EXPLANATION"
+  | "SELF_EXPLANATION_STEP"
+  | "SELF_EXPLANATION_EXPLAIN"
+  | "GUIDED_ANSWER"
+  | "DOUBT"
+  | "APPEAL"
 
 export type SessionStatus = "IN_PROGRESS" | "COMPLETED" | "STOPPED_LIMIT" | "PAUSED" | "NEEDS_REVIEW"
 
@@ -108,6 +114,7 @@ export interface Session {
   solutionExposed: boolean
   completionType: "INDEPENDENT" | "WITH_SUPPORT" | "AFTER_SOLUTION" | "AFTER_MASTERY_CHECK" | null
   currentDraft: string
+  currentStepId: number | null
   version: number
   initialChoice: InitialChoice | null
   needHumanReason: string | null
