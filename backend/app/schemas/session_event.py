@@ -29,6 +29,8 @@ class SessionStartedData(EventData):
 class UserMessageData(EventData):
     text: NonEmptyText
     inputType: Literal["text", "voice"]
+    draftId: NonEmptyText | None = None
+    steps: list[dict[str, JsonValue]] | None = None
 
 
 class ContextAddedData(EventData):

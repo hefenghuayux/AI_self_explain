@@ -45,6 +45,9 @@ class Session(Base):
     completion_type: Mapped[str | None] = mapped_column(String(30))
     need_human_reason: Mapped[str | None] = mapped_column(Text)
     current_draft: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    current_step_id: Mapped[int | None] = mapped_column(
+        ForeignKey("explanation_steps.id"), index=True
+    )
     last_support_draft: Mapped[str] = mapped_column(Text, nullable=False, default="")
     paused_from_stage: Mapped[str | None] = mapped_column(String(40))
     version: Mapped[int] = mapped_column(Integer, nullable=False)

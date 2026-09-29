@@ -3,6 +3,7 @@ from app.models.audio_file import AudioFile
 from app.models.auth_session import AuthSession
 from app.models.base import Base
 from app.models.explanation_attempt import ExplanationAttempt
+from app.models.explanation_step import ExplanationStep
 from app.models.external_call_record import ExternalCallRecord
 from app.models.mastery_check import MasteryCheck
 from app.models.question import Question
@@ -19,6 +20,7 @@ __all__ = [
     "AuthSession",
     "Base",
     "ExplanationAttempt",
+    "ExplanationStep",
     "ExternalCallRecord",
     "MasteryCheck",
     "Question",

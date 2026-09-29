@@ -23,7 +23,14 @@ FlowStage = Literal[
     "SHOWING_FULL_SOLUTION",
 ]
 InitialChoice = Literal["KNOW", "NOT_KNOW", "HAS_QUESTION"]
-VoiceInputTarget = Literal["SELF_EXPLANATION", "GUIDED_ANSWER", "DOUBT", "APPEAL"]
+VoiceInputTarget = Literal[
+    "SELF_EXPLANATION",
+    "SELF_EXPLANATION_STEP",
+    "SELF_EXPLANATION_EXPLAIN",
+    "GUIDED_ANSWER",
+    "DOUBT",
+    "APPEAL",
+]
 
 
 class CreateSessionInput(QuestionSchema):
@@ -165,6 +172,7 @@ class SessionResponse(QuestionSchema):
     completion_type: str | None
     need_human_reason: str | None
     current_draft: str
+    current_step_id: int | None
     paused_from_stage: FlowStage | None
     version: int
     created_at: datetime

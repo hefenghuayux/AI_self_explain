@@ -65,6 +65,8 @@ const voiceRecording = ref(false)
 const activeVoiceKey = ref<string>()
 const voiceAttemptIds = ref<Record<string, number>>({})
 const doubtVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
+const stepVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
+const explainVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 
 const sessionId = String(route.params.sessionId)
 const dialogDraftStorageKey = `ai-self-explain:session:${sessionId}:dialog-drafts`
@@ -413,7 +415,7 @@ async function ensureStepInputReady() {
 async function submitExplanation() {
   if (!session.value) return
   if (voiceRecording.value) {
-    errorMessage.value = "请先结束录音后再提交自讲"
+    stopVoiceRecorder(activeVoiceKey.value ?? "")
     return
   }
   submitting.value = true
@@ -450,7 +452,7 @@ async function submitExplanation() {
 async function saveCurrentStepAndAdvance() {
   if (!session.value || submitting.value) return
   if (voiceRecording.value) {
-    errorMessage.value = "请先结束录音后再进入下一步"
+    stopVoiceRecorder(activeVoiceKey.value ?? "")
     return
   }
   submitting.value = true
@@ -479,6 +481,35 @@ async function saveCurrentStepAndAdvance() {
   }
 }
 
+async function prepareStepVoice() {
+  if (!session.value) return false
+  submitting.value = true
+  errorMessage.value = ""
+  try {
+    await ensureStepInputReady()
+    return session.value.flowStage === "CAPTURING_INPUT" && currentStepId.value !== null
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+    return false
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function prepareExplainVoice() {
+  return prepareStepVoice()
+}
+
+function stopVoiceRecorder(voiceKey: string) {
+  if (voiceKey === "step") {
+    stepVoiceRecorderRef.value?.stop()
+  } else if (voiceKey === "explain") {
+    explainVoiceRecorderRef.value?.stop()
+  } else if (voiceKey === "doubt") {
+    doubtVoiceRecorderRef.value?.stop()
+  }
+}
+
 async function activateStep(targetStepId: number) {
   if (!session.value || submitting.value) return
   if (targetStepId === currentStepId.value) {
@@ -486,7 +517,7 @@ async function activateStep(targetStepId: number) {
     return
   }
   if (voiceRecording.value) {
-    errorMessage.value = "请先结束录音后再切换步骤"
+    stopVoiceRecorder(activeVoiceKey.value ?? "")
     return
   }
   if (currentStepId.value === null) {
@@ -534,8 +565,13 @@ function appendGuidedTranscript(questionId: string, text: string) {
 }
 
 function handleRecordingChange(voiceKey: string, recording: boolean) {
+  if (recording && activeVoiceKey.value && activeVoiceKey.value !== voiceKey) {
+    stopVoiceRecorder(activeVoiceKey.value)
+  }
   voiceRecording.value = recording
-  activeVoiceKey.value = recording ? voiceKey : undefined
+  activeVoiceKey.value = recording ? voiceKey : (
+    activeVoiceKey.value === voiceKey ? undefined : activeVoiceKey.value
+  )
 }
 
 function voiceAttemptKey(target: VoiceInputTarget, targetId?: string) {
@@ -553,11 +589,19 @@ function clearVoiceAttemptId(target: VoiceInputTarget, targetId?: string) {
 async function handleVoiceCompleted(
   target: VoiceInputTarget,
   targetId: string | undefined,
-  attemptId: number,
+  payload: { attemptId: number; version: number },
 ) {
-  voiceAttemptIds.value[voiceAttemptKey(target, targetId)] = attemptId
+  voiceAttemptIds.value[voiceAttemptKey(target, targetId)] = payload.attemptId
   try {
+    const currentDraftBeforeRefresh = currentStepContent.value
     session.value = await fetchSession(sessionId)
+    if (session.value.version < payload.version) {
+      session.value = { ...session.value, version: payload.version }
+    }
+    if (target === "SELF_EXPLANATION_EXPLAIN") {
+      await loadCurrentSteps()
+      currentStepContent.value = currentDraftBeforeRefresh
+    }
     syncActiveSegmentWithStage()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
@@ -770,16 +814,41 @@ async function respondToSolution(understood: boolean) {
                       :loading="submitting"
                       @click="submitExplanation"
                     >提交</el-button>
-                    <el-button
-                      data-testid="record-explain"
-                      disabled
-                      title="讲解录音将在语音目标接入后启用"
-                    >讲解录音</el-button>
-                    <el-button
-                      data-testid="record-step"
-                      disabled
-                      title="步骤录音将在语音目标接入后启用"
-                    >步骤录音</el-button>
+                    <VoiceRecorder
+                      ref="explainVoiceRecorderRef"
+                      :session-id="sessionId"
+                      :version="session.version"
+                      target="SELF_EXPLANATION_EXPLAIN"
+                      :target-id="currentStepId === null ? undefined : String(currentStepId)"
+                      start-test-id="record-explain"
+                      stop-test-id="stop-record-explain"
+                      label="讲解录音"
+                      inline
+                      :disabled="submitting
+                        || (voiceRecording && activeVoiceKey !== 'explain')"
+                      :prepare-start="prepareExplainVoice"
+                      @completed="handleVoiceCompleted('SELF_EXPLANATION_EXPLAIN', currentStepId === null ? undefined : String(currentStepId), $event)"
+                      @recording-change="handleRecordingChange('explain', $event)"
+                      @error="errorMessage = $event"
+                    />
+                    <VoiceRecorder
+                      ref="stepVoiceRecorderRef"
+                      :session-id="sessionId"
+                      :version="session.version"
+                      target="SELF_EXPLANATION_STEP"
+                      :target-id="currentStepId === null ? undefined : String(currentStepId)"
+                      start-test-id="record-step"
+                      stop-test-id="stop-record-step"
+                      label="步骤录音"
+                      inline
+                      :disabled="submitting
+                        || (voiceRecording && activeVoiceKey !== 'step')"
+                      :prepare-start="prepareStepVoice"
+                      @final-transcript="currentStepContent = appendTranscript(currentStepContent, $event)"
+                      @completed="handleVoiceCompleted('SELF_EXPLANATION_STEP', currentStepId === null ? undefined : String(currentStepId), $event)"
+                      @recording-change="handleRecordingChange('step', $event)"
+                      @error="errorMessage = $event"
+                    />
                     <el-button
                       data-testid="next-step"
                       :disabled="submitting || voiceRecording"

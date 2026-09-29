@@ -16,6 +16,7 @@ from fastapi import (
 
 from app.core.auth import CurrentUser, DatabaseSession, get_current_user
 from app.core.logging import bind_trace_context, new_correlation_id, reset_trace_context
+from app.models.explanation_attempt import ExplanationAttempt
 from app.models.question import Question
 from app.models.session import Session
 from app.repositories.sessions import (
@@ -61,6 +62,12 @@ from app.schemas.session import (
     TeachingSucceededResponse,
     TextAttemptInput,
     VoiceInputTarget,
+)
+from app.schemas.session_step import (
+    StepActivateInput,
+    StepAttemptInput,
+    StepNextInput,
+    StepsResponse,
 )
 from app.schemas.support import GuidedAnswer, SupportEventResponse
 from app.services.ai_evaluation import AIEvaluationService
@@ -354,6 +361,161 @@ def submit_text_attempt(
                 "sessionId": session_id,
             },
         ) from error
+    return evaluate_explanation_attempt(
+        repository=repository,
+        session=session,
+        attempt=attempt,
+        database_session=database_session,
+        request=request,
+    )
+
+
+@router.get("/{session_id}/steps", response_model=StepsResponse)
+def get_session_steps(
+    session_id: int,
+    database_session: DatabaseSession,
+    current_user: CurrentUser,
+    round: str = Query(default="current"),
+) -> StepsResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id, current_user)
+    if round != "current":
+        try:
+            requested_round = int(round)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail="round 必须是 current 或整数") from error
+        if requested_round != session.round:
+            reject_operation("当前仅支持查询本轮自讲步骤")
+    return StepsResponse.model_validate(repository.get_current_steps(session))
+
+
+@router.post("/{session_id}/steps/{step_id}/next", response_model=StepsResponse)
+def save_step_and_go_next(
+    session_id: int,
+    step_id: int,
+    step_input: StepNextInput,
+    database_session: DatabaseSession,
+    current_user: CurrentUser,
+) -> StepsResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id, current_user)
+    validate_in_progress(session)
+    if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT:
+        reject_operation(f"当前流程阶段不能保存步骤：{session.flow_stage}")
+    validate_version(session, step_input.version)
+    try:
+        response = repository.save_step_and_advance(
+            session=session,
+            step_id=step_id,
+            step_content=step_input.step_content,
+            expected_version=step_input.version,
+        )
+    except SessionVersionConflict as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "SESSION_VERSION_CONFLICT",
+                "message": "会话版本已变化，请刷新后重试",
+                "sessionId": session_id,
+            },
+        ) from error
+    except ValueError as error:
+        reject_operation(str(error))
+    return StepsResponse.model_validate(response)
+
+
+@router.post("/{session_id}/steps/{target_step_id}/activate", response_model=StepsResponse)
+def activate_session_step(
+    session_id: int,
+    target_step_id: int,
+    step_input: StepActivateInput,
+    database_session: DatabaseSession,
+    current_user: CurrentUser,
+) -> StepsResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id, current_user)
+    validate_in_progress(session)
+    if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT:
+        reject_operation(f"当前流程阶段不能切换步骤：{session.flow_stage}")
+    validate_version(session, step_input.version)
+    try:
+        response = repository.activate_step(
+            session=session,
+            target_step_id=target_step_id,
+            current_step_id=step_input.current_step_id,
+            current_step_content=step_input.current_step_content,
+            expected_version=step_input.version,
+        )
+    except SessionVersionConflict as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "SESSION_VERSION_CONFLICT",
+                "message": "会话版本已变化，请刷新后重试",
+                "sessionId": session_id,
+            },
+        ) from error
+    except ValueError as error:
+        reject_operation(str(error))
+    return StepsResponse.model_validate(response)
+
+
+@router.post("/{session_id}/step-attempts", response_model=SessionResponse)
+def submit_step_attempt(
+    session_id: int,
+    attempt_input: StepAttemptInput,
+    database_session: DatabaseSession,
+    current_user: CurrentUser,
+    request: Request,
+) -> SessionResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id, current_user)
+    validate_in_progress(session)
+    if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT:
+        reject_operation(f"当前流程阶段不能提交步骤：{session.flow_stage}")
+    validate_version(session, attempt_input.version)
+    try:
+        _, _, projection = repository.build_step_snapshot(
+            session=session,
+            current_step_id=attempt_input.current_step_id,
+            current_step_content=attempt_input.current_step_content,
+        )
+    except ValueError as error:
+        reject_operation(str(error))
+    preflight_submission(database_session, session, request.app.state.settings, text=projection)
+    try:
+        session, attempt = repository.submit_step_attempt(
+            session=session,
+            current_step_id=attempt_input.current_step_id,
+            current_step_content=attempt_input.current_step_content,
+            expected_version=attempt_input.version,
+        )
+    except SessionVersionConflict as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "SESSION_VERSION_CONFLICT",
+                "message": "会话版本已变化，请刷新后重试",
+                "sessionId": session_id,
+            },
+        ) from error
+    return evaluate_explanation_attempt(
+        repository=repository,
+        session=session,
+        attempt=attempt,
+        database_session=database_session,
+        request=request,
+    )
+
+
+def evaluate_explanation_attempt(
+    *,
+    repository: SessionRepository,
+    session: Session,
+    attempt: ExplanationAttempt,
+    database_session: DatabaseSession,
+    request: Request,
+) -> SessionResponse:
     question = database_session.get(Question, session.question_id)
     if question is None:
         raise RuntimeError(f"会话 {session.id} 关联题目不存在：{session.question_id}")
@@ -951,6 +1113,8 @@ async def stream_voice_input(
             return
         allowed_stages = {
             "SELF_EXPLANATION": frozenset({FLOW_STAGE_CAPTURING_INPUT}),
+            "SELF_EXPLANATION_STEP": frozenset({FLOW_STAGE_CAPTURING_INPUT}),
+            "SELF_EXPLANATION_EXPLAIN": frozenset({FLOW_STAGE_CAPTURING_INPUT}),
             "GUIDED_ANSWER": frozenset({FLOW_STAGE_WAIT_GUIDED_ANSWERS}),
             "DOUBT": STUDENT_INTERRUPTION_FLOW_STAGES,
             "APPEAL": STUDENT_INTERRUPTION_FLOW_STAGES,
@@ -960,7 +1124,21 @@ async def stream_voice_input(
                 websocket, f"当前流程阶段不能进行语音输入：{session.flow_stage}"
             )
             return
-        if target == "GUIDED_ANSWER":
+        if target in {"SELF_EXPLANATION_STEP", "SELF_EXPLANATION_EXPLAIN"}:
+            if target_id is None:
+                await reject_voice_stream(websocket, "步骤语音输入必须携带 targetId")
+                return
+            try:
+                target_step_id = int(target_id)
+            except ValueError:
+                await reject_voice_stream(websocket, "步骤语音输入的 targetId 无效")
+                return
+            try:
+                repository.get_editable_step(session, target_step_id)
+            except ValueError as error:
+                await reject_voice_stream(websocket, str(error))
+                return
+        elif target == "GUIDED_ANSWER":
             support_event = repository.get_pending_guided_support(session.id)
             guided_question_ids = (
                 {

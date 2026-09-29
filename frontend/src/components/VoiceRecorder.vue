@@ -11,16 +11,19 @@ const props = withDefaults(defineProps<{
   targetId?: string
   startTestId?: string
   stopTestId?: string
+  label?: string
   inline?: boolean
   disabled?: boolean
+  prepareStart?: () => Promise<boolean> | boolean
 }>(), {
   startTestId: "start-voice",
   stopTestId: "stop-voice",
+  label: "录音",
 })
 
 const emit = defineEmits<{
   finalTranscript: [text: string]
-  completed: [attemptId: number]
+  completed: [payload: { attemptId: number; version: number }]
   recordingChange: [recording: boolean]
   error: [message: string]
 }>()
@@ -83,6 +86,7 @@ function finishRecording() {
 
 async function start() {
   if (recording.value || props.disabled) return
+  if (props.prepareStart && !(await props.prepareStart())) return
   previewText.value = ""
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -94,6 +98,7 @@ async function start() {
         type: string
         text?: string
         attemptId?: number
+        version?: number
         sampleRateHz?: number
         message?: string
       }
@@ -124,7 +129,14 @@ async function start() {
           emit("error", "实时语音识别未返回语音尝试编号")
           return
         }
-        emit("completed", message.attemptId)
+        if (typeof message.version !== "number") {
+          emit("error", "实时语音识别未返回最新会话版本")
+          return
+        }
+        emit("completed", {
+          attemptId: message.attemptId,
+          version: message.version,
+        })
       } else if (message.type === "error") {
         finishRecording()
         emit("error", message.message ?? "实时语音识别失败")
@@ -155,7 +167,7 @@ onBeforeUnmount(() => {
   socket?.close()
 })
 
-defineExpose({ start })
+defineExpose({ start, stop })
 </script>
 
 <template>
@@ -171,7 +183,7 @@ defineExpose({ start })
         :type="recording ? 'danger' : undefined"
         :disabled="disabled"
         @click="recording ? stop() : start()"
-      >{{ recording ? '录音中' : '录音' }}</el-button>
+      >{{ recording ? '录音中' : label }}</el-button>
     </div>
   </section>
 </template>

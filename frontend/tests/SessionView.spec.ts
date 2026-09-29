@@ -223,12 +223,12 @@ describe("SessionView", () => {
     await flushPromises()
   })
 
-  it("shows disabled step and explanation recording entries without voice guidance text", async () => {
+  it("shows step and explanation recording entries without voice guidance text", async () => {
     fetchSession.mockResolvedValue(createSession())
     const wrapper = await mountSessionView()
 
-    expect(wrapper.get('[data-testid="record-explain"]').attributes("disabled")).toBeDefined()
-    expect(wrapper.get('[data-testid="record-step"]').attributes("disabled")).toBeDefined()
+    expect(wrapper.get('[data-testid="record-explain"]').attributes("disabled")).toBeUndefined()
+    expect(wrapper.get('[data-testid="record-step"]').attributes("disabled")).toBeUndefined()
     expect(wrapper.text()).not.toContain("使用语音自讲")
     expect(wrapper.text()).not.toContain("实时语音输入")
     expect(wrapper.text()).not.toContain("确认语音转写")
@@ -639,9 +639,13 @@ describe("SessionView", () => {
     const wrapper = await mountSessionView()
 
     expect(wrapper.findAllComponents(VoiceRecorder).map((recorder) => recorder.props("target"))).toEqual([
+      "SELF_EXPLANATION_EXPLAIN",
+      "SELF_EXPLANATION_STEP",
       "DOUBT",
     ])
-    wrapper.findComponent(VoiceRecorder).vm.$emit("completed", 16)
+    wrapper.findAllComponents(VoiceRecorder)
+      .find((recorder) => recorder.props("target") === "DOUBT")
+      ?.vm.$emit("completed", { attemptId: 16, version: 8 })
     await flushPromises()
     await wrapper.get('[data-testid="doubt-draft"]').setValue("修改后的疑问")
     await wrapper.get('[data-testid="submit-doubt"]').trigger("click")
