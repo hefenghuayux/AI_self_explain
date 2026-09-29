@@ -485,6 +485,7 @@ describe("SessionView", () => {
     expect(wrapper.text()).toContain("AI")
     const contents = wrapper.findAll('[data-testid="timeline-content"]').map((item) => item.text())
     expect(contents).toEqual(["1 加 1 等于 2。", "还需要说明为什么是 2。"])
+    expect(wrapper.text()).not.toContain("按时间查看")
     expect(wrapper.text()).not.toContain("正确性")
     expect(wrapper.text()).not.toContain("完整性")
   })
@@ -530,9 +531,35 @@ describe("SessionView", () => {
     // 评价响应已不再返回 errorEvidence，反馈区不提供评价依据展开入口。
     expect(wrapper.find('[aria-controls="feedback-details"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain("查看评价依据")
+    expect(wrapper.text()).not.toContain("先看结论")
     expect(wrapper.find(".evaluation-results").exists()).toBe(false)
     expect(wrapper.text()).not.toContain("正确性")
     expect(wrapper.text()).not.toContain("完整性")
+  })
+
+  it("shows the integrated guidance heading without a description line", async () => {
+    fetchSession.mockResolvedValue(createSession({
+      flowStage: "WAIT_STUDENT_ACTION",
+      latestSupport: {
+        id: 6,
+        supportType: "GIVE_HINT",
+        supportKind: "EVALUATION",
+        round: 1,
+        status: "VALID",
+        content: "先看这一步。",
+        mainDraft: "1 加 1 等于 3。",
+        doubtText: null,
+        guidedQuestions: null,
+        guidedAnswers: null,
+        followUpContent: "结合两个子问题的答案继续完成推理。",
+        createdAt: "2026-07-20T00:00:00Z",
+      },
+    }))
+    const wrapper = await mountSessionView()
+
+    expect(wrapper.text()).toContain("整合引导")
+    expect(wrapper.text()).not.toContain("结合子问题答案，继续完成整道题的推理。")
+    expect(wrapper.text()).toContain("下一步：结合两个子问题的答案继续完成推理。")
   })
 
   it("restores saved drafts for each segmented input block", async () => {

@@ -268,12 +268,9 @@ const hasFollowUpContent = computed(
   () => Boolean(session.value?.latestSupport?.followUpContent),
 )
 
-const feedbackHeading = computed(() => {
-  if (hasFollowUpContent.value && !session.value?.latestEvaluation) {
-    return { title: "整合引导", description: "结合子问题答案，继续完成整道题的推理。" }
-  }
-  return { title: "最新反馈", description: "先看结论，再按下一步建议继续。" }
-})
+const feedbackHeading = computed(
+  () => (hasFollowUpContent.value && !session.value?.latestEvaluation ? "整合引导" : "最新反馈"),
+)
 
 function syncActiveSegmentWithStage() {
   if (session.value?.flowStage === "WAIT_GUIDED_ANSWERS") {
@@ -630,7 +627,7 @@ async function respondToSolution(understood: boolean) {
           <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </section>
         <section v-if="session.latestEvaluation || hasFollowUpContent" class="session-section feedback-section" aria-labelledby="feedback-title" aria-live="polite">
-          <div class="section-heading feedback-heading"><div><h2 id="feedback-title">{{ feedbackHeading.title }}</h2><p>{{ feedbackHeading.description }}</p></div></div>
+          <div class="section-heading feedback-heading"><div><h2 id="feedback-title">{{ feedbackHeading }}</h2></div></div>
           <div class="feedback-card">
             <p v-if="session.latestSupport?.content || hasFollowUpContent" class="feedback-next-step"><strong>下一步：</strong>{{ hasFollowUpContent ? session.latestSupport?.followUpContent : session.latestSupport?.content }}</p>
           </div>
@@ -860,7 +857,6 @@ async function respondToSolution(understood: boolean) {
         </section>
         <section class="session-section timeline-section" aria-labelledby="timeline-title">
           <h2 id="timeline-title">历史记录</h2>
-          <p class="section-description">按时间查看你的表达、AI 评价、提示与系统反馈。</p>
           <el-empty v-if="!timeline.length" description="提交自讲后，学习记录会显示在这里" :image-size="72" />
           <el-scrollbar v-else class="conversation-scroll">
             <div class="conversation-list">
@@ -903,7 +899,6 @@ h2 { font-size: var(--font-size-lg); }
 .session-section { margin-top: var(--space-8); }
 .session-section p { color: var(--color-text-secondary); }
 .section-heading { display: flex; justify-content: space-between; gap: var(--space-4); }
-.section-description, .section-heading p { margin: var(--space-1) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .dialog-segmented { width: 100%; margin-top: var(--space-4); }
 .dialog-segmented :deep(.el-segmented__item) { min-height: 44px; }
 .dialog-panel {
