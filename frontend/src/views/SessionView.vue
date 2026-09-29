@@ -14,8 +14,13 @@ import {
   submitInitialChoice,
   submitMasteryCheckAnswers,
   submitSolutionUnderstanding,
-  submitTextAttempt,
 } from "../api/sessions"
+import {
+  activateStep as activateSessionStep,
+  fetchSessionSteps,
+  saveStepAndGoNext,
+  submitStepAttempt,
+} from "../api/session-steps"
 import VoiceRecorder from "../components/VoiceRecorder.vue"
 import { fetchQuestion } from "../api/questions"
 import { authUser } from "../stores/auth"
@@ -26,13 +31,13 @@ import type {
   Session,
   VoiceInputTarget,
 } from "../types/session"
+import type { StepResponse, StepsResponse } from "../types/session-step"
 import type { Question } from "../types/question"
 import { sanitizeQuestionHtml } from "../utils/questionHtml"
 
 type SegmentKey = "selfExplain" | "guidedAnswers" | "masteryCheck" | "doubt" | "appeal"
 
 interface DialogDrafts {
-  selfExplain: string
   guidedAnswers: Record<string, string>
   masteryCheck: Record<string, string>
   doubt: string
@@ -45,7 +50,10 @@ const session = ref<Session>()
 const question = ref<Question>()
 const timeline = ref<LearningTimelineItem[]>([])
 const activeSegment = ref<SegmentKey>("selfExplain")
-const selfExplainDraft = ref("")
+const steps = ref<StepResponse[]>([])
+const currentStepId = ref<number | null>(null)
+const currentStepContent = ref("")
+const expandedExplainStepIds = ref<number[]>([])
 const guidedAnswerText = ref<Record<string, string>>({})
 const masteryAnswerText = ref<Record<string, string>>({})
 const doubtDraft = ref("")
@@ -56,7 +64,6 @@ const errorMessage = ref("")
 const voiceRecording = ref(false)
 const activeVoiceKey = ref<string>()
 const voiceAttemptIds = ref<Record<string, number>>({})
-const voiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 const doubtVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 
 const sessionId = String(route.params.sessionId)
@@ -124,7 +131,6 @@ const masteryOutcomeLabels: Record<"COMPLETED" | "NEEDS_REVIEW", string> = {
 
 function emptyDialogDrafts(): DialogDrafts {
   return {
-    selfExplain: "",
     guidedAnswers: {},
     masteryCheck: {},
     doubt: "",
@@ -142,7 +148,6 @@ function readDialogDrafts(): { hasStoredDrafts: boolean; drafts: DialogDrafts } 
     return {
       hasStoredDrafts: true,
       drafts: {
-        selfExplain: typeof parsed.selfExplain === "string" ? parsed.selfExplain : "",
         guidedAnswers: parsed.guidedAnswers && typeof parsed.guidedAnswers === "object"
           ? parsed.guidedAnswers
           : {},
@@ -164,7 +169,6 @@ function persistDialogDrafts() {
   localStorage.setItem(
     dialogDraftStorageKey,
     JSON.stringify({
-      selfExplain: selfExplainDraft.value,
       guidedAnswers: guidedAnswerText.value,
       masteryCheck: masteryAnswerText.value,
       doubt: doubtDraft.value,
@@ -173,11 +177,8 @@ function persistDialogDrafts() {
   )
 }
 
-function applyStoredDialogDrafts(currentDraft: string) {
+function applyStoredDialogDrafts() {
   const savedDraftState = readDialogDrafts()
-  selfExplainDraft.value = savedDraftState.hasStoredDrafts
-    ? savedDraftState.drafts.selfExplain
-    : currentDraft
   guidedAnswerText.value = savedDraftState.drafts.guidedAnswers
   masteryAnswerText.value = savedDraftState.drafts.masteryCheck
   doubtDraft.value = savedDraftState.drafts.doubt
@@ -187,15 +188,44 @@ function applyStoredDialogDrafts(currentDraft: string) {
 }
 
 watch(
-  [selfExplainDraft, guidedAnswerText, masteryAnswerText, doubtDraft, appealDraft],
+  [guidedAnswerText, masteryAnswerText, doubtDraft, appealDraft],
   persistDialogDrafts,
   { deep: true },
 )
 
+function clearStepState() {
+  steps.value = []
+  currentStepId.value = null
+  currentStepContent.value = ""
+  expandedExplainStepIds.value = []
+}
+
+function applyStepsResponse(response: StepsResponse) {
+  steps.value = [...response.steps].sort((left, right) => left.seq - right.seq)
+  currentStepId.value = response.currentStepId
+  currentStepContent.value = steps.value.find((step) => step.id === response.currentStepId)?.stepContent ?? ""
+  expandedExplainStepIds.value = expandedExplainStepIds.value.filter((stepId) =>
+    steps.value.some((step) => step.id === stepId),
+  )
+  if (session.value) {
+    session.value = {
+      ...session.value,
+      currentStepId: response.currentStepId,
+      version: response.version,
+    }
+  }
+}
+
+async function loadCurrentSteps() {
+  if (!session.value || session.value.flowStage !== "CAPTURING_INPUT") return
+  const response = await fetchSessionSteps(sessionId, "current")
+  applyStepsResponse(response)
+}
+
 async function loadSessionData() {
   const loadedSession = await fetchSession(sessionId)
   session.value = loadedSession
-  if (!dialogDraftsReady) applyStoredDialogDrafts(loadedSession.currentDraft)
+  if (!dialogDraftsReady) applyStoredDialogDrafts()
   for (const answer of loadedSession.latestSupport?.guidedAnswers ?? []) {
     if (!guidedAnswerText.value[answer.questionId]) {
       guidedAnswerText.value[answer.questionId] = answer.answer
@@ -205,6 +235,11 @@ async function loadSessionData() {
     if (!masteryAnswerText.value[answer.questionId]) {
       masteryAnswerText.value[answer.questionId] = answer.answer
     }
+  }
+  if (loadedSession.flowStage === "CAPTURING_INPUT") {
+    await loadCurrentSteps()
+  } else {
+    clearStepState()
   }
   syncActiveSegmentWithStage()
   const [loadedQuestion, loadedTimeline] = await Promise.all([
@@ -328,10 +363,50 @@ async function chooseInitialChoice(choice: InitialChoice) {
   errorMessage.value = ""
   try {
     session.value = await submitInitialChoice(sessionId, choice, session.value.version)
+    if (session.value.flowStage === "CAPTURING_INPUT") {
+      await loadCurrentSteps()
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
     submitting.value = false
+  }
+}
+
+function currentStep() {
+  return steps.value.find((step) => step.id === currentStepId.value)
+}
+
+function hasStepEvidence(step: StepResponse | undefined, stepContent = step?.stepContent) {
+  return Boolean(stepContent?.trim() || step?.explainTranscript?.trim())
+}
+
+function toggleExplain(stepId: number) {
+  expandedExplainStepIds.value = expandedExplainStepIds.value.includes(stepId)
+    ? expandedExplainStepIds.value.filter((item) => item !== stepId)
+    : [...expandedExplainStepIds.value, stepId]
+}
+
+function isExplainExpanded(stepId: number) {
+  return expandedExplainStepIds.value.includes(stepId)
+}
+
+async function ensureStepInputReady() {
+  if (!session.value) return
+  const draftBeforeTransition = currentStepContent.value
+  let transitionedToStepInput = false
+  if (session.value.flowStage === "WAIT_INITIAL_CHOICE") {
+    session.value = await submitInitialChoice(sessionId, "KNOW", session.value.version)
+    transitionedToStepInput = true
+  } else if (session.value.flowStage === "WAIT_STUDENT_ACTION") {
+    session.value = await continueExplaining(sessionId, session.value.version)
+    transitionedToStepInput = true
+  }
+  if (transitionedToStepInput && session.value.flowStage === "CAPTURING_INPUT") {
+    await loadCurrentSteps()
+    if (draftBeforeTransition.trim()) {
+      currentStepContent.value = draftBeforeTransition
+    }
   }
 }
 
@@ -341,27 +416,21 @@ async function submitExplanation() {
     errorMessage.value = "请先结束录音后再提交自讲"
     return
   }
-  if (!selfExplainDraft.value.trim()) {
-    errorMessage.value = "请输入自讲内容后再提交"
-    return
-  }
   submitting.value = true
   errorMessage.value = ""
   try {
-    if (session.value.flowStage === "WAIT_INITIAL_CHOICE") {
-      session.value = await submitInitialChoice(sessionId, "KNOW", session.value.version)
-    } else if (session.value.flowStage === "WAIT_STUDENT_ACTION") {
-      session.value = await continueExplaining(sessionId, session.value.version)
+    await ensureStepInputReady()
+    if (currentStepId.value === null || !hasStepEvidence(currentStep(), currentStepContent.value)) {
+      errorMessage.value = "当前步骤和讲解不能同时为空"
+      return
     }
-    const voiceAttemptId = getVoiceAttemptId("SELF_EXPLANATION")
-    session.value = await submitTextAttempt(
+    session.value = await submitStepAttempt(
       sessionId,
-      selfExplainDraft.value,
+      currentStepId.value,
+      currentStepContent.value,
       session.value.version,
-      voiceAttemptId,
     )
-    clearVoiceAttemptId("SELF_EXPLANATION")
-    selfExplainDraft.value = session.value.currentDraft
+    clearStepState()
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
@@ -378,16 +447,31 @@ async function submitExplanation() {
   }
 }
 
-async function prepareSelfExplanationVoiceInput() {
-  if (!session.value) return
+async function saveCurrentStepAndAdvance() {
+  if (!session.value || submitting.value) return
+  if (voiceRecording.value) {
+    errorMessage.value = "请先结束录音后再进入下一步"
+    return
+  }
   submitting.value = true
   errorMessage.value = ""
   try {
-    if (session.value.flowStage === "WAIT_INITIAL_CHOICE") {
-      session.value = await submitInitialChoice(sessionId, "KNOW", session.value.version)
-    } else if (session.value.flowStage === "WAIT_STUDENT_ACTION") {
-      session.value = await continueExplaining(sessionId, session.value.version)
+    await ensureStepInputReady()
+    if (currentStepId.value === null) {
+      errorMessage.value = "当前步骤尚未创建，请刷新后重试"
+      return
     }
+    if (!hasStepEvidence(currentStep(), currentStepContent.value)) {
+      errorMessage.value = "当前步骤和讲解不能同时为空"
+      return
+    }
+    const response = await saveStepAndGoNext(
+      sessionId,
+      currentStepId.value,
+      currentStepContent.value,
+      session.value.version,
+    )
+    applyStepsResponse(response)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -395,14 +479,36 @@ async function prepareSelfExplanationVoiceInput() {
   }
 }
 
-async function startVoiceRecording() {
+async function activateStep(targetStepId: number) {
   if (!session.value || submitting.value) return
-  if (session.value.flowStage === "WAIT_INITIAL_CHOICE" || session.value.flowStage === "WAIT_STUDENT_ACTION") {
-    await prepareSelfExplanationVoiceInput()
-    await nextTick()
+  if (targetStepId === currentStepId.value) {
+    toggleExplain(targetStepId)
+    return
   }
-  if (session.value.flowStage !== "CAPTURING_INPUT") return
-  await voiceRecorderRef.value?.start()
+  if (voiceRecording.value) {
+    errorMessage.value = "请先结束录音后再切换步骤"
+    return
+  }
+  if (currentStepId.value === null) {
+    errorMessage.value = "当前步骤尚未创建，请刷新后重试"
+    return
+  }
+  submitting.value = true
+  errorMessage.value = ""
+  try {
+    const response = await activateSessionStep(
+      sessionId,
+      targetStepId,
+      currentStepId.value,
+      currentStepContent.value,
+      session.value.version,
+    )
+    applyStepsResponse(response)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    submitting.value = false
+  }
 }
 
 async function startDoubtVoiceRecording() {
@@ -418,10 +524,6 @@ async function startDoubtVoiceRecording() {
 function appendTranscript(currentText: string, transcript: string) {
   const trimmedCurrentText = currentText.trimEnd()
   return trimmedCurrentText ? `${trimmedCurrentText}\n${transcript}` : transcript
-}
-
-function appendFinalTranscript(text: string) {
-  selfExplainDraft.value = appendTranscript(selfExplainDraft.value, text)
 }
 
 function appendGuidedTranscript(questionId: string, text: string) {
@@ -477,7 +579,7 @@ async function submitDoubt() {
     const voiceAttemptId = getVoiceAttemptId("DOUBT")
     session.value = await askDoubt(
       sessionId,
-      selfExplainDraft.value,
+      session.value.currentDraft,
       doubtDraft.value,
       session.value.version,
       voiceAttemptId,
@@ -596,7 +698,11 @@ async function respondToSolution(understood: boolean) {
   errorMessage.value = ""
   try {
     session.value = await submitSolutionUnderstanding(sessionId, understood, session.value.version)
-    selfExplainDraft.value = session.value.currentDraft
+    if (session.value.flowStage === "CAPTURING_INPUT") {
+      await loadCurrentSteps()
+    } else {
+      clearStepState()
+    }
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
@@ -644,49 +750,62 @@ async function respondToSolution(understood: boolean) {
             />
             <div class="dialog-panel">
               <div v-show="activeSegment === 'selfExplain'" class="dialog-pane">
-                <el-input
-                  v-model="selfExplainDraft"
-                  data-testid="main-draft"
-                  type="textarea"
-                  :rows="5"
-                  placeholder="输入题干理解、分析过程或完整自讲"
-                  :disabled="submitting || session.flowStage === 'AI_EVALUATING'"
-                  aria-label="自讲输入"
-                />
-                <div
-                  v-if="session.flowStage !== 'WAIT_GUIDED_ANSWERS'
-                    && session.flowStage !== 'AI_EVALUATING'
-                    && session.flowStage !== 'SHOWING_FULL_SOLUTION'"
-                  class="actions self-explain-actions"
-                >
-                  <el-button
+                <template v-if="session.flowStage === 'WAIT_INITIAL_CHOICE'
+                  || session.flowStage === 'CAPTURING_INPUT'
+                  || session.flowStage === 'WAIT_STUDENT_ACTION'">
+                  <el-input
+                    v-model="currentStepContent"
+                    data-testid="current-step-content"
+                    type="textarea"
+                    :rows="5"
+                    placeholder="输入当前步骤"
+                    :disabled="submitting"
+                    aria-label="当前步骤输入"
+                  />
+                  <div class="step-actions self-explain-actions">
+                    <el-button
                       data-testid="submit-explanation"
                       type="primary"
                       :disabled="submitting || voiceRecording"
                       :loading="submitting"
                       @click="submitExplanation"
                     >提交</el-button>
-                  <el-button
-                    v-if="session.flowStage === 'WAIT_INITIAL_CHOICE'
-                      || session.flowStage === 'WAIT_STUDENT_ACTION'"
-                    data-testid="start-voice"
-                    :disabled="voiceRecording"
-                    @click="startVoiceRecording"
-                  >录音</el-button>
-                  <VoiceRecorder
-                    v-if="session.flowStage === 'CAPTURING_INPUT' && !submitting"
-                    ref="voiceRecorderRef"
-                    :session-id="sessionId"
-                    :version="session.version"
-                    target="SELF_EXPLANATION"
-                    inline
-                    :disabled="submitting || (voiceRecording && activeVoiceKey !== 'self-explanation')"
-                    @final-transcript="appendFinalTranscript"
-                    @completed="handleVoiceCompleted('SELF_EXPLANATION', undefined, $event)"
-                    @recording-change="handleRecordingChange('self-explanation', $event)"
-                    @error="errorMessage = $event"
-                  />
-                </div>
+                    <el-button
+                      data-testid="record-explain"
+                      disabled
+                      title="讲解录音将在语音目标接入后启用"
+                    >讲解录音</el-button>
+                    <el-button
+                      data-testid="record-step"
+                      disabled
+                      title="步骤录音将在语音目标接入后启用"
+                    >步骤录音</el-button>
+                    <el-button
+                      data-testid="next-step"
+                      :disabled="submitting || voiceRecording"
+                      :loading="submitting"
+                      @click="saveCurrentStepAndAdvance"
+                    >下一步</el-button>
+                  </div>
+                  <div v-if="steps.length" class="step-list" aria-label="自讲步骤列表">
+                    <button
+                      v-for="step in steps"
+                      :key="step.id"
+                      type="button"
+                      class="step-item"
+                      :class="{ 'is-current': step.id === currentStepId }"
+                      :data-testid="`step-item-${step.id}`"
+                      @click="activateStep(step.id)"
+                    >
+                      <span class="step-item-label">步骤 {{ step.seq }}</span>
+                      <span class="step-item-content">{{ step.stepContent || "（暂无步骤文字）" }}</span>
+                      <span v-if="isExplainExpanded(step.id)" class="step-explain">
+                        {{ step.explainTranscript || "暂无讲解转写" }}
+                      </span>
+                    </button>
+                  </div>
+                </template>
+                <el-empty v-else description="当前阶段暂无自讲步骤输入" />
               </div>
               <div v-show="activeSegment === 'guidedAnswers'" class="dialog-pane">
                 <template v-if="session.latestSupport?.guidedQuestions?.length">
@@ -919,6 +1038,24 @@ h2 { font-size: var(--font-size-lg); }
 .mastery-result.is-positive { color: var(--color-success, #15803d); }
 .mastery-result.is-attention { color: var(--color-warning, #b45309); }
 .mastery-check-note { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
+.step-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); }
+.step-list { display: grid; gap: var(--space-2); margin-top: var(--space-5); }
+.step-item {
+  display: grid;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.step-item.is-current { border-color: var(--color-brand-600); background: var(--color-brand-50); }
+.step-item-label { color: var(--color-text-secondary); font-size: var(--font-size-sm); font-weight: 700; }
+.step-item-content, .step-explain { white-space: pre-wrap; overflow-wrap: anywhere; }
+.step-explain { color: var(--color-text-secondary); }
 .feedback-card { margin-top: var(--space-4); padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
 .feedback-next-step { margin: var(--space-4) 0 0; padding: var(--space-3); border-left: 3px solid var(--color-brand-600); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--color-brand-50); overflow-wrap: anywhere; }
 .conversation-scroll {
@@ -986,6 +1123,7 @@ h2 { font-size: var(--font-size-lg); }
   .question-content { padding: var(--space-4); }
   .dialog-panel { padding: var(--space-4); }
   .actions .el-button { flex: 1 1 100%; }
+  .step-actions .el-button { flex: 1 1 100%; }
   .conversation-scroll { height: 480px; }
   .conversation-list { padding: var(--space-3); }
   .conversation-message { width: 100%; max-width: none; }

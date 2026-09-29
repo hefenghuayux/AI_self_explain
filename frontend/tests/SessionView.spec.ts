@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from "vue-router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import * as sessionApi from "../src/api/sessions"
+import * as sessionStepsApi from "../src/api/session-steps"
 import * as questionApi from "../src/api/questions"
 import VoiceRecorder from "../src/components/VoiceRecorder.vue"
 import SessionView from "../src/views/SessionView.vue"
@@ -32,7 +33,12 @@ vi.mock("../src/api/sessions", () => ({
   submitInitialChoice: vi.fn(),
   submitMasteryCheckAnswers: vi.fn(),
   submitSolutionUnderstanding: vi.fn(),
-  submitTextAttempt: vi.fn(),
+}))
+vi.mock("../src/api/session-steps", () => ({
+  activateStep: vi.fn(),
+  fetchSessionSteps: vi.fn(),
+  saveStepAndGoNext: vi.fn(),
+  submitStepAttempt: vi.fn(),
 }))
 
 const askDoubt = vi.mocked(sessionApi.askDoubt)
@@ -45,7 +51,10 @@ const submitAppeal = vi.mocked(sessionApi.submitAppeal)
 const submitGuidedAnswers = vi.mocked(sessionApi.submitGuidedAnswers)
 const submitInitialChoice = vi.mocked(sessionApi.submitInitialChoice)
 const submitMasteryCheckAnswers = vi.mocked(sessionApi.submitMasteryCheckAnswers)
-const submitTextAttempt = vi.mocked(sessionApi.submitTextAttempt)
+const activateStep = vi.mocked(sessionStepsApi.activateStep)
+const fetchSessionSteps = vi.mocked(sessionStepsApi.fetchSessionSteps)
+const saveStepAndGoNext = vi.mocked(sessionStepsApi.saveStepAndGoNext)
+const submitStepAttempt = vi.mocked(sessionStepsApi.submitStepAttempt)
 
 function createSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -69,6 +78,37 @@ function createSession(overrides: Partial<Session> = {}): Session {
     latestSupport: null,
     teachingGeneration: null,
     masteryCheck: null,
+    ...overrides,
+  }
+}
+
+function createSteps(overrides: Partial<{
+  currentStepId: number | null
+  version: number
+  steps: Array<{
+    id: number
+    seq: number
+    stepContent: string | null
+    explainTranscript: string | null
+    status: "DRAFT" | "SAVED" | "SUBMITTED"
+    updatedAt: string
+  }>
+}> = {}) {
+  return {
+    round: 1,
+    draftId: "draft-1",
+    currentStepId: 101,
+    version: 1,
+    steps: [
+      {
+        id: 101,
+        seq: 1,
+        stepContent: "",
+        explainTranscript: null,
+        status: "DRAFT" as const,
+        updatedAt: "2026-09-29T00:00:00Z",
+      },
+    ],
     ...overrides,
   }
 }
@@ -97,6 +137,7 @@ describe("SessionView", () => {
     vi.resetAllMocks()
     localStorage.clear()
     fetchLearningTimeline.mockResolvedValue([])
+    fetchSessionSteps.mockResolvedValue(createSteps())
     fetchQuestion.mockResolvedValue({
       id: 3,
       evaluationMode: "FULL_RUBRIC",
@@ -142,103 +183,300 @@ describe("SessionView", () => {
     const wrapper = await mountSessionView()
 
     expect(wrapper.text()).toContain("已申请人工复核，你可以继续自讲。")
-    expect(wrapper.get('[data-testid="main-draft"]').attributes("disabled")).toBeUndefined()
+    expect(wrapper.get('[data-testid="current-step-content"]').attributes("disabled")).toBeUndefined()
     expect(wrapper.get('[data-testid="submit-explanation"]')).toBeTruthy()
   })
 
   it("submits the initial draft when the student chooses to submit an explanation", async () => {
     fetchSession.mockResolvedValue(createSession())
     submitInitialChoice.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 2, initialChoice: "KNOW" }))
-    submitTextAttempt.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 3, currentDraft: "1 加 1 等于 2。" }))
+    submitStepAttempt.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 3, currentDraft: "1 加 1 等于 2。" }))
     const wrapper = await mountSessionView()
 
-    await wrapper.get('[data-testid="main-draft"]').setValue("1 加 1 等于 2。")
+    await wrapper.get('[data-testid="current-step-content"]').setValue("1 加 1 等于 2。")
     await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
     await flushPromises()
 
     expect(submitInitialChoice).toHaveBeenCalledWith("12", "KNOW", 1)
-    expect(submitTextAttempt).toHaveBeenCalledWith("12", "1 加 1 等于 2。", 2, undefined)
+    expect(submitStepAttempt).toHaveBeenCalledWith("12", 101, "1 加 1 等于 2。", 1)
   })
 
-  it("does not show the voice recorder while submitting an explanation", async () => {
+  it("keeps the step recording entries disabled while submitting an explanation", async () => {
     fetchSession.mockResolvedValue(createSession())
     submitInitialChoice.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 2, initialChoice: "KNOW" }))
-    let resolveTextAttempt: (session: Session) => void = () => undefined
-    submitTextAttempt.mockReturnValue(new Promise((resolve) => {
-      resolveTextAttempt = resolve
+    let resolveStepAttempt: (session: Session) => void = () => undefined
+    submitStepAttempt.mockReturnValue(new Promise((resolve) => {
+      resolveStepAttempt = resolve
     }))
     const wrapper = await mountSessionView()
 
-    await wrapper.get('[data-testid="main-draft"]').setValue("1 加 1 等于 2。")
+    await wrapper.get('[data-testid="current-step-content"]').setValue("1 加 1 等于 2。")
     const submitPromise = wrapper.get('[data-testid="submit-explanation"]').trigger("click")
     await flushPromises()
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.findAllComponents(VoiceRecorder).filter(
-      (recorder) => recorder.props("target") === "SELF_EXPLANATION",
-    )).toHaveLength(0)
+    expect(wrapper.get('[data-testid="record-explain"]').attributes("disabled")).toBeDefined()
+    expect(wrapper.get('[data-testid="record-step"]').attributes("disabled")).toBeDefined()
 
-    resolveTextAttempt(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 3 }))
+    resolveStepAttempt(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 3 }))
     await submitPromise
     await flushPromises()
   })
 
-  it("shows one start-recording entry without voice guidance text", async () => {
+  it("shows disabled step and explanation recording entries without voice guidance text", async () => {
     fetchSession.mockResolvedValue(createSession())
     const wrapper = await mountSessionView()
 
-    expect(wrapper.findAll('[data-testid="start-voice"]')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="record-explain"]').attributes("disabled")).toBeDefined()
+    expect(wrapper.get('[data-testid="record-step"]').attributes("disabled")).toBeDefined()
     expect(wrapper.text()).not.toContain("使用语音自讲")
     expect(wrapper.text()).not.toContain("实时语音输入")
     expect(wrapper.text()).not.toContain("确认语音转写")
   })
 
-  it("keeps the self-explanation recorder in the same inline action row", async () => {
+  it("keeps the step controls in the same inline action row", async () => {
     fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT" }))
     const wrapper = await mountSessionView()
 
-    expect(wrapper.get(".self-explain-actions").findComponent(VoiceRecorder).props("inline")).toBe(true)
-    expect(wrapper.get(".self-explain-actions").findAll('[data-testid="start-voice"]')).toHaveLength(1)
+    expect(wrapper.get(".self-explain-actions").find('[data-testid="record-explain"]').exists()).toBe(true)
+    expect(wrapper.get(".self-explain-actions").find('[data-testid="record-step"]').exists()).toBe(true)
+    expect(wrapper.get(".self-explain-actions").find('[data-testid="next-step"]').exists()).toBe(true)
   })
 
-  it("appends only final voice transcripts to the editable draft", async () => {
-    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT" }))
-    const wrapper = await mountSessionView()
-
-    await wrapper.get('[data-testid="main-draft"]').setValue("我先写下已有条件。")
-    wrapper.findComponent(VoiceRecorder).vm.$emit("finalTranscript", "再计算 1 加 1。")
-    await flushPromises()
-
-    expect((wrapper.get('[data-testid="main-draft"]').element as HTMLTextAreaElement).value).toBe(
-      "我先写下已有条件。\n再计算 1 加 1。",
-    )
-  })
-
-  it("returns a voice transcript to the editable draft without entering a confirmation stage", async () => {
-    fetchSession
-      .mockResolvedValueOnce(createSession({ flowStage: "CAPTURING_INPUT", version: 6 }))
-      .mockResolvedValueOnce(createSession({
-        flowStage: "CAPTURING_INPUT",
-        version: 7,
-      }))
-    submitTextAttempt.mockResolvedValue(createSession({
-      flowStage: "WAIT_GUIDED_ANSWERS",
-      currentDraft: "学生确认后的文本",
-      version: 8,
+  it("sorts steps by sequence and initializes the current step content", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 3 }))
+    fetchSessionSteps.mockResolvedValue(createSteps({
+      currentStepId: 102,
+      version: 3,
+      steps: [
+        {
+          id: 102,
+          seq: 2,
+          stepContent: "第二步：得到结果。",
+          explainTranscript: "这里说明第二步。",
+          status: "DRAFT",
+          updatedAt: "2026-09-29T00:00:02Z",
+        },
+        {
+          id: 101,
+          seq: 1,
+          stepContent: "第一步：列出两个 1。",
+          explainTranscript: null,
+          status: "SAVED",
+          updatedAt: "2026-09-29T00:00:01Z",
+        },
+      ],
     }))
     const wrapper = await mountSessionView()
 
-    await wrapper.get('[data-testid="main-draft"]').setValue("学生确认后的文本")
-    wrapper.findComponent(VoiceRecorder).vm.$emit("completed", 15)
+    expect(wrapper.findAll('[data-testid^="step-item-"]').map((item) => item.attributes("data-testid"))).toEqual([
+      "step-item-101",
+      "step-item-102",
+    ])
+    expect((wrapper.get('[data-testid="current-step-content"]').element as HTMLTextAreaElement).value).toBe(
+      "第二步：得到结果。",
+    )
+  })
+
+  it("uses the server step content instead of a legacy self-explanation draft", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT" }))
+    localStorage.setItem(
+      "ai-self-explain:session:12:dialog-drafts",
+      JSON.stringify({ selfExplain: "旧的整段自讲草稿" }),
+    )
+    fetchSessionSteps.mockResolvedValue(createSteps({
+      steps: [{
+        id: 101,
+        seq: 1,
+        stepContent: "服务端当前步骤",
+        explainTranscript: null,
+        status: "DRAFT",
+        updatedAt: "2026-09-29T00:00:00Z",
+      }],
+    }))
+    const wrapper = await mountSessionView()
+
+    expect((wrapper.get('[data-testid="current-step-content"]').element as HTMLTextAreaElement).value).toBe(
+      "服务端当前步骤",
+    )
+  })
+
+  it("activates another step and saves the current step before switching", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 2 }))
+    fetchSessionSteps.mockResolvedValue(createSteps({
+      currentStepId: 101,
+      version: 2,
+      steps: [
+        {
+          id: 101,
+          seq: 1,
+          stepContent: "第一步",
+          explainTranscript: null,
+          status: "DRAFT",
+          updatedAt: "2026-09-29T00:00:01Z",
+        },
+        {
+          id: 102,
+          seq: 2,
+          stepContent: "第二步",
+          explainTranscript: null,
+          status: "SAVED",
+          updatedAt: "2026-09-29T00:00:02Z",
+        },
+      ],
+    }))
+    activateStep.mockResolvedValue(createSteps({
+      currentStepId: 102,
+      version: 4,
+      steps: [
+        {
+          id: 101,
+          seq: 1,
+          stepContent: "第一步已保存",
+          explainTranscript: null,
+          status: "SAVED",
+          updatedAt: "2026-09-29T00:00:03Z",
+        },
+        {
+          id: 102,
+          seq: 2,
+          stepContent: "第二步",
+          explainTranscript: null,
+          status: "DRAFT",
+          updatedAt: "2026-09-29T00:00:04Z",
+        },
+      ],
+    }))
+    const wrapper = await mountSessionView()
+
+    await wrapper.get('[data-testid="current-step-content"]').setValue("第一步补充")
+    await wrapper.get('[data-testid="step-item-102"]').trigger("click")
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="start-voice"]').text()).toBe("录音")
+    expect(activateStep).toHaveBeenCalledWith("12", 102, 101, "第一步补充", 2)
+    expect((wrapper.get('[data-testid="current-step-content"]').element as HTMLTextAreaElement).value).toBe(
+      "第二步",
+    )
+  })
+
+  it("toggles the current step explanation without calling the activation API", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT" }))
+    fetchSessionSteps.mockResolvedValue(createSteps({
+      steps: [{
+        id: 101,
+        seq: 1,
+        stepContent: "第一步",
+        explainTranscript: "这里是第一步讲解。",
+        status: "SAVED",
+        updatedAt: "2026-09-29T00:00:00Z",
+      }],
+    }))
+    const wrapper = await mountSessionView()
+
+    await wrapper.get('[data-testid="step-item-101"]').trigger("click")
+
+    expect(activateStep).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="step-item-101"]').text()).toContain("这里是第一步讲解。")
+  })
+
+  it("rejects submitting or advancing an empty step", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT" }))
+    const wrapper = await mountSessionView()
+
+    await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
+    await flushPromises()
+    expect(submitStepAttempt).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain("当前步骤和讲解不能同时为空")
+
+    await wrapper.get('[data-testid="next-step"]').trigger("click")
+    await flushPromises()
+    expect(saveStepAndGoNext).not.toHaveBeenCalled()
+  })
+
+  it("allows advancing when only step content is present", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT" }))
+    saveStepAndGoNext.mockResolvedValue(createSteps({ currentStepId: 102, version: 2, steps: [
+      {
+        id: 101,
+        seq: 1,
+        stepContent: "第一步",
+        explainTranscript: null,
+        status: "SAVED",
+        updatedAt: "2026-09-29T00:00:00Z",
+      },
+      {
+        id: 102,
+        seq: 2,
+        stepContent: "",
+        explainTranscript: null,
+        status: "DRAFT",
+        updatedAt: "2026-09-29T00:00:01Z",
+      },
+    ] }))
+    const wrapper = await mountSessionView()
+
+    await wrapper.get('[data-testid="current-step-content"]').setValue("第一步")
+    await wrapper.get('[data-testid="next-step"]').trigger("click")
+    await flushPromises()
+
+    expect(saveStepAndGoNext).toHaveBeenCalledWith("12", 101, "第一步", 1)
+  })
+
+  it("allows advancing when only an explanation transcript is present", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT" }))
+    fetchSessionSteps.mockResolvedValue(createSteps({
+      steps: [{
+        id: 101,
+        seq: 1,
+        stepContent: "",
+        explainTranscript: "我通过数一数得到结果。",
+        status: "SAVED",
+        updatedAt: "2026-09-29T00:00:00Z",
+      }],
+    }))
+    saveStepAndGoNext.mockResolvedValue(createSteps({ currentStepId: 102, version: 2 }))
+    const wrapper = await mountSessionView()
+
+    await wrapper.get('[data-testid="next-step"]').trigger("click")
+    await flushPromises()
+
+    expect(saveStepAndGoNext).toHaveBeenCalledWith("12", 101, "", 1)
+  })
+
+  it("applies the next-step response and its version to later submissions", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT" }))
+    saveStepAndGoNext.mockResolvedValue(createSteps({
+      currentStepId: 102,
+      version: 6,
+      steps: [
+        {
+          id: 101,
+          seq: 1,
+          stepContent: "第一步",
+          explainTranscript: null,
+          status: "SAVED",
+          updatedAt: "2026-09-29T00:00:00Z",
+        },
+        {
+          id: 102,
+          seq: 2,
+          stepContent: "第二步",
+          explainTranscript: null,
+          status: "DRAFT",
+          updatedAt: "2026-09-29T00:00:01Z",
+        },
+      ],
+    }))
+    submitStepAttempt.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 7 }))
+    const wrapper = await mountSessionView()
+
+    await wrapper.get('[data-testid="current-step-content"]').setValue("第一步")
+    await wrapper.get('[data-testid="next-step"]').trigger("click")
+    await flushPromises()
     await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
     await flushPromises()
 
-    expect(submitTextAttempt).toHaveBeenCalledWith("12", "学生确认后的文本", 7, 15)
-    expect(wrapper.text()).not.toContain("实时语音输入")
-    expect(wrapper.text()).not.toContain("确认语音转写")
+    expect(submitStepAttempt).toHaveBeenCalledWith("12", 102, "第二步", 6)
   })
 
   it("gives every guided question its own recording and submit controls", async () => {
@@ -434,7 +672,7 @@ describe("SessionView", () => {
         version: 4,
         needHumanReason: "教学生成失败，会话已进入人工处理",
       }))
-    submitTextAttempt.mockRejectedValue(
+    submitStepAttempt.mockRejectedValue(
       new sessionApi.SessionApiError(
         "会话操作失败：教学生成失败，会话已进入人工处理",
         502,
@@ -444,7 +682,7 @@ describe("SessionView", () => {
     )
     const wrapper = await mountSessionView()
 
-    await wrapper.get('[data-testid="main-draft"]').setValue("我先说明当前思路。")
+    await wrapper.get('[data-testid="current-step-content"]').setValue("我先说明当前思路。")
     await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
     await flushPromises()
 
@@ -524,7 +762,8 @@ describe("SessionView", () => {
     expect(wrapper.text()).toContain("下一步：请重新检查两个数相加的结果。")
     expect(wrapper.find('[data-testid="request-support"]').exists()).toBe(false)
     expect(wrapper.get(".self-explain-actions").get('[data-testid="submit-explanation"]')).toBeTruthy()
-    expect(wrapper.get(".self-explain-actions").findAll('[data-testid="start-voice"]')).toHaveLength(1)
+    expect(wrapper.get(".self-explain-actions").find('[data-testid="record-explain"]').exists()).toBe(true)
+    expect(wrapper.get(".self-explain-actions").find('[data-testid="record-step"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="dialog-segmented"]').text()).not.toContain("AI说错了")
     expect(wrapper.html().indexOf("最新反馈")).toBeLessThan(
       wrapper.html().indexOf('data-testid="dialog-segmented"'),
@@ -586,7 +825,6 @@ describe("SessionView", () => {
     localStorage.setItem(
       "ai-self-explain:session:12:dialog-drafts",
       JSON.stringify({
-        selfExplain: "上次的自讲内容",
         guidedAnswers: { q1: "上次的答案" },
         masteryCheck: { mc1: "上次的核验回答" },
         doubt: "我的疑问",
@@ -595,9 +833,7 @@ describe("SessionView", () => {
     )
     const wrapper = await mountSessionView()
 
-    expect((wrapper.get('[data-testid="main-draft"]').element as HTMLTextAreaElement).value).toBe(
-      "上次的自讲内容",
-    )
+    expect(wrapper.find('[data-testid="current-step-content"]').exists()).toBe(false)
     expect((wrapper.get('[data-testid="guided-answer-q1"]').element as HTMLTextAreaElement).value).toBe(
       "上次的答案",
     )
