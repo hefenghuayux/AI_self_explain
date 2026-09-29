@@ -128,9 +128,8 @@ describe("App header session actions", () => {
 
     expect(accountArea.text()).toContain("重新自讲")
     expect(accountArea.text()).toContain("查看运行日志")
-    expect(accountArea.text()).toContain("返回题目列表")
     expect(accountArea.text()).toContain("退出登录")
-    expect(accountArea.text().indexOf("返回题目列表")).toBeLessThan(accountArea.text().indexOf("退出登录"))
+    expect(accountArea.text().indexOf("查看运行日志")).toBeLessThan(accountArea.text().indexOf("退出登录"))
 
     const sessionPage = wrapper.get("main.session-page")
     expect(sessionPage.text()).not.toContain("重新自讲")
@@ -143,7 +142,6 @@ describe("App header session actions", () => {
     const accountArea = wrapper.get(".account-area")
 
     expect(accountArea.text()).toContain("重新自讲")
-    expect(accountArea.text()).toContain("返回题目列表")
     expect(accountArea.text()).not.toContain("查看运行日志")
   })
 })

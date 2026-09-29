@@ -617,7 +617,6 @@ async function respondToSolution(understood: boolean) {
         <div v-if="session" class="page-actions">
           <el-button data-testid="restart-self-explanation" :loading="submitting" @click="restartSelfExplanation">重新自讲</el-button>
           <RouterLink v-if="authUser?.role === 'TEACHER'" :to="`/sessions/${session.id}/logs`"><el-button>查看运行日志</el-button></RouterLink>
-          <RouterLink to="/"><el-button>返回题目列表</el-button></RouterLink>
         </div>
       </Teleport>
       <div v-if="errorMessage" class="error-state" role="alert">
