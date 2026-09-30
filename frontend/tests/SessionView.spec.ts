@@ -132,6 +132,16 @@ async function mountSessionView() {
   return wrapper
 }
 
+async function setStepContent(wrapper: Awaited<ReturnType<typeof mountSessionView>>, value: string) {
+  const editor = wrapper.get('[data-testid="current-step-content"]')
+  editor.element.textContent = value
+  await editor.trigger("input")
+}
+
+function getStepContent(wrapper: Awaited<ReturnType<typeof mountSessionView>>) {
+  return wrapper.get('[data-testid="current-step-content"]').element.textContent || ""
+}
+
 describe("SessionView", () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -183,7 +193,7 @@ describe("SessionView", () => {
     const wrapper = await mountSessionView()
 
     expect(wrapper.text()).toContain("已申请人工复核，你可以继续自讲。")
-    expect(wrapper.get('[data-testid="current-step-content"]').attributes("disabled")).toBeUndefined()
+    expect(wrapper.get('[data-testid="current-step-content"]').attributes("aria-disabled")).toBe("false")
     expect(wrapper.get('[data-testid="submit-explanation"]')).toBeTruthy()
   })
 
@@ -193,7 +203,7 @@ describe("SessionView", () => {
     submitStepAttempt.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 3, currentDraft: "1 加 1 等于 2。" }))
     const wrapper = await mountSessionView()
 
-    await wrapper.get('[data-testid="current-step-content"]').setValue("1 加 1 等于 2。")
+    await setStepContent(wrapper, "1 加 1 等于 2。")
     await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
     await flushPromises()
 
@@ -210,7 +220,7 @@ describe("SessionView", () => {
     }))
     const wrapper = await mountSessionView()
 
-    await wrapper.get('[data-testid="current-step-content"]').setValue("1 加 1 等于 2。")
+    await setStepContent(wrapper, "1 加 1 等于 2。")
     const submitPromise = wrapper.get('[data-testid="submit-explanation"]').trigger("click")
     await flushPromises()
     await wrapper.vm.$nextTick()
@@ -273,9 +283,7 @@ describe("SessionView", () => {
       "step-item-101",
       "step-item-102",
     ])
-    expect((wrapper.get('[data-testid="current-step-content"]').element as HTMLTextAreaElement).value).toBe(
-      "第二步：得到结果。",
-    )
+    expect(getStepContent(wrapper)).toBe("第二步：得到结果。")
   })
 
   it("uses the server step content instead of a legacy self-explanation draft", async () => {
@@ -296,9 +304,7 @@ describe("SessionView", () => {
     }))
     const wrapper = await mountSessionView()
 
-    expect((wrapper.get('[data-testid="current-step-content"]').element as HTMLTextAreaElement).value).toBe(
-      "服务端当前步骤",
-    )
+    expect(getStepContent(wrapper)).toBe("服务端当前步骤")
   })
 
   it("activates another step and saves the current step before switching", async () => {
@@ -349,14 +355,12 @@ describe("SessionView", () => {
     }))
     const wrapper = await mountSessionView()
 
-    await wrapper.get('[data-testid="current-step-content"]').setValue("第一步补充")
+    await setStepContent(wrapper, "第一步补充")
     await wrapper.get('[data-testid="step-item-102"]').trigger("click")
     await flushPromises()
 
     expect(activateStep).toHaveBeenCalledWith("12", 102, 101, "第一步补充", 2)
-    expect((wrapper.get('[data-testid="current-step-content"]').element as HTMLTextAreaElement).value).toBe(
-      "第二步",
-    )
+    expect(getStepContent(wrapper)).toBe("第二步")
   })
 
   it("toggles the current step explanation without calling the activation API", async () => {
@@ -415,7 +419,7 @@ describe("SessionView", () => {
     ] }))
     const wrapper = await mountSessionView()
 
-    await wrapper.get('[data-testid="current-step-content"]').setValue("第一步")
+    await setStepContent(wrapper, "第一步")
     await wrapper.get('[data-testid="next-step"]').trigger("click")
     await flushPromises()
 
@@ -470,7 +474,7 @@ describe("SessionView", () => {
     submitStepAttempt.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 7 }))
     const wrapper = await mountSessionView()
 
-    await wrapper.get('[data-testid="current-step-content"]').setValue("第一步")
+    await setStepContent(wrapper, "第一步")
     await wrapper.get('[data-testid="next-step"]').trigger("click")
     await flushPromises()
     await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
@@ -686,7 +690,7 @@ describe("SessionView", () => {
     )
     const wrapper = await mountSessionView()
 
-    await wrapper.get('[data-testid="current-step-content"]').setValue("我先说明当前思路。")
+    await setStepContent(wrapper, "我先说明当前思路。")
     await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
     await flushPromises()
 

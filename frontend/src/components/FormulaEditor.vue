@@ -1,113 +1,201 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref } from "vue"
+import { onBeforeUnmount, onMounted, ref, watch } from "vue"
 import "mathlive"
 import "mathlive/fonts.css"
 import type { MathfieldElement } from "mathlive"
+import { renderStudentTextHtml } from "../utils/studentTextHtml"
 
-const emit = defineEmits<{
-  confirmed: [latex: string]
-}>()
+const props = defineProps<{ modelValue: string; disabled: boolean }>()
+const emit = defineEmits<{ "update:modelValue": [value: string] }>()
+const editorRef = ref<HTMLDivElement>()
+let savedRange: Range | null = null
+let activeFormula: HTMLSpanElement | null = null
+let activeMathField: MathfieldElement | null = null
 
-const editorVisible = ref(false)
-const value = ref("")
-const errorMessage = ref("")
-const mathFieldRef = ref<MathfieldElement | null>(null)
+function serialize(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent || ""
+  if (!(node instanceof HTMLElement)) return ""
+  if (node.dataset.formula !== undefined) {
+    const latex = node === activeFormula ? activeMathField!.value : node.dataset.formula
+    return latex ? `\\(${latex}\\)` : ""
+  }
+  if (node.tagName === "BR") return "\n"
+  return Array.from(node.childNodes).map((child, index) => {
+    const block = child instanceof HTMLElement && ["DIV", "P"].includes(child.tagName)
+    return `${block && index > 0 ? "\n" : ""}${serialize(child)}`
+  }).join("")
+}
 
-async function open(initialValue = "") {
-  value.value = initialValue
-  errorMessage.value = ""
-  editorVisible.value = true
-  await nextTick()
-  const mathField = mathFieldRef.value
-  if (!mathField) return
-  mathField.value = initialValue
+function updateValue() {
+  if (editorRef.value) emit("update:modelValue", serialize(editorRef.value))
+}
+
+function createFormula(latex: string) {
+  const formula = document.createElement("span")
+  formula.className = "step-formula"
+  formula.contentEditable = "false"
+  formula.dataset.formula = latex
+  formula.setAttribute("aria-label", "编辑公式")
+  formula.innerHTML = renderStudentTextHtml(`\\(${latex}\\)`)
+  return formula
+}
+
+function renderValue(value: string) {
+  const editor = editorRef.value
+  if (!editor) return
+  editor.replaceChildren()
+  let textStart = 0
+  for (const match of value.matchAll(/\\\(([\s\S]*?)\\\)/g)) {
+    editor.append(document.createTextNode(value.slice(textStart, match.index)))
+    editor.append(createFormula(match[1]))
+    textStart = match.index! + match[0].length
+  }
+  editor.append(document.createTextNode(value.slice(textStart)))
+  savedRange = null
+}
+
+function rememberSelection() {
+  const selection = window.getSelection()
+  if (!selection?.rangeCount || !editorRef.value) return
+  const range = selection.getRangeAt(0)
+  if (editorRef.value.contains(range.startContainer) && editorRef.value.contains(range.endContainer)
+    && !activeFormula?.contains(range.startContainer)) savedRange = range.cloneRange()
+}
+
+function finishFormula() {
+  const formula = activeFormula
+  const mathField = activeMathField
+  if (!formula || !mathField) return
+  const latex = mathField.value
+  activeFormula = null
+  activeMathField = null
+  if (latex) {
+    formula.dataset.formula = latex
+    formula.innerHTML = renderStudentTextHtml(`\\(${latex}\\)`)
+  } else formula.remove()
+  window.mathVirtualKeyboard?.hide({ animate: false })
+  updateValue()
+}
+
+function focusFormula(formula: HTMLSpanElement) {
+  if (props.disabled) return
+  if (activeFormula === formula) {
+    activeMathField!.focus()
+    window.mathVirtualKeyboard?.show({ animate: false })
+    return
+  }
+  finishFormula()
+  const mathField = document.createElement("math-field") as MathfieldElement
+  mathField.mathVirtualKeyboardPolicy = "manual"
+  mathField.value = formula.dataset.formula || ""
+  mathField.menuItems = []
+  activeFormula = formula
+  activeMathField = mathField
+  formula.replaceChildren(mathField)
+  mathField.addEventListener("input", updateValue)
+  mathField.addEventListener("blur", () => {
+    if (activeMathField === mathField) finishFormula()
+  })
+  mathField.addEventListener("move-out", (event) => {
+    event.preventDefault()
+    const direction = (event as CustomEvent<{ direction: string }>).detail.direction
+    const range = document.createRange()
+    if (direction === "backward") range.setStartBefore(formula)
+    else range.setStartAfter(formula)
+    range.collapse(true)
+    finishFormula()
+    editorRef.value!.focus()
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+    savedRange = range.cloneRange()
+  })
   mathField.focus()
   window.mathVirtualKeyboard?.show({ animate: false })
 }
 
-function clear() {
-  value.value = ""
-  errorMessage.value = ""
-  if (mathFieldRef.value) mathFieldRef.value.value = ""
-}
-
-function close() {
-  editorVisible.value = false
-  window.mathVirtualKeyboard?.hide({ animate: false })
-  clear()
-}
-
-function handleInput(event: Event) {
-  value.value = (event.target as MathfieldElement).value
-  errorMessage.value = ""
-}
-
-function confirm() {
-  const latex = value.value.trim()
-  if (!latex) {
-    errorMessage.value = "请输入公式后再确认"
-    return
+function open() {
+  if (props.disabled || !editorRef.value) return
+  if (activeFormula) return focusFormula(activeFormula)
+  const editor = editorRef.value
+  const range = savedRange?.cloneRange() || document.createRange()
+  if (!savedRange || !editor.contains(range.startContainer) || !editor.contains(range.endContainer)) {
+    range.selectNodeContents(editor)
+    range.collapse(false)
   }
-  emit("confirmed", value.value)
-  close()
+  range.deleteContents()
+  const formula = createFormula("")
+  range.insertNode(formula)
+  range.setStartAfter(formula)
+  range.collapse(true)
+  savedRange = range.cloneRange()
+  focusFormula(formula)
+  updateValue()
 }
 
-function cancel() {
-  close()
+function handleClick(event: MouseEvent) {
+  const formula = (event.target as HTMLElement).closest<HTMLSpanElement>(".step-formula")
+  if (formula && editorRef.value?.contains(formula)) focusFormula(formula)
 }
 
-onBeforeUnmount(() => {
-  window.mathVirtualKeyboard?.hide({ animate: false })
+function handlePaste(event: ClipboardEvent) {
+  event.preventDefault()
+  if (props.disabled) return
+  rememberSelection()
+  const selection = window.getSelection()
+  if (!selection?.rangeCount) return
+  const range = selection.getRangeAt(0)
+  if (!editorRef.value?.contains(range.commonAncestorContainer)) return
+  range.deleteContents()
+  const text = document.createTextNode(event.clipboardData!.getData("text/plain"))
+  range.insertNode(text)
+  range.setStartAfter(text)
+  range.collapse(true)
+  selection.removeAllRanges()
+  selection.addRange(range)
+  rememberSelection()
+  updateValue()
+}
+
+function handleKeyboardToggle() {
+  if (activeMathField && window.mathVirtualKeyboard && !window.mathVirtualKeyboard.visible) finishFormula()
+}
+
+watch(() => props.modelValue, (value) => {
+  if (editorRef.value && serialize(editorRef.value) !== value) {
+    finishFormula()
+    renderValue(value)
+  }
 })
-
-defineExpose({ clear, open, value, editorVisible })
+watch(() => props.disabled, (disabled) => { if (disabled) finishFormula() })
+onMounted(() => {
+  renderValue(props.modelValue)
+  document.addEventListener("selectionchange", rememberSelection)
+  window.mathVirtualKeyboard?.addEventListener("virtual-keyboard-toggle", handleKeyboardToggle)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener("selectionchange", rememberSelection)
+  window.mathVirtualKeyboard?.removeEventListener("virtual-keyboard-toggle", handleKeyboardToggle)
+  if (activeMathField) window.mathVirtualKeyboard?.hide({ animate: false })
+})
+defineExpose({ open })
 </script>
 
 <template>
-  <div v-if="editorVisible" class="formula-editor" data-testid="formula-editor">
-    <math-field
-      ref="mathFieldRef"
-      class="formula-editor-field"
-      :value="value"
-      virtual-keyboard-mode="manual"
-      @input="handleInput"
-    />
-    <p v-if="errorMessage" class="formula-editor-error" role="alert">{{ errorMessage }}</p>
-    <div class="formula-editor-actions">
-      <el-button data-testid="cancel-formula" @click="cancel">取消</el-button>
-      <el-button data-testid="confirm-formula" type="primary" @click="confirm">插入</el-button>
-    </div>
-  </div>
+  <div ref="editorRef" class="step-content-input" :contenteditable="!disabled"
+    :aria-disabled="disabled" data-testid="current-step-content" data-placeholder="输入当前步骤"
+    aria-label="当前步骤输入" role="textbox" aria-multiline="true"
+    @input="updateValue" @click="handleClick" @paste="handlePaste"
+    @keyup="rememberSelection" @mouseup="rememberSelection" />
 </template>
 
 <style scoped>
-.formula-editor {
-  margin-top: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-subtle);
-}
-
-.formula-editor-field {
-  display: block;
-  width: 100%;
-  min-height: 56px;
-  padding: var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  font-size: 1.25rem;
-}
-
-.formula-editor-error {
-  margin: var(--space-2) 0 0;
-  color: var(--color-error-700);
-}
-
-.formula-editor-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
+.step-content-input { box-sizing: border-box; width: 100%; min-height: 128px; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text-primary); background: var(--color-surface); line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.step-content-input:empty::before { content: attr(data-placeholder); color: var(--color-text-secondary); pointer-events: none; }
+.step-content-input:focus-within { border-color: var(--color-brand-600); outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
+.step-content-input[aria-disabled="true"] { cursor: not-allowed; opacity: 0.65; }
+.step-content-input :deep(.step-formula) { display: inline-block; cursor: pointer; vertical-align: baseline; max-width: 100%; }
+.step-content-input :deep(math-field) { min-width: 2em; padding: 0; border: 0; background: transparent; font-size: 1.1em; }
+.step-content-input :deep(math-field::part(virtual-keyboard-toggle)),
+.step-content-input :deep(math-field::part(menu-toggle)) { display: none; }
 </style>

@@ -56,9 +56,7 @@ const steps = ref<StepResponse[]>([])
 const currentStepId = ref<number | null>(null)
 const currentStepContent = ref("")
 const expandedExplainStepIds = ref<number[]>([])
-const stepContentTextareaRef = ref<HTMLTextAreaElement>()
 const formulaEditorRef = ref<InstanceType<typeof FormulaEditor>>()
-const formulaSelection = ref({ start: 0, end: 0 })
 const guidedAnswerText = ref<Record<string, string>>({})
 const masteryAnswerText = ref<Record<string, string>>({})
 const doubtDraft = ref("")
@@ -435,27 +433,7 @@ function isExplainExpanded(stepId: number) {
 
 function openFormulaEditor() {
   if (submitting.value || voiceRecording.value) return
-  const textarea = stepContentTextareaRef.value
-  const textLength = currentStepContent.value.length
-  formulaSelection.value = {
-    start: textarea?.selectionStart ?? textLength,
-    end: textarea?.selectionEnd ?? textLength,
-  }
   formulaEditorRef.value?.open()
-}
-
-function insertFormula(latex: string) {
-  const text = currentStepContent.value
-  const start = Math.min(formulaSelection.value.start, text.length)
-  const end = Math.min(Math.max(formulaSelection.value.end, start), text.length)
-  const formula = `\\(${latex}\\)`
-  currentStepContent.value = `${text.slice(0, start)}${formula}${text.slice(end)}`
-  const cursorPosition = start + formula.length
-  void nextTick(() => {
-    const textarea = stepContentTextareaRef.value
-    textarea?.focus()
-    textarea?.setSelectionRange(cursorPosition, cursorPosition)
-  })
 }
 
 async function ensureStepInputReady() {
@@ -908,17 +886,11 @@ async function respondToSolution(understood: boolean) {
                 <template v-if="session.flowStage === 'WAIT_INITIAL_CHOICE'
                   || session.flowStage === 'CAPTURING_INPUT'
                   || session.flowStage === 'WAIT_STUDENT_ACTION'">
-                  <textarea
-                    ref="stepContentTextareaRef"
+                  <FormulaEditor
+                    ref="formulaEditorRef"
                     v-model="currentStepContent"
-                    data-testid="current-step-content"
-                    class="step-content-input"
-                    rows="5"
-                    placeholder="输入当前步骤"
-                    :disabled="submitting"
-                    aria-label="当前步骤输入"
+                    :disabled="submitting || activeSegment !== 'selfExplain'"
                   />
-                  <FormulaEditor ref="formulaEditorRef" @confirmed="insertFormula" />
                   <div class="step-actions self-explain-actions">
                     <el-button
                       data-testid="insert-formula"
