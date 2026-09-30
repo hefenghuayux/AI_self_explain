@@ -918,6 +918,7 @@ async function respondToSolution(understood: boolean) {
                     :disabled="submitting"
                     aria-label="当前步骤输入"
                   />
+                  <FormulaEditor ref="formulaEditorRef" @confirmed="insertFormula" />
                   <div class="step-actions self-explain-actions">
                     <el-button
                       data-testid="insert-formula"
@@ -995,7 +996,6 @@ async function respondToSolution(understood: boolean) {
                 </template>
                 <el-empty v-else description="当前阶段暂无自讲步骤输入" />
               </div>
-              <FormulaEditor ref="formulaEditorRef" @confirmed="insertFormula" />
               <div v-show="activeSegment === 'guidedAnswers'" class="dialog-pane">
                 <template v-if="session.latestSupport?.guidedQuestions?.length">
                   <div v-for="item in session.latestSupport.guidedQuestions" :key="item.id" class="guided-question">

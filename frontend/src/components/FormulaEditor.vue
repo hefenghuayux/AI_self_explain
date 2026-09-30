@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref } from "vue"
+import { nextTick, onBeforeUnmount, ref } from "vue"
 import "mathlive"
 import "mathlive/fonts.css"
 import type { MathfieldElement } from "mathlive"
@@ -8,7 +8,7 @@ const emit = defineEmits<{
   confirmed: [latex: string]
 }>()
 
-const dialogVisible = ref(false)
+const editorVisible = ref(false)
 const value = ref("")
 const errorMessage = ref("")
 const mathFieldRef = ref<MathfieldElement | null>(null)
@@ -16,15 +16,25 @@ const mathFieldRef = ref<MathfieldElement | null>(null)
 async function open(initialValue = "") {
   value.value = initialValue
   errorMessage.value = ""
-  dialogVisible.value = true
+  editorVisible.value = true
   await nextTick()
-  mathFieldRef.value?.focus()
+  const mathField = mathFieldRef.value
+  if (!mathField) return
+  mathField.value = initialValue
+  mathField.focus()
+  window.mathVirtualKeyboard?.show({ animate: false })
 }
 
 function clear() {
   value.value = ""
   errorMessage.value = ""
   if (mathFieldRef.value) mathFieldRef.value.value = ""
+}
+
+function close() {
+  editorVisible.value = false
+  window.mathVirtualKeyboard?.hide({ animate: false })
+  clear()
 }
 
 function handleInput(event: Event) {
@@ -39,42 +49,46 @@ function confirm() {
     return
   }
   emit("confirmed", value.value)
-  dialogVisible.value = false
-  clear()
+  close()
 }
 
 function cancel() {
-  dialogVisible.value = false
-  clear()
+  close()
 }
 
-defineExpose({ clear, open, value })
+onBeforeUnmount(() => {
+  window.mathVirtualKeyboard?.hide({ animate: false })
+})
+
+defineExpose({ clear, open, value, editorVisible })
 </script>
 
 <template>
-  <el-dialog
-    v-model="dialogVisible"
-    title="插入公式"
-    width="min(640px, calc(100vw - 32px))"
-    :close-on-click-modal="false"
-    @closed="clear"
-  >
+  <div v-if="editorVisible" class="formula-editor" data-testid="formula-editor">
     <math-field
       ref="mathFieldRef"
       class="formula-editor-field"
       :value="value"
-      virtual-keyboard-mode="onfocus"
+      virtual-keyboard-mode="manual"
       @input="handleInput"
     />
     <p v-if="errorMessage" class="formula-editor-error" role="alert">{{ errorMessage }}</p>
-    <template #footer>
+    <div class="formula-editor-actions">
       <el-button data-testid="cancel-formula" @click="cancel">取消</el-button>
       <el-button data-testid="confirm-formula" type="primary" @click="confirm">插入</el-button>
-    </template>
-  </el-dialog>
+    </div>
+  </div>
 </template>
 
 <style scoped>
+.formula-editor {
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+}
+
 .formula-editor-field {
   display: block;
   width: 100%;
@@ -88,5 +102,12 @@ defineExpose({ clear, open, value })
 .formula-editor-error {
   margin: var(--space-2) 0 0;
   color: var(--color-error-700);
+}
+
+.formula-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 </style>
