@@ -475,14 +475,22 @@ def submit_step_attempt(
         reject_operation(f"当前流程阶段不能提交步骤：{session.flow_stage}")
     validate_version(session, attempt_input.version)
     try:
-        _, _, projection = repository.build_step_snapshot(
+        _, snapshot, projection = repository.build_step_snapshot(
             session=session,
             current_step_id=attempt_input.current_step_id,
             current_step_content=attempt_input.current_step_content,
         )
     except ValueError as error:
         reject_operation(str(error))
-    preflight_submission(database_session, session, request.app.state.settings, text=projection)
+    preflight_submission(
+        database_session,
+        session,
+        request.app.state.settings,
+        attempt=ExplanationAttempt(
+            confirmed_text=projection,
+            structured_steps=snapshot,
+        ),
+    )
     try:
         session, attempt = repository.submit_step_attempt(
             session=session,

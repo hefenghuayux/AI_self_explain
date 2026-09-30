@@ -484,7 +484,7 @@ def build_progress_context(
     # (created_at, id, 记录类型, 记录, seq 锚点)
     raw: list[tuple[object, int, str, object, int | None]] = []
     for item in previous_attempts:
-        if item.confirmed_text:
+        if item.structured_steps is not None or item.confirmed_text:
             anchor = None if attempt_seqs is None else attempt_seqs.get(item.id)
             raw.append((item.created_at, item.id, "attempt", item, anchor))
     for item in previous_support:
@@ -509,12 +509,17 @@ def build_progress_context(
     next_seq = 0
     for _, _, rec_type, record, _ in raw:
         if rec_type == "attempt":
+            student_steps = _student_steps_from_attempt(record)
             events.append(
                 {
                     "seq": next_seq,
                     "actor": "student",
                     "kind": "explanation",
-                    "content": record.confirmed_text,
+                    "content": (
+                        student_steps
+                        if student_steps is not None
+                        else record.confirmed_text
+                    ),
                     "interactionId": f"attempt:{record.id}",
                 }
             )
@@ -524,6 +529,21 @@ def build_progress_context(
     if max_interactions > 0:
         return {"events": _truncate_by_interaction(events, max_interactions)}
     return {"events": events}
+
+
+def _student_steps_from_attempt(
+    attempt: ExplanationAttempt,
+) -> list[dict[str, object]] | None:
+    if attempt.structured_steps is None:
+        return None
+    return [
+        {
+            "seq": step["seq"],
+            "stepContent": step.get("stepContent", ""),
+            "explainTranscript": step.get("explainTranscript", ""),
+        }
+        for step in attempt.structured_steps
+    ]
 
 
 def _truncate_by_interaction(
@@ -596,9 +616,12 @@ def _render_prompt(
         "guidedQuestions": question.guided_questions,
         "fullSolution": question.full_solution,
     }
-    user_input: dict[str, object] = {
-        "confirmedText": attempt.confirmed_text,
-    }
+    student_steps = _student_steps_from_attempt(attempt)
+    user_input: dict[str, object] = (
+        {"studentSteps": student_steps}
+        if student_steps is not None
+        else {"confirmedText": attempt.confirmed_text}
+    )
     # 五层消息
     # messages[0] system：全局共享前缀
     # messages[1] user：会话级稳定上下文（题目数据）
@@ -607,11 +630,7 @@ def _render_prompt(
     # messages[3] user：taskType 固定指令
     task_prompt = template
     # messages[4] user：本轮任务数据
-    current_data: dict[str, object] = {
-        "confirmedText": attempt.confirmed_text,
-        "round": session.round,
-        "supportCountRound": session.support_count_round,
-    }
+    current_data: dict[str, object] = dict(user_input)
     if validation_errors:
         current_data["previousOutput"] = previous_output
         current_data["validationErrors"] = validation_errors

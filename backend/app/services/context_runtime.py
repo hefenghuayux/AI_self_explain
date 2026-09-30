@@ -85,6 +85,7 @@ def preflight_submission(
     settings,
     *,
     text=None,
+    attempt=None,
     main_draft="",
     doubt_text=None,
     support_event=None,
@@ -107,10 +108,10 @@ def preflight_submission(
         prompt_version=settings.prompt_version,
         reasoning_effort=settings.ai_reasoning_effort,
     )
-    if text is not None:
+    if attempt is not None or text is not None:
         request = _render_prompt(
             **options,
-            attempt=ExplanationAttempt(confirmed_text=text),
+            attempt=attempt or ExplanationAttempt(confirmed_text=text),
         )
     elif support_event is not None:
         request = _render_answer_assessment_prompt(

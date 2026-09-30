@@ -797,6 +797,8 @@ class SessionRepository:
             run_id=run_id,
             data={
                 "draftId": draft_id,
+                "attemptId": attempt.id,
+                "stepIds": [step["id"] for step in snapshot],
                 "text": projection,
                 "steps": snapshot,
                 "inputType": "text",

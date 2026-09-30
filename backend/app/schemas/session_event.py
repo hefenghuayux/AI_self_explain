@@ -27,9 +27,11 @@ class SessionStartedData(EventData):
 
 
 class UserMessageData(EventData):
-    text: NonEmptyText
+    text: str
     inputType: Literal["text", "voice"]
     draftId: NonEmptyText | None = None
+    attemptId: Annotated[int, Field(gt=0)] | None = None
+    stepIds: list[Annotated[int, Field(gt=0)]] | None = None
     steps: list[dict[str, JsonValue]] | None = None
 
 
