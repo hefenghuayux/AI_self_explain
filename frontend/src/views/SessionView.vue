@@ -35,6 +35,7 @@ import type {
 import type { StepResponse, StepsResponse } from "../types/session-step"
 import type { Question } from "../types/question"
 import { sanitizeQuestionHtml } from "../utils/questionHtml"
+import { renderStudentTextHtml } from "../utils/studentTextHtml"
 
 type SegmentKey = "selfExplain" | "guidedAnswers" | "masteryCheck" | "doubt" | "appeal"
 
@@ -902,10 +903,12 @@ async function respondToSolution(understood: boolean) {
                       @click="activateStep(step.id)"
                     >
                       <span class="step-item-label">步骤 {{ step.seq }}</span>
-                      <span class="step-item-content">{{ step.stepContent || "（暂无步骤文字）" }}</span>
-                      <span v-if="isExplainExpanded(step.id)" class="step-explain">
-                        {{ step.explainTranscript || "暂无讲解转写" }}
-                      </span>
+                      <span class="step-item-content" v-html="renderStudentTextHtml(step.stepContent || '（暂无步骤文字）')" />
+                      <span
+                        v-if="isExplainExpanded(step.id)"
+                        class="step-explain"
+                        v-html="renderStudentTextHtml(step.explainTranscript || '暂无讲解转写')"
+                      />
                     </button>
                   </div>
                 </template>
@@ -1096,7 +1099,13 @@ async function respondToSolution(understood: boolean) {
                   <span class="conversation-event">{{ timelineTitle(item) }}</span>
                   <time>{{ new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false }) }}</time>
                 </div>
-                <p data-testid="timeline-content" class="conversation-content">{{ item.content }}</p>
+                <p
+                  v-if="item.speaker === 'STUDENT' && item.submissionType === 'SELF_EXPLANATION'"
+                  data-testid="timeline-content"
+                  class="conversation-content"
+                  v-html="renderStudentTextHtml(item.content)"
+                />
+                <p v-else data-testid="timeline-content" class="conversation-content">{{ item.content }}</p>
               </article>
             </div>
           </el-scrollbar>
@@ -1180,6 +1189,7 @@ h2 { font-size: var(--font-size-lg); }
 .step-item-label { color: var(--color-text-secondary); font-size: var(--font-size-sm); font-weight: 700; }
 .step-item-content, .step-explain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .step-explain { color: var(--color-text-secondary); }
+:deep(.student-math-error) { color: var(--color-error-700); background: var(--color-error-100); text-decoration: underline wavy; }
 .feedback-card { margin-top: var(--space-4); padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
 .feedback-next-step { margin: var(--space-4) 0 0; padding: var(--space-3); border-left: 3px solid var(--color-brand-600); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--color-brand-50); overflow-wrap: anywhere; }
 .conversation-scroll {
