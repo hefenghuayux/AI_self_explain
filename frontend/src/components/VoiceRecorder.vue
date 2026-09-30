@@ -79,9 +79,10 @@ function releaseMicrophone() {
 }
 
 function finishRecording() {
+  const wasRecording = recording.value
   releaseMicrophone()
   recording.value = false
-  emit("recordingChange", false)
+  if (wasRecording) emit("recordingChange", false)
 }
 
 async function start() {
@@ -158,8 +159,11 @@ async function start() {
 }
 
 function stop() {
-  releaseMicrophone()
-  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "stop" }))
+  const activeSocket = socket
+  finishRecording()
+  if (activeSocket?.readyState === WebSocket.OPEN) {
+    activeSocket.send(JSON.stringify({ type: "stop" }))
+  }
 }
 
 onBeforeUnmount(() => {

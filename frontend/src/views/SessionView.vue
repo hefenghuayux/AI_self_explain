@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 
 import {
@@ -72,6 +72,8 @@ const voiceAttemptIds = ref<Record<string, number>>({})
 const doubtVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 const stepVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 const explainVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
+const guidedVoiceRecorderRefs = ref<InstanceType<typeof VoiceRecorder>[]>([])
+const appealVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 
 const sessionId = String(route.params.sessionId)
 const dialogDraftStorageKey = `ai-self-explain:session:${sessionId}:dialog-drafts`
@@ -257,6 +259,33 @@ async function loadSessionData() {
   timeline.value = loadedTimeline
 }
 
+async function reloadAfterVersionConflict(
+  draftStepId: number | null,
+  draftContent: string,
+) {
+  try {
+    await loadSessionData()
+    const refreshedStep = steps.value.find((step) => step.id === draftStepId)
+    if (
+      draftStepId !== null
+      && session.value?.flowStage === "CAPTURING_INPUT"
+      && currentStepId.value === draftStepId
+      && refreshedStep?.status !== "SUBMITTED"
+    ) {
+      currentStepContent.value = draftContent
+    }
+    errorMessage.value = "会话版本已变化，已刷新当前步骤，请确认后重试"
+  } catch (refreshError) {
+    errorMessage.value = refreshError instanceof Error
+      ? refreshError.message
+      : String(refreshError)
+  }
+}
+
+function isVersionConflict(error: unknown): boolean {
+  return error instanceof SessionApiError && error.status === 409
+}
+
 onMounted(async () => {
   try {
     await loadSessionData()
@@ -368,13 +397,19 @@ async function chooseInitialChoice(choice: InitialChoice) {
   if (!session.value) return
   submitting.value = true
   errorMessage.value = ""
+  const draftStepId = currentStepId.value
+  const draftContent = currentStepContent.value
   try {
     session.value = await submitInitialChoice(sessionId, choice, session.value.version)
     if (session.value.flowStage === "CAPTURING_INPUT") {
       await loadCurrentSteps()
     }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
+    if (isVersionConflict(error)) {
+      await reloadAfterVersionConflict(draftStepId, draftContent)
+    } else {
+      errorMessage.value = error instanceof Error ? error.message : String(error)
+    }
   } finally {
     submitting.value = false
   }
@@ -450,8 +485,12 @@ async function submitExplanation() {
   }
   submitting.value = true
   errorMessage.value = ""
+  let draftStepId: number | null = null
+  let draftContent = ""
   try {
     await ensureStepInputReady()
+    draftStepId = currentStepId.value
+    draftContent = currentStepContent.value
     if (currentStepId.value === null || !hasStepEvidence(currentStep(), currentStepContent.value)) {
       errorMessage.value = "当前步骤和讲解不能同时为空"
       return
@@ -466,7 +505,11 @@ async function submitExplanation() {
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
+    if (isVersionConflict(error)) {
+      await reloadAfterVersionConflict(draftStepId, draftContent)
+    } else {
+      errorMessage.value = error instanceof Error ? error.message : String(error)
+    }
     if (error instanceof SessionApiError && error.code === "TEACHING_GENERATION_FAILED") {
       try {
         await loadSessionData()
@@ -487,8 +530,12 @@ async function saveCurrentStepAndAdvance() {
   }
   submitting.value = true
   errorMessage.value = ""
+  let draftStepId: number | null = null
+  let draftContent = ""
   try {
     await ensureStepInputReady()
+    draftStepId = currentStepId.value
+    draftContent = currentStepContent.value
     if (currentStepId.value === null) {
       errorMessage.value = "当前步骤尚未创建，请刷新后重试"
       return
@@ -505,7 +552,11 @@ async function saveCurrentStepAndAdvance() {
     )
     applyStepsResponse(response)
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
+    if (isVersionConflict(error)) {
+      await reloadAfterVersionConflict(draftStepId, draftContent)
+    } else {
+      errorMessage.value = error instanceof Error ? error.message : String(error)
+    }
   } finally {
     submitting.value = false
   }
@@ -519,7 +570,11 @@ async function prepareStepVoice() {
     await ensureStepInputReady()
     return session.value.flowStage === "CAPTURING_INPUT" && currentStepId.value !== null
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
+    if (isVersionConflict(error)) {
+      await reloadAfterVersionConflict(currentStepId.value, currentStepContent.value)
+    } else {
+      errorMessage.value = error instanceof Error ? error.message : String(error)
+    }
     return false
   } finally {
     submitting.value = false
@@ -537,6 +592,10 @@ function stopVoiceRecorder(voiceKey: string) {
     explainVoiceRecorderRef.value?.stop()
   } else if (voiceKey === "doubt") {
     doubtVoiceRecorderRef.value?.stop()
+  } else if (voiceKey === "appeal") {
+    appealVoiceRecorderRef.value?.stop()
+  } else if (voiceKey.startsWith("guided-")) {
+    guidedVoiceRecorderRefs.value.forEach((recorder) => recorder.stop())
   }
 }
 
@@ -556,6 +615,8 @@ async function activateStep(targetStepId: number) {
   }
   submitting.value = true
   errorMessage.value = ""
+  const draftStepId = currentStepId.value
+  const draftContent = currentStepContent.value
   try {
     const response = await activateSessionStep(
       sessionId,
@@ -566,7 +627,11 @@ async function activateStep(targetStepId: number) {
     )
     applyStepsResponse(response)
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
+    if (isVersionConflict(error)) {
+      await reloadAfterVersionConflict(draftStepId, draftContent)
+    } else {
+      errorMessage.value = error instanceof Error ? error.message : String(error)
+    }
   } finally {
     submitting.value = false
   }
@@ -624,19 +689,35 @@ async function handleVoiceCompleted(
   voiceAttemptIds.value[voiceAttemptKey(target, targetId)] = payload.attemptId
   try {
     const currentDraftBeforeRefresh = currentStepContent.value
+    const currentStepBeforeRefresh = currentStepId.value
     session.value = await fetchSession(sessionId)
     if (session.value.version < payload.version) {
       session.value = { ...session.value, version: payload.version }
     }
-    if (target === "SELF_EXPLANATION_EXPLAIN") {
+    if (session.value.flowStage === "CAPTURING_INPUT") {
       await loadCurrentSteps()
-      currentStepContent.value = currentDraftBeforeRefresh
+      const refreshedStep = steps.value.find((step) => step.id === currentStepBeforeRefresh)
+      if (
+        currentStepBeforeRefresh !== null
+        && currentStepId.value === currentStepBeforeRefresh
+        && refreshedStep?.status !== "SUBMITTED"
+      ) {
+        currentStepContent.value = currentDraftBeforeRefresh
+      }
     }
     syncActiveSegmentWithStage()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   }
 }
+
+onBeforeUnmount(() => {
+  stepVoiceRecorderRef.value?.stop()
+  explainVoiceRecorderRef.value?.stop()
+  doubtVoiceRecorderRef.value?.stop()
+  appealVoiceRecorderRef.value?.stop()
+  guidedVoiceRecorderRefs.value.forEach((recorder) => recorder.stop())
+})
 
 async function submitDoubt() {
   if (!session.value) return
@@ -938,6 +1019,7 @@ async function respondToSolution(understood: boolean) {
                       >提交</el-button>
                       <VoiceRecorder
                         v-if="session.flowStage === 'WAIT_GUIDED_ANSWERS' && !guidedAnswerSubmitted(item.id)"
+                        ref="guidedVoiceRecorderRefs"
                         :session-id="sessionId"
                         :version="session.version"
                         target="GUIDED_ANSWER"
@@ -1042,6 +1124,7 @@ async function respondToSolution(understood: boolean) {
                   <VoiceRecorder
                     v-if="hasAppealableAiResponse()
                       && canSubmitStudentInterruption()"
+                    ref="appealVoiceRecorderRef"
                     :session-id="sessionId"
                     :version="session.version"
                     target="APPEAL"
