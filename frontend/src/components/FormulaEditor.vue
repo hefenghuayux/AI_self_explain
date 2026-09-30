@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue"
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import "mathlive"
 import "mathlive/fonts.css"
 import type { MathfieldElement } from "mathlive"
@@ -77,7 +77,7 @@ function finishFormula() {
   updateValue()
 }
 
-function focusFormula(formula: HTMLSpanElement) {
+async function focusFormula(formula: HTMLSpanElement) {
   if (props.disabled) return
   if (activeFormula === formula) {
     activeMathField!.focus()
@@ -86,9 +86,7 @@ function focusFormula(formula: HTMLSpanElement) {
   }
   finishFormula()
   const mathField = document.createElement("math-field") as MathfieldElement
-  mathField.mathVirtualKeyboardPolicy = "manual"
   mathField.value = formula.dataset.formula || ""
-  mathField.menuItems = []
   activeFormula = formula
   activeMathField = mathField
   formula.replaceChildren(mathField)
@@ -110,6 +108,11 @@ function focusFormula(formula: HTMLSpanElement) {
     selection.addRange(range)
     savedRange = range.cloneRange()
   })
+  await customElements.whenDefined("math-field")
+  await nextTick()
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+  mathField.mathVirtualKeyboardPolicy = "manual"
+  mathField.menuItems = []
   mathField.focus()
   window.mathVirtualKeyboard?.show({ animate: false })
 }
@@ -129,13 +132,13 @@ function open() {
   range.setStartAfter(formula)
   range.collapse(true)
   savedRange = range.cloneRange()
-  focusFormula(formula)
+  void focusFormula(formula)
   updateValue()
 }
 
 function handleClick(event: MouseEvent) {
   const formula = (event.target as HTMLElement).closest<HTMLSpanElement>(".step-formula")
-  if (formula && editorRef.value?.contains(formula)) focusFormula(formula)
+  if (formula && editorRef.value?.contains(formula)) void focusFormula(formula)
 }
 
 function handlePaste(event: ClipboardEvent) {
