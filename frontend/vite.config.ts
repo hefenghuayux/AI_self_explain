@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [vue()],
+    plugins: [vue({ template: { compilerOptions: { isCustomElement: (tag) => tag === "math-field" } } })],
     resolve: {
       alias: {
         "@": path.resolve(fileURLToPath(new URL(".", import.meta.url)), "src"),

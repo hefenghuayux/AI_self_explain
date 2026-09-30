@@ -21,6 +21,7 @@ import {
   saveStepAndGoNext,
   submitStepAttempt,
 } from "../api/session-steps"
+import FormulaEditor from "../components/FormulaEditor.vue"
 import VoiceRecorder from "../components/VoiceRecorder.vue"
 import { fetchQuestion } from "../api/questions"
 import { authUser } from "../stores/auth"
@@ -54,6 +55,9 @@ const steps = ref<StepResponse[]>([])
 const currentStepId = ref<number | null>(null)
 const currentStepContent = ref("")
 const expandedExplainStepIds = ref<number[]>([])
+const stepContentTextareaRef = ref<HTMLTextAreaElement>()
+const formulaEditorRef = ref<InstanceType<typeof FormulaEditor>>()
+const formulaSelection = ref({ start: 0, end: 0 })
 const guidedAnswerText = ref<Record<string, string>>({})
 const masteryAnswerText = ref<Record<string, string>>({})
 const doubtDraft = ref("")
@@ -391,6 +395,31 @@ function toggleExplain(stepId: number) {
 
 function isExplainExpanded(stepId: number) {
   return expandedExplainStepIds.value.includes(stepId)
+}
+
+function openFormulaEditor() {
+  if (submitting.value || voiceRecording.value) return
+  const textarea = stepContentTextareaRef.value
+  const textLength = currentStepContent.value.length
+  formulaSelection.value = {
+    start: textarea?.selectionStart ?? textLength,
+    end: textarea?.selectionEnd ?? textLength,
+  }
+  formulaEditorRef.value?.open()
+}
+
+function insertFormula(latex: string) {
+  const text = currentStepContent.value
+  const start = Math.min(formulaSelection.value.start, text.length)
+  const end = Math.min(Math.max(formulaSelection.value.end, start), text.length)
+  const formula = `\\(${latex}\\)`
+  currentStepContent.value = `${text.slice(0, start)}${formula}${text.slice(end)}`
+  const cursorPosition = start + formula.length
+  void nextTick(() => {
+    const textarea = stepContentTextareaRef.value
+    textarea?.focus()
+    textarea?.setSelectionRange(cursorPosition, cursorPosition)
+  })
 }
 
 async function ensureStepInputReady() {
@@ -797,16 +826,22 @@ async function respondToSolution(understood: boolean) {
                 <template v-if="session.flowStage === 'WAIT_INITIAL_CHOICE'
                   || session.flowStage === 'CAPTURING_INPUT'
                   || session.flowStage === 'WAIT_STUDENT_ACTION'">
-                  <el-input
+                  <textarea
+                    ref="stepContentTextareaRef"
                     v-model="currentStepContent"
                     data-testid="current-step-content"
-                    type="textarea"
-                    :rows="5"
+                    class="step-content-input"
+                    rows="5"
                     placeholder="输入当前步骤"
                     :disabled="submitting"
                     aria-label="当前步骤输入"
                   />
                   <div class="step-actions self-explain-actions">
+                    <el-button
+                      data-testid="insert-formula"
+                      :disabled="submitting || voiceRecording"
+                      @click="openFormulaEditor"
+                    >插入公式</el-button>
                     <el-button
                       data-testid="submit-explanation"
                       type="primary"
@@ -876,6 +911,7 @@ async function respondToSolution(understood: boolean) {
                 </template>
                 <el-empty v-else description="当前阶段暂无自讲步骤输入" />
               </div>
+              <FormulaEditor ref="formulaEditorRef" @confirmed="insertFormula" />
               <div v-show="activeSegment === 'guidedAnswers'" class="dialog-pane">
                 <template v-if="session.latestSupport?.guidedQuestions?.length">
                   <div v-for="item in session.latestSupport.guidedQuestions" :key="item.id" class="guided-question">
@@ -1108,6 +1144,25 @@ h2 { font-size: var(--font-size-lg); }
 .mastery-result.is-attention { color: var(--color-warning, #b45309); }
 .mastery-check-note { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
 .step-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); }
+.step-content-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 128px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  line-height: 1.7;
+  resize: vertical;
+}
+.step-content-input:focus {
+  border-color: var(--color-brand-600);
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+.step-content-input:disabled { cursor: not-allowed; opacity: 0.65; }
 .step-list { display: grid; gap: var(--space-2); margin-top: var(--space-5); }
 .step-item {
   display: grid;
