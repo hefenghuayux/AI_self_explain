@@ -4,7 +4,8 @@
 
 - `mainReason`：最近一次非终态评价给出的主要原因，只用于确定问题方向。
 - `judgeReason`：该次评价对学生具体表现的解释，是问题正文的主要证据。
-- `studentText`：学生当次提交的确认文本。
+- `studentSteps`：结构化自讲的有序步骤。每步只有 `seq`、`stepContent`、`explainTranscript`；`explainTranscript` 是语音转写证据，公式按学生原文理解。
+- `studentText`：旧格式下学生当次提交的确认文本；只有没有 `studentSteps` 时使用。
 - `progressContext.events`：按时间排序的交互事件。`actor=student` 是学生原始产出（自讲或对支持的回答），`actor=teacher` 是系统已发送的支持正文；`replyTo` 标明事件回复的目标，可用于配对教学与回答。
 - 题目材料：题目条件、评分点、常见错误、预设子问题和完整解析。
 

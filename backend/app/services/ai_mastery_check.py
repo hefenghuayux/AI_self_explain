@@ -37,7 +37,12 @@ from app.schemas.model_request_snapshot import (
     ModelRequestSnapshot,
     ModelTransportSnapshot,
 )
-from app.services.ai_evaluation import AIModelClient, AIModelResponse, AITransportError
+from app.services.ai_evaluation import (
+    AIModelClient,
+    AIModelResponse,
+    AITransportError,
+    _student_steps_from_attempt,
+)
 from app.services.ai_reasoning import resolve_reasoning_params
 from app.services.session_event_log import SessionEventLog
 
@@ -72,6 +77,7 @@ class MasteryCheckEvidence:
     main_reason: str
     judge_reason: str
     student_text: str
+    student_steps: list[dict[str, object]] | None = None
 
 
 @dataclass(frozen=True)
@@ -183,6 +189,7 @@ class AIMasteryCheckService:
             main_reason=output.main_reason,
             judge_reason=output.judge_reason,
             student_text=attempt.confirmed_text or "",
+            student_steps=_student_steps_from_attempt(attempt),
         )
 
     def _latest_evaluation_output(
@@ -444,8 +451,11 @@ def _render_generation_prompt(
     user_input: dict[str, object] = {
         "mainReason": evidence.main_reason,
         "judgeReason": evidence.judge_reason,
-        "studentText": evidence.student_text,
     }
+    if evidence.student_steps is not None:
+        user_input["studentSteps"] = evidence.student_steps
+    else:
+        user_input["studentText"] = evidence.student_text
     return _model_request(
         purpose="AI_MASTERY_CHECK",
         prompt_version=prompt_version,

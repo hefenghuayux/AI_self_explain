@@ -46,7 +46,10 @@ class InstructionFromRules(TeachingSchema):
 class TeachingContext(TeachingSchema):
     task_type: Literal["EXPLANATION_TEACHING"] = "EXPLANATION_TEACHING"
     question: dict[str, object]
-    current_student_text: RequiredText
+    current_student_text: str | None = None
+    student_steps: list[dict[str, object]] | None = Field(
+        default=None, alias="studentSteps"
+    )
     latest_evaluation: AIEvaluationOutput
     teaching_history: list[dict[str, object]]
     instruction_from_rules: InstructionFromRules

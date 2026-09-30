@@ -27,7 +27,12 @@ from app.schemas.support import (
     GuidedAnswerAssessmentOutput,
     SupportRequestOutput,
 )
-from app.services.ai_evaluation import AIModelClient, AIModelResponse, AITransportError
+from app.services.ai_evaluation import (
+    AIModelClient,
+    AIModelResponse,
+    AITransportError,
+    _latest_student_steps_from_history,
+)
 from app.services.ai_reasoning import resolve_reasoning_params
 from app.services.session_event_log import SessionEventLog
 
@@ -360,6 +365,9 @@ def _render_support_prompt(
         "mainDraft": main_draft,
         "doubtText": doubt_text,
     }
+    student_steps = _latest_student_steps_from_history(progress_context)
+    if student_steps is not None:
+        user_input["studentSteps"] = student_steps
     return _model_request(
         purpose="AI_SUPPORT",
         prompt_version=prompt_version,
@@ -395,6 +403,9 @@ def _render_answer_assessment_prompt(
         "questions": support_event.guided_questions,
         "answers": [answer.model_dump() for answer in answers],
     }
+    student_steps = _latest_student_steps_from_history(progress_context)
+    if student_steps is not None:
+        user_input["studentSteps"] = student_steps
     return _model_request(
         purpose="GUIDED_ANSWER_ASSESSMENT",
         prompt_version=prompt_version,

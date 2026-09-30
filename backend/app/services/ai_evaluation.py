@@ -546,6 +546,25 @@ def _student_steps_from_attempt(
     ]
 
 
+def _latest_student_steps_from_history(
+    progress_context: Mapping[str, object] | None,
+) -> list[dict[str, object]] | None:
+    """从共享历史中取最近一次结构化自讲，去掉审计字段后供 AI 使用。"""
+    if not progress_context:
+        return None
+    events = progress_context.get("events")
+    if not isinstance(events, list):
+        return None
+    for event in reversed(events):
+        if not isinstance(event, dict) or event.get("kind") != "explanation":
+            continue
+        content = event.get("content")
+        if not isinstance(content, list):
+            return None
+        return content
+    return None
+
+
 def _truncate_by_interaction(
     events: list[dict[str, object]], max_interactions: int
 ) -> list[dict[str, object]]:

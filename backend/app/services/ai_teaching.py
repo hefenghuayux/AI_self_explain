@@ -30,7 +30,12 @@ from app.schemas.teaching import (
     TeachingContext,
     TeachingOutput,
 )
-from app.services.ai_evaluation import AIModelClient, AIModelResponse, AITransportError
+from app.services.ai_evaluation import (
+    AIModelClient,
+    AIModelResponse,
+    AITransportError,
+    _student_steps_from_attempt,
+)
 from app.services.ai_reasoning import resolve_reasoning_params
 from app.services.session_event_log import SessionEventLog
 
@@ -268,6 +273,7 @@ def _build_context(
         }
         for item in reversed(supports)
     ]
+    student_steps = _student_steps_from_attempt(attempt)
     return TeachingContext(
         question={
             "questionContent": question.question_content,
@@ -279,7 +285,8 @@ def _build_context(
             "guidedQuestions": question.guided_questions or [],
             "fullSolution": question.full_solution,
         },
-        current_student_text=attempt.confirmed_text,
+        current_student_text=None if student_steps is not None else attempt.confirmed_text,
+        student_steps=student_steps,
         latest_evaluation=evaluation,
         teaching_history=history,
         instruction_from_rules=InstructionFromRules(
@@ -347,12 +354,15 @@ def _render_prompt(
     task_prompt = template
     # messages[4] user：本轮任务数据
     current_data: dict[str, object] = {
-        "currentStudentText": context.current_student_text,
         "latestEvaluation": context.latest_evaluation.model_dump(mode="json", by_alias=True),
         "instructionFromRules": context.instruction_from_rules.model_dump(
             mode="json", by_alias=True
         ),
     }
+    if context.student_steps is not None:
+        current_data["studentSteps"] = context.student_steps
+    else:
+        current_data["currentStudentText"] = context.current_student_text
     if context.reason_guidance_examples:
         current_data["reasonGuidanceExamples"] = [
             ex.model_dump(mode="json", by_alias=True)
@@ -365,6 +375,11 @@ def _render_prompt(
         current_data["previousOutput"] = previous_output
         current_data["validationErrors"] = []
     extra_body = resolve_reasoning_params(model, reasoning_effort)
+    student_input = (
+        {"studentSteps": context.student_steps}
+        if context.student_steps is not None
+        else {"currentStudentText": context.current_student_text}
+    )
     return ModelRequestSnapshot(
         schema_version="1.1",
         purpose="AI_TEACHING",
@@ -383,7 +398,7 @@ def _render_prompt(
                     mode="json", by_alias=True
                 ),
             },
-            user_input={"currentStudentText": context.current_student_text},
+            user_input=student_input,
             retry_context={
                 "validationErrors": validation_errors,
                 "previousOutput": previous_output,
