@@ -594,10 +594,7 @@ class SessionRepository:
                     "version": session.version,
                     "steps": [],
                 }
-            self._create_explanation_draft(session)
-            session.version += 1
-            self.database_session.commit()
-            self.database_session.refresh(session)
+            session = self._create_initial_explanation_draft(session)
 
         current_step = self.database_session.get(ExplanationStep, session.current_step_id)
         if current_step is None:
@@ -942,7 +939,16 @@ class SessionRepository:
         asr_transcript: str,
         voice_target: str,
         voice_target_id: str | None,
+        expected_version: int | None = None,
     ) -> tuple[Session, ExplanationAttempt]:
+        expected_version = session.version if expected_version is None else expected_version
+        if session.version != expected_version:
+            raise SessionVersionConflict(f"会话 {session.id} 版本已变化")
+        target_step = None
+        if voice_target in {"SELF_EXPLANATION_STEP", "SELF_EXPLANATION_EXPLAIN"}:
+            if voice_target_id is None:
+                raise ValueError("步骤语音输入必须携带步骤 ID")
+            target_step = self.get_editable_step(session, int(voice_target_id))
         before_snapshot = session_snapshot(session)
         audio_file = AudioFile(
             session_id=session.id,
@@ -972,16 +978,15 @@ class SessionRepository:
         )
         self.database_session.add(attempt)
         self.database_session.flush()
-        if voice_target == "SELF_EXPLANATION_EXPLAIN":
-            step = self.get_editable_step(session, int(voice_target_id))
-            step.explain_transcript = asr_transcript
+        if voice_target == "SELF_EXPLANATION_EXPLAIN" and target_step is not None:
+            target_step.explain_transcript = asr_transcript
         relative_path: str | None = None
         try:
             relative_path = audio_storage.finalize_capture(
                 capture, session_id=session.id, audio_file_id=audio_file.id
             )
             audio_file.relative_path = relative_path
-            session.version += 1
+            self._update_session_version(session, expected_version)
             self._record_transition(
                 session=session,
                 trigger_type="COMPLETE_VOICE_TRANSCRIPTION",
@@ -1695,6 +1700,34 @@ class SessionRepository:
         session.current_step_id = draft_step.id
         return draft_step
 
+    def _create_initial_explanation_draft(self, session: Session) -> Session:
+        expected_version = session.version
+        draft_step = self._create_explanation_draft(session)
+        with self.database_session.no_autoflush:
+            result = self.database_session.execute(
+                update(Session)
+                .where(
+                    Session.id == session.id,
+                    Session.version == expected_version,
+                    Session.current_step_id.is_(None),
+                )
+                .values(
+                    current_step_id=draft_step.id,
+                    version=Session.version + 1,
+                )
+                .execution_options(synchronize_session=False)
+            )
+        if result.rowcount != 1:
+            self.database_session.rollback()
+            refreshed_session = self.database_session.get(Session, session.id)
+            if refreshed_session is None:
+                raise ValueError(f"会话不存在：{session.id}")
+            return refreshed_session
+        session.version = expected_version + 1
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
     def get_editable_step(self, session: Session, step_id: int) -> ExplanationStep:
         step = self.database_session.scalar(
             select(ExplanationStep).where(
@@ -1722,9 +1755,20 @@ class SessionRepository:
         )
 
     def _update_session_version(self, session: Session, expected_version: int) -> None:
-        if session.version != expected_version:
+        with self.database_session.no_autoflush:
+            result = self.database_session.execute(
+                update(Session)
+                .where(
+                    Session.id == session.id,
+                    Session.version == expected_version,
+                )
+                .values(version=Session.version + 1)
+                .execution_options(synchronize_session=False)
+            )
+        if result.rowcount != 1:
+            self.database_session.rollback()
             raise SessionVersionConflict(f"会话 {session.id} 版本已变化")
-        session.version += 1
+        session.version = expected_version + 1
 
     @staticmethod
     def _has_step_evidence(step_content: str | None, explain_transcript: str | None) -> bool:

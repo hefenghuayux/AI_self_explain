@@ -1270,14 +1270,20 @@ async def stream_voice_input(
                         )
                         await reject_voice_stream(websocket, "未获得有效转写，请重新录音")
                         return
-                    completed_session, attempt = repository.complete_voice_transcription(
-                        session=session,
-                        capture=capture,
-                        audio_storage=audio_storage,
-                        asr_transcript=asr_transcript,
-                        voice_target=target,
-                        voice_target_id=target_id,
-                    )
+                    try:
+                        completed_session, attempt = repository.complete_voice_transcription(
+                            session=session,
+                            capture=capture,
+                            audio_storage=audio_storage,
+                            asr_transcript=asr_transcript,
+                            voice_target=target,
+                            voice_target_id=target_id,
+                            expected_version=version,
+                        )
+                    except (SessionVersionConflict, ValueError) as error:
+                        capture.delete()
+                        await reject_voice_stream(websocket, str(error))
+                        return
                     repository.record_external_call(
                         session=completed_session,
                         call_type="ASR",
