@@ -44,6 +44,7 @@ interface DialogDrafts {
   masteryCheck: Record<string, string>
   doubt: string
   appeal: string
+  lastSubmittedSelfExplanation: string
 }
 
 const route = useRoute()
@@ -55,6 +56,8 @@ const activeSegment = ref<SegmentKey>("selfExplain")
 const steps = ref<StepResponse[]>([])
 const currentStepId = ref<number | null>(null)
 const currentStepContent = ref("")
+// 上次成功提交时自讲框里的内容，用于在当前会话内回填，方便学生直接修改后重讲。
+const lastSubmittedSelfExplanation = ref("")
 const expandedExplainStepIds = ref<number[]>([])
 const formulaEditorRef = ref<InstanceType<typeof FormulaEditor>>()
 const guidedAnswerText = ref<Record<string, string>>({})
@@ -142,6 +145,7 @@ function emptyDialogDrafts(): DialogDrafts {
     masteryCheck: {},
     doubt: "",
     appeal: "",
+    lastSubmittedSelfExplanation: "",
   }
 }
 
@@ -163,6 +167,9 @@ function readDialogDrafts(): { hasStoredDrafts: boolean; drafts: DialogDrafts } 
           : {},
         doubt: typeof parsed.doubt === "string" ? parsed.doubt : "",
         appeal: typeof parsed.appeal === "string" ? parsed.appeal : "",
+        lastSubmittedSelfExplanation: typeof parsed.lastSubmittedSelfExplanation === "string"
+          ? parsed.lastSubmittedSelfExplanation
+          : "",
       },
     }
   } catch (error) {
@@ -180,6 +187,7 @@ function persistDialogDrafts() {
       masteryCheck: masteryAnswerText.value,
       doubt: doubtDraft.value,
       appeal: appealDraft.value,
+      lastSubmittedSelfExplanation: lastSubmittedSelfExplanation.value,
     }),
   )
 }
@@ -190,12 +198,13 @@ function applyStoredDialogDrafts() {
   masteryAnswerText.value = savedDraftState.drafts.masteryCheck
   doubtDraft.value = savedDraftState.drafts.doubt
   appealDraft.value = savedDraftState.drafts.appeal
+  lastSubmittedSelfExplanation.value = savedDraftState.drafts.lastSubmittedSelfExplanation
   dialogDraftsReady = true
   persistDialogDrafts()
 }
 
 watch(
-  [guidedAnswerText, masteryAnswerText, doubtDraft, appealDraft],
+  [guidedAnswerText, masteryAnswerText, doubtDraft, appealDraft, lastSubmittedSelfExplanation],
   persistDialogDrafts,
   { deep: true },
 )
@@ -203,7 +212,6 @@ watch(
 function clearStepState() {
   steps.value = []
   currentStepId.value = null
-  currentStepContent.value = ""
   expandedExplainStepIds.value = []
 }
 
@@ -229,6 +237,15 @@ async function loadCurrentSteps() {
   applyStepsResponse(response)
 }
 
+// 新一轮自讲的第一个步骤是后端新建的空步骤（seq 为 1），此时用上次提交的内容回填输入框。
+// 服务端已有步骤内容时以服务端为准，避免旧内容覆盖学生已保存的步骤。
+function restoreLastSubmittedExplanation() {
+  const step = currentStep()
+  if (step?.seq === 1 && !step.stepContent?.trim()) {
+    currentStepContent.value = lastSubmittedSelfExplanation.value
+  }
+}
+
 async function loadSessionData() {
   const loadedSession = await fetchSession(sessionId)
   session.value = loadedSession
@@ -245,8 +262,14 @@ async function loadSessionData() {
   }
   if (loadedSession.flowStage === "CAPTURING_INPUT") {
     await loadCurrentSteps()
+    restoreLastSubmittedExplanation()
   } else {
     clearStepState()
+    // 提交后会话停在 WAIT_STUDENT_ACTION 等阶段，服务端没有可读的当前步骤，
+    // 刷新页面后用上次提交的内容回填；输入框已有内容时保留学生当前输入。
+    if (!currentStepContent.value.trim()) {
+      currentStepContent.value = lastSubmittedSelfExplanation.value
+    }
   }
   syncActiveSegmentWithStage()
   const [loadedQuestion, loadedTimeline] = await Promise.all([
@@ -479,6 +502,7 @@ async function submitExplanation() {
       currentStepContent.value,
       session.value.version,
     )
+    lastSubmittedSelfExplanation.value = draftContent
     clearStepState()
     syncActiveSegmentWithStage()
     await refreshTimeline()

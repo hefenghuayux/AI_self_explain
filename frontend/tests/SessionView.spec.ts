@@ -483,6 +483,154 @@ describe("SessionView", () => {
     expect(submitStepAttempt).toHaveBeenCalledWith("12", 102, "第二步", 6)
   })
 
+  it("keeps the submitted explanation in the input box and remembers it for this session", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 2 }))
+    submitStepAttempt.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 3 }))
+    const wrapper = await mountSessionView()
+
+    await setStepContent(wrapper, "两个 1 合起来是 2。")
+    await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
+    await flushPromises()
+
+    expect(getStepContent(wrapper)).toBe("两个 1 合起来是 2。")
+    const storedDrafts = JSON.parse(
+      localStorage.getItem("ai-self-explain:session:12:dialog-drafts") ?? "{}",
+    )
+    expect(storedDrafts.lastSubmittedSelfExplanation).toBe("两个 1 合起来是 2。")
+  })
+
+  it("reuses the retained explanation when the student continues explaining", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 2 }))
+    submitStepAttempt.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 3 }))
+    continueExplaining.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 4 }))
+    fetchSessionSteps
+      .mockResolvedValueOnce(createSteps({ version: 2 }))
+      .mockResolvedValueOnce(createSteps({
+        currentStepId: 201,
+        version: 4,
+        steps: [{
+          id: 201,
+          seq: 1,
+          stepContent: "",
+          explainTranscript: null,
+          status: "DRAFT",
+          updatedAt: "2026-09-29T00:00:05Z",
+        }],
+      }))
+    const wrapper = await mountSessionView()
+
+    await setStepContent(wrapper, "两个 1 合起来是 2。")
+    await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
+    await flushPromises()
+    await setStepContent(wrapper, "补充：因为 1 加 1 等于 2。")
+    await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
+    await flushPromises()
+
+    expect(continueExplaining).toHaveBeenCalledWith("12", 3)
+    expect(submitStepAttempt).toHaveBeenLastCalledWith("12", 201, "补充：因为 1 加 1 等于 2。", 4)
+    expect(getStepContent(wrapper)).toBe("补充：因为 1 加 1 等于 2。")
+  })
+
+  it("restores the last submitted explanation after the page is reloaded", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 3 }))
+    localStorage.setItem(
+      "ai-self-explain:session:12:dialog-drafts",
+      JSON.stringify({ lastSubmittedSelfExplanation: "上次提交的自讲内容" }),
+    )
+    const wrapper = await mountSessionView()
+
+    expect(getStepContent(wrapper)).toBe("上次提交的自讲内容")
+  })
+
+  it("restores a retained formula as an editable formula block", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 3 }))
+    localStorage.setItem(
+      "ai-self-explain:session:12:dialog-drafts",
+      JSON.stringify({ lastSubmittedSelfExplanation: "把 \\(x=2\\) 代回原式。" }),
+    )
+    const wrapper = await mountSessionView()
+
+    const formula = wrapper.get('[data-testid="current-step-content"]').get(".step-formula")
+    expect(formula.attributes("data-formula")).toBe("x=2")
+  })
+
+  it("restores the last submitted explanation into the empty first step of a new round", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 4 }))
+    fetchSessionSteps.mockResolvedValue(createSteps({
+      currentStepId: 201,
+      version: 4,
+      steps: [{
+        id: 201,
+        seq: 1,
+        stepContent: "",
+        explainTranscript: null,
+        status: "DRAFT",
+        updatedAt: "2026-09-29T00:00:05Z",
+      }],
+    }))
+    localStorage.setItem(
+      "ai-self-explain:session:12:dialog-drafts",
+      JSON.stringify({ lastSubmittedSelfExplanation: "上次提交的自讲内容" }),
+    )
+    const wrapper = await mountSessionView()
+
+    expect(getStepContent(wrapper)).toBe("上次提交的自讲内容")
+  })
+
+  it("prefers the server step content over the retained explanation", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 2 }))
+    fetchSessionSteps.mockResolvedValue(createSteps({
+      steps: [{
+        id: 101,
+        seq: 1,
+        stepContent: "服务端保存的步骤内容",
+        explainTranscript: null,
+        status: "DRAFT",
+        updatedAt: "2026-09-29T00:00:00Z",
+      }],
+    }))
+    localStorage.setItem(
+      "ai-self-explain:session:12:dialog-drafts",
+      JSON.stringify({ lastSubmittedSelfExplanation: "上次提交的自讲内容" }),
+    )
+    const wrapper = await mountSessionView()
+
+    expect(getStepContent(wrapper)).toBe("服务端保存的步骤内容")
+  })
+
+  it("keeps a newly advanced step empty instead of copying the previous step", async () => {
+    fetchSession.mockResolvedValue(createSession({ flowStage: "CAPTURING_INPUT", version: 2 }))
+    saveStepAndGoNext.mockResolvedValue(createSteps({
+      currentStepId: 102,
+      version: 3,
+      steps: [
+        {
+          id: 101,
+          seq: 1,
+          stepContent: "第一步",
+          explainTranscript: null,
+          status: "SAVED",
+          updatedAt: "2026-09-29T00:00:01Z",
+        },
+        {
+          id: 102,
+          seq: 2,
+          stepContent: "",
+          explainTranscript: null,
+          status: "DRAFT",
+          updatedAt: "2026-09-29T00:00:02Z",
+        },
+      ],
+    }))
+    const wrapper = await mountSessionView()
+
+    await setStepContent(wrapper, "第一步")
+    await wrapper.get('[data-testid="next-step"]').trigger("click")
+    await flushPromises()
+
+    expect(getStepContent(wrapper)).toBe("")
+  })
+
   it("gives every guided question its own recording and submit controls", async () => {
     fetchSession.mockResolvedValue(createSession({
       flowStage: "WAIT_GUIDED_ANSWERS",
