@@ -1,0 +1,485 @@
+===== PAGE 1 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+        Phoenix:  A Novel  Context-Aware    Voice-Powered    Math  Equation         
+                                                                                    
+                              Workspace    and Editor                               
+                                                                                    
+                     KennethGe∗                         RyanPaul∗                   
+                      Assistivity                       Assistivity                 
+                    Edgemont,NY,USA                  Brampton,ON,Canada             
+                  kennethkouge@gmail.com            paulryan229@gmail.com           
+                    PriscillaZhang∗                    JooYoungSeo                  
+                                                                                    
+                      Assistivity                  SchoolofInformationSciences      
+                    Villanova,PA,USA            UniversityofIllinoisUrbana-Champaign
+                 zhang.priscilla34@gmail.com        Champaign,Illinois,USA          
+                                                     jseo1005@illinois.edu          
+       ABSTRACT                                  Englishandmathematicalnotation,andfailing
+       Writingmathematicalnotationrequiressubstantialeffort,divert- tocapturenestedandmultidimensionalequa-
+       ingcognitiveresourcesfromconceptualunderstandingtodocu- tions. Even solving simple algebra problems
+       mentationmechanics,significantlyimpactingindividualswithfine required extra time and energy, without fea-
+       motor disabilities (FMDs). Current limits of speech-based math turesthatunderstoodcommandslike"divide
+       technologiesrelyonprecisedictationofmathsymbolsandunintu- bothsidesby2."Taskspreviouslyrequiringonly
+       itivecommand-basedinterfaces.Wepresentanovelvoice-powered insight and reasoning were frequently inter-
+       mathworkspace,applyingneuroscienceinsightstocreateanin- ruptedandconstrainedbytranslationalinaccu-
+       tuitiveproblem-solvingenvironment.Tominimizecognitiveload, raciesandmechanicalobstacles.Myprogress
+       weleveragelargelanguagemodelswithournovelcontextengine slowed,notduetodifferencesinintellector
+       tosupportnaturallanguageinteraction.Ultimately,weenablefluid effort,butalackoftechnicaltools.
+       mathematicalengagementforindividualswithFMDs–freedfrom                       
+       mechanicalconstraints                 P’sexperiences–asaco-authoronourmixed-abilitydesignteam–
+                                            reflectthoseofmanyindividualswithfinemotordisabilities(FMDs),
+       CCSCONCEPTS                          and directly inspired Phoenix’s development. Although founda-
+       • Human-centeredcomputing → Accessibilitydesign and tionalinSTEM[4,10,17,23],mathematicalconceptsandnotation
+       evaluationmethods;Accessibilitytechnologies;Accessibility poseuniqueaccessibilitychallengesduetotheneedtomanipulate
+       systemsandtools;Empiricalstudiesinaccessibility. specializedsymbols,spatiallyarrangeformulas,andstructuremul-
+                                            tilevelequations[11,12].Suchprocessesoftenrequirehandwriting
+       KEYWORDS                             ortyping,placinghighdemandsonphysicaldexterity[16,34,35].
+                                             Barriersemergeasearlyaspreschool,wherefinemotorskills
+       Accessibility,LargeLanguageModels,GenerativeAI,Multimodality,                
+                                            are strong predictors of mathematical success [9, 25]. Through-
+       FineMotorDisability                                                          
+                                            outschooling,understaffeddisabilityservices,rigidserviceproto-
+       ACMReferenceFormat:                                                          
+                                            cols,andlackoffacultyawarenesscompoundpreviousdifficulties
+       KennethGe,RyanPaul,PriscillaZhang,andJooYoungSeo.2025.Phoenix:A              
+                                            [1,8,37].Althoughscribeshelpaccessibility,mismatchesinpac-
+       NovelContext-AwareVoice-PoweredMathEquationWorkspaceandEditor.               
+                                            ingandinterpretationdivertattentionfromcoreconcepts[26,30].
+       InThe27thInternationalACMSIGACCESSConferenceonComputersand                   
+                                            Fixedmindsetsaroundmathandwidespread"mathanxiety"partic-
+       Accessibility(ASSETS’25),October26–29,2025,Denver,CO,USA.ACM,New             
+       York,NY,USA,6pages.https://doi.org/10.1145/3663547.3759766 ularlyharmindividualswithFMDs,whomayinternalizeasenseof
+                                            inadequacyanddisengageduetoreinforcingcycles[7,14,22,27].
+       1  INTRODUCTION                       Existingsolutionsrequireuserstodictaterigidgrammarstruc-
+                                            tures,introducingsteeplearningcurvesandchallengingnaviga-
+            Aninjurysixyearsagorenderedbothmywrists                                 
+                                            tional demands. However, neuroscience research suggests that
+            intermittentlyunusable.Despitepreviouslyex-                             
+                                            mathematicalabilitycomesfromsymbolicandspatialreasoning,
+            cellinginmathandscience,Iexperiencedthe                                 
+                                            andisdistinctfrommotorability[15,18,32,33].
+            limitsofmathematicalvoice-totextsoftware                                
+                                             Buildingontheseinsights,wepresentPhoenix,avoice-based
+            firsthand. Existing tools were unpredictable,                           
+                                            mathworkspacedesignedfromthegrounduptominimizecogni-
+            translatingmyspeechintolinearfragmentsof                                
+                                            tiveoverhead.Similartothemythicalcreaturethatisrebornfrom
+       ∗Allthreeauthorscontributedequallytothisresearch. itsashes,Phoenix enablesuserstoovercomephysicalobstacles
+                                            andfindrenewalinmappingmathematicalideasinanovelway.
+       ASSETS’25,October26–29,2025,Denver,CO,USA                                    
+                                            Weintegratestructure,context,andnaturallyspokenmathematics
+       2025.ACMISBN979-8-4007-0676-9/2025/10                                        
+       https://doi.org/10.1145/3663547.3759766 byleveragingrecentadvancesinlargelanguagemodels(LLMs).
+  5202                                                                              
+  guA                                                                               
+  11                                                                                
+  ]CH.sc[                                                                           
+  1v67570.8052:viXra                                                                
+
+===== PAGE 2 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+       ASSETS’25,October26–29,2025,Denver,CO,USA                          Geetal.   
+                                                                                    
+       Weaimtotransformmathematicalproblemsolvingintoanintu- think-aloudsessions,ensuringP’sexperiencesdirectlyshapedus-
+       itiveandhigh-levelprocessforusersatalllevels,fromstudentsto abilityanddesigndecisions.Thisfeedbackwastheniteratively
+       professionals.Wefocusonthefollowingresearchquestions: incorporated by adjusting prototypes, which we later validated
+          • Howcanwehelpuserswithfinemotordisabilitiesintuitively inco-designworkshops.Intheseworkshops,P’sroleexpanded
+           mapoutmathematicalideas?         fromevaluatingdesignstoactivelygeneratingthem.Together,we
+          • Howcanweenablenewinteractionparadigmsandenhanced brainstormedfeatures,sketchednewinterfaceideas,andexplored
+           understandingthroughrobustvoiceinput? alternativeinteractionflows,usinginsightsfromprevioustesting
+          • Howcananeditoroptimizedforcognitiveloadenablenew sessionsasafoundationforthenextiteration.Thisprocessresulted
+           levelsofabstractproblemsolving?  inafunctionalprototypebyJune.           
+       2  RELATEDWORK                       3.2 DesignGoals                         
+       AsmostFMDusersprefervoiceinputmodalities[19],speech-based Ourfundamentalphilosophyistoharnessconceptualabilitythrough
+       matheditorsdemonstrateaccessibilitypotential.Earlysystemslike hands-freeentry,reducingcognitiveload.Weaimtocreatespacefor
+       MathTalkusedstructuredpausestoconveymeaning[28],while deepermathematicalengagementbyminimizingfine-motorinput
+       CamMathandTalkMathsprogressedtowardsnaturalclassroom- anditsaccompanyingobstacles.Ourdesignsessions–grounded
+       stylespeech[6,36].Mathifierfurtherintroducedagrammar,albeit inthisphilosophy–gaverisetofourkeydesigngoals(DGs).
+       highlystructuredandcode-like[3].Althoughtheseapproaches DG1: Phoenix should interpret a wide range of spoken
+       establishvoiceaseffectiveinput,theyintroducecognitiveoverhead mathematicalexpressions,symbols,andnotation.Existing
+       byrequiringspecializedvocabulariesandrigidgrammarstructures, toolsrequireuserstolearnnarrowdictationrules,undermining
+       enforcingprotocolssuchastheNATOphoneticalphabetandintro- naturalspeechvariations.Pexpressedhowfrequentlyinaccurate
+       ducingsubtletimingerrors.Fundamentally,suchapproachesdonot transcriptionsinterruptedworkflow,hinderingfullengagementin
+       accommodatenaturalspeechvariations.RecentLLM-poweredtools high-levelmathematicsandslowingprogress.Thus,weaimedto
+       (e.g.MathGPTPro,Mathful,StudyFetch)demonstrateimproved interpretvariabilityinspokenmathematics,reliablyrecognizing
+       contextualunderstandinginhighlystructuredtutoringcontexts, mathematicaldictationinreal-worldsettings.
+       butdonotofferfreeformmathematicalauthoring[20,21,29]. DG2:Phoenixshouldenableflexibleequationeditingand
+         Inourresearch,theclosestexistingtooltoPhoenixisEquatIO exporting.Phoenixshouldallowvariousformsofequationediting
+       [31],whichenablesrobustvoiceinput[24].Althoughexistingstud- withoutnavigatingcomplexcommandsorinterfaces.Pexpressed
+       iesdidnotrigorouslytestthisfeature,asaregularuser,Pnoticedit theneedforvoice-poweredequationeditingandexportingwork
+       oftencreatedincompletetranslations,demonstratinglimitedcon- tovariousplatformslikeMicrosoftWord.Thus,weaimedtoenable
+       textualunderstanding(seeAppendixAfortestdetails).Ultimately, variousformsofequationeditingandexportingtochangevariables
+       whileEquatIOisusefulandfeature-rich,itseeminglytreatsvoice orsharework,ultimatelyimprovingproblem-solving.
+       asoneinputmodalityamongmany.          DG3: Phoenix should intuitively convey logical flow of
+         WeintroducePhoenix,amathematicalinputsystemdesigned mathematicalrelationships.Mathematicalproblem-solvingre-
+       forFMDuserstoachievehighlevelsofflexibilityandrobustness, semblesaweb,ascomplexproblemsarebrokendownintosmaller,
+       enabling new levels of abstract problem-solving. By combining interrelatedsubcomponents[13].Supportingthisprocess,Phoenix
+       LLM-poweredcontextualunderstandingwithspeechrecognition, shouldhelpusersvisuallymapideas,makingsolutionseasierto
+       weeliminatetheneedforspecializedvocabularies,enablingan understandandmanage.Tothisend,weaimedtomakePhoenix
+       intuitiveauthoringexperience.        bothcustomizableandself-organizing.     
+                                             DG4: Phoenix should be flexible to the user’s problem-
+       3  DESIGNPROCEDURESANDGOALS          solvingstyle.Phoenix offersstructureformanybasicproblem-
+                                            solvingfeatures.Pexpressedhowmosthelpfultoolsallowedflexibil-
+       3.1 DesignProcedures                                                         
+                                            ityoverrigidusagepatterns.Thus,weaimedtomaximizeflexibility
+       Weappliedtheinterdependenceframeworktoourmixed-ability                       
+                                            byallowinguserstopersonalizeandcustomizePhoenix’sbehavior.
+       co-designprocess[5].Ourteamconsistsoffourresearchers:one                     
+       researcher,P,withaFMDandthreeresearcherswithoutanFMD                         
+                                            4 SYSTEMIMPLEMENTATION                  
+       (includingonewithvisualimpairment).PutilizedEnglishvoice                     
+                                            Toaddressthedesigngoalsestablishedduringourco-designses-
+       dictationsoftwarefor5years,encounteringlimitationswithcom-                   
+                                            sions, we developed a prototype of the Phoenix system. In this
+       mercialmathdictationtools.Eachmemberoftheteamhasover5                        
+                                            section,wefirstprovideadetailedexplanationofend-usersystem
+       yearsofexperiencewithLaTeX.                                                  
+                                            interaction,followedbyatechnicaldescriptionofsystemarchi-
+         Ourworkconsistedofbi-weeklyonlinetestingsessionsfrom                       
+                                            tecture.Figure1providesahigh-leveloverviewofthefront-end
+       January2025toJune2025,duringwhichPinitiallyservedprimar-                     
+                                            interface.AdetailedevaluationofPhoenix’svoicetranscription
+       ilyasatester.Thesesessionsfocusedonoverarchinggoalsand                       
+                                            accuracyusingbenchmarkpromptsisavailableinsubsectionA.3.
+       identifyingareastostreamlinePhoenix.Specificactivitiesincluded               
+       testinglow-andmedium-fidelityprototypesthroughrole-playing,                  
+                                            4.1 Overview                            
+       conductingusabilitytestingtorefinefeaturesbasedonP’sinsights,                
+       anddrawingonourbroaderexperiencestocreativelyclosegaps. ContextEngine(addressingDG1)Ourmostimportantinnova-
+       Feedbackwasgatheredthroughgroupdiscussionsandrecorded tionisthecontextengine,whichtranscribestheuser’sequation
+
+===== PAGE 3 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+       Phoenix:ANovelContext-AwareVoice-PoweredMathEquationWorkspaceandEditor ASSETS’25,October26–29,2025,Denver,CO,USA
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                Figure1:SystemOverviewDiagram                       
+                                                                                    
+       whileborrowingcontextfromprevioustranscriptions(including Digital Thinking (addressing DG4) Beyond transcription,
+       variablenamesandequationfragments),well-knownequations Phoenix supportsactive,non-linearmathematicalthinking.Fea-
+       (e.g.thequadraticequation),anddomain-specificvocabularywithin tureslikediagram/imageuploadsallowuserstoincorporateprob-
+       STEM.Further,thisengineaccuratelytranscribeshigh-levelSTEM lemsfromotherplatforms.Pen-markupcontainsvariouspencolors
+       terminologyincludingintegrals,partialderivatives,andGreeklet- andthicknesses,enablingcreativeinteraction.Userscanalsosave
+       ters.Ultimately,thisengineachievesatleast3advancedcapabilities: andloadworkforfuturereference.
+       (A)Voice-poweredequationeditingthroughcommandssuchas                         
+       “changetheplustoaminus”,“substitute’x’with7”,or“movethe 4.2 Architecture     
+       denominatortothenumerator”,(B)renderingvariedexpressions,                    
+                                            WebuiltPhoenixwithaSveltefrontend,acontextenginethatbuilds
+       suchas“xover3,”“xdividedby3,”and“xby3,”toallyieldthe                         
+                                            LLMqueries,andaNode.jsbackend.          
+       samefinalexpression,and(C)isolatingmathfromconversational                    
+                                             ClientSideDataStructuresWeusepersistentstoragetostore
+       speech;ifauserdictated"Iwasthinkingabouttheintegralofeto                     
+                                            substantialdataontheclientside,suchasimages,markup,docu-
+       thenegativexsquared",onlythemathistranscribed.                               
+                                            ments,anduserpreferences.Wedesignedatop-downdatastructure
+         Self-Contained Subproblem Nodes (addressing DG2) In                        
+                                            tostoresubproblemnodes,includingacustomJSON-baseddata
+       Phoenix,eachsubproblemformsaself-containedequationspace.                     
+                                            structuretrackingequationdataandpositioning,backgroundcolor,
+       Newsubproblemsstartempty,withjustaplusbuttontotranscribe                     
+                                            andsize.Weusedarobustvector-basedapproachformarkup,sav-
+       thefirstequation.Anadditionalcollapsibletoolbarenables:print                 
+                                            ingalistofindividualpaths(ratherthanpixels),renderingonly
+       thesubproblem,addaconnectedsubproblem,deletethenode,and                      
+                                            thosevisibleonscreen.Finally,westoreuserpreferencesonthe
+       copythecontentsinWordorLaTeXformat,completewithop-                           
+                                            clientsideinapersistentstore.           
+       tionalstep-by-stepannotations.Eachequationisfullymovableand                  
+                                             ExportAlgorithmsTohelpusersshareandexporttheirwork,
+       arrangedaccordingtouserpreference(top-to-bottombydefault).                   
+                                            wedevelopeda"print"function,andintegrationstocopywork
+       Equationscanbeeditedbyvoice,withMathQuill(WYSIWYG)and                        
+                                            into LaTeX and Microsoft Word. The print feature loads a new
+       LaTeXasfallbacks.                                                            
+                                            popupwithallequationsforagivensubprobleminatabularformat,
+         Graph-BasedWorkspaceDesign(addressingDG3)Complex                           
+                                            rendersthemusingMathJax,andautomaticallytriggersasystem
+       problemscontainindependentsubcomponents,andsuccessfulprob-                   
+                                            printdialogueuponsuccessfulrender.Webuiltaone-clickbutton
+       lemsolversuseamplespacetomapideasinasensorimotorweb                          
+                                            tocopyannotatedstepsdirectlyinLaTeX,formattingequations
+       [2].SincePexpressedtheimportanceofvisuallymappingequation                    
+                                            intoaspeciallydesignedtemplate,leveragingthesystemclipboard.
+       subproblems,Phoenixisgraph-based,separatingnodesandusing                     
+                                             Themostchallengingexportalgorithmwasintegratingwith
+       colorsaturationtodepictproblemhierarchy.Forexample,auser                     
+                                            MicrosoftWord.WordusesarestrictedsubsetofMathML,nor-
+       maydictate,"integralfromzerototwoof(2𝑥+1)(𝑥+3),"which                        
+                                            mally making it impossible to copy more than one equation to
+       thesystemparsesintoarootnode.Additionalnodesareaddedas                       
+                                            theclipboard(thiswillappearastext,ratherthananequationob-
+       usersintegratestep-by-step,allowingmodular,branchingthinking.                
+                                            ject).Toovercomethisbarrier,weleveragedthetablefeatureto
+       Animatedactionsreducevisualcomplexity;hoveringover“Add                       
+                                            copymultipleequationsatonce,using‘mtext’elementstoannotate
+       Problem”previewssubproblemlocation.                                          
+                                            steps.                                  
+                                             ServerSideUserManagementOurbackendimplementsau-
+                                            thenticationusingGoogleOAuthandJsonWebTokens(JWTs),
+
+===== PAGE 4 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+       ASSETS’25,October26–29,2025,Denver,CO,USA                          Geetal.   
+                                                                                    
+                             Backend             Frontend                           
+                User                                           Local                
+                Database                                       Storage              
+                                             Graph UI Frontend                      
+                                 Server                                             
+              LLM                                                                   
+                                                                                    
+                                                                 Render,            
+                      Context                                    Layout, &          
+                      Engine                                     Export             
+                                                                 Algs               
+                                                                                    
+       Figure2:Architectureoverview,showingtheflowofdatafromthegraph-basedfrontendtothebackend,contextengine,and
+       beyond                                                                       
+                                                                                    
+       managingserver-sideuserinfoforthecontextengine,andrate click-and-draginteraction.Weareexcitedtogatherfeedbackin
+       limitingtoensurefairdistributionoflimitedAPIqueries.Tofur- ourupcominguserstudy.
+       thereasebackendload,weusetheWebSpeechAPItotranscribe WehavealsoreleasedapublicbetaofPhoenix,freeforusersto
+       speechintotext,beforesendingthetexttothecontextengineto try,athttps://assistivity.org.
+       generateequations.Unlikepriorwork,wedonotneedacustom                         
+       speech-to-textmodelbecauseourcontextengineflexiblyinfers ACKNOWLEDGMENTS     
+       importantdetailsandcorrectmistakes.                                          
+                                            Thisprojectdidnotreceiveanyexternalfunding,andwasentirely
+         ContextEngineThecontextengineisappliedwheneverthe                          
+                                            doneoutofthepassionsofourcoauthors.Wewantedtoespecially
+       usereditsanequationorgeneratesanewoneviavoice(i.e.tran-                      
+                                            acknowledgeKennethGe’scontributionswithself-fundingand
+       scriptionortransformation).Contextismanagedassoonasthe                       
+                                            leadingtheproject,RyanPaul’scontributionswithdesigninginter-
+       userinteractswiththepage.Inadditiontotheovertdependencies                    
+                                            facesandleadingworkshops,andPriscillaZhang’scontributions
+       betweensubproblems,Phoenix alsomaintainsanimplicitdepen-                     
+                                            withprovidingcreativeideasthathelpedgroundourwork.
+       dencyorderamongtheequationswithineachsubproblem.When                         
+       userstranscribesanewequation,Phoenixautomaticallytracksits                   
+                                            REFERENCES                              
+       “parent”equationoncreation.Allthisinformationissenttothe                     
+                                            [1] [n.d.]. UnderstandingDysgraphia-InternationalDyslexiaAssociation. https:
+       contextengine.                                                               
+                                              //dyslexiaida.org/understanding-dysgraphia/
+         Usingthesedependencies,theenginerunsagraphtraversalto [2] DorAbrahamsonandRaulSanchezGarcia.2016.LearningIsMovinginNew
+       orderequationsfrommosttoleastrelevant.Thisgraphtraversal Ways:TheEcologicalDynamicsofMathematicsEducation.JournaloftheLearn-
+                                              ingSciences25(012016). https://doi.org/10.1080/10508406.2016.1143370
+       calculatesadistance-weighted“fuzzyusefulness”toweightthecon- [3] SalimN.Batlouni,HalaS.Karaki,FadiA.Zaraket,andFadiN.Karameh.2011.
+       textofeachstep.UnlikeapproacheslikeRAG,ourgraphtraversal Mathifier—Speechrecognitionofmathequations.In201118thIEEEInternational
+                                              ConferenceonElectronics,Circuits,andSystems.301–304. https://doi.org/10.1109/
+       retainsfulldetail,ismoreinterpretable,andallowsgreatercontrol                
+                                              ICECS.2011.6122273                    
+       overthesubjectdomain.                [4] M.Ben-Jacob.2019. THEIMPORTANCEOFMATHEMATICSINSTEMEDU-
+         Afterorderingthedependencies,weattachthemtoourLLM CATION.InEDULEARN19Proceedings(Palma,Spain)(11thInternationalCon-
+                                              ferenceonEducationandNewLearningTechnologies).IATED,2496–2500. https:
+       prompt,instructingthemodeltoconsidermostrelevantcontext.To                   
+                                              //doi.org/10.21125/edulearn.2019.0683 
+       generatetranscriptions,weusefew-shotpromptingbyproviding [5] CynthiaL.Bennett,ErinBrady,andStacyM.Branham.2018.Interdependence
+       exampleinputsandoutputstohelpthemodelunderstandhowto asaFrameforAssistiveTechnologyResearchandDesign.InProceedingsofthe
+                                              20thInternationalACMSIGACCESSConferenceonComputersandAccessibility.
+       handlecomplexcommandsandqueriesinvolvingdomain-specific ACM,GalwayIreland,161–173. https://doi.org/10.1145/3234695.3236348
+       knowledge(e.g.physicsterminology).Theresultisthenretrieved [6] ElliottCameronandJeffBilmes.2007. ComputerBasedMathematicsUsing
+                                              ContinuousSpeechRecognition.InWorkshoponnonverbalacousticinteraction.<
+       andsanitizedbyaregularexpressionbeforebeingsentbacktothe                     
+                                              https://melodi.ee.washington.edu/vj/files/CHIWS-07-Elliott.pdf>[Consulta:12-04-
+       client.                                2017].                                
+                                            [7] LianchunDongandYueyuanKang.2022.Culturaldifferencesinmindsetbeliefs
+                                              regardingmathematicslearning. 46(2022),101159. https://doi.org/10.1016/j.
+                                              cobeha.2022.101159                    
+                                            [8] PeterW.Dowrick,JohnAnderson,KatharinaHeyer,andJoieAcosta.2005.Post-
+       5  FUTUREDIRECTIONS                                                          
+                                              secondaryeducationacrosstheUSA:Experiencesofadultswithdisabilities.Jour-
+       Our next step is focused on helping Phoenix more fully realize nalofVocationalRehabilitation22,1(2005),41–47. https://doi.org/10.3233/JVR-
+                                              2005-00272arXiv:https://doi.org/10.3233/JVR-2005-00272
+       ourdesigngoals.Futureworkwilltargetuniversalvoicecontrol, [9] PedroFlores,EduardaCoelho,MariaIsabelMourão-Carvalhal,andPedroForte.
+       improvingoccasionallyinaccuratecomplexSTEMequationtran- 2023. Associationbetweenmotorandmathskillsinpreschoolchildrenwith
+                                              typicaldevelopment:Systematicreview.FrontPsychol14(Feb.2023),1105391.
+       scription(e.g.quantummechanics),respectinguserpreferencefor                  
+                                            [10] ElizabethNForde,LatanyaRobinson,JoshuaAEllis,andEmilyADare.2023.In-
+       defaultlowercaseletters,andenablingscroll-basednavigationover vestigatingthepresenceofmathematicsandthelevelsofcognitivelydemanding
+
+===== PAGE 5 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+       Phoenix:ANovelContext-AwareVoice-PoweredMathEquationWorkspaceandEditor ASSETS’25,October26–29,2025,Denver,CO,USA
+                                                                                    
+          mathematicaltasksinintegratedSTEMunits.DisciplinaryandInterdisciplinary [33] DelindaVanGarderenandMarjorieMontague.2003.Visual–SpatialRepresen-
+          ScienceEducationResearch5,1(2023),3. tation,MathematicalProblemSolving,andStudentsofVaryingAbilities. 18,
+       [11] KennethGeandJooYoungSeo.2024. StereoMath:AnAccessibleandMusical 4(2003),246–254. https://doi.org/10.1111/1540-5826.00079 Publisher:SAGE
+          EquationEditor.InThe26thInternationalACMSIGACCESSConferenceonComput- Publications.
+          ersandAccessibility(2024-10-27).1–5. https://doi.org/10.1145/3663548.3688487 [34] P.C.WasonandDianaShapiro.1971.Naturalandcontrivedexperienceinarea-
+          arXiv:2501.01404[cs]                soningproblem.23,1(1971),63–71. https://doi.org/10.1080/00335557143000068
+       [12] DCGeary.1993.Mathematicaldisabilities:cognitive,neuropsychological,and Publisher:SAGEPublications.
+          geneticcomponents.PsycholBull114,2(Sept.1993),345–362. [35] WahyuWidada,DewiHerawaty,MohammadH.Rahman,DitaYustika,ElsaP.
+       [13] CamillaGilmore.2023. Understandingthecomplexitiesofmathematicalcog- Gusvarini,andAbdurrobbilFalaqDwiAnggoro.2020.Overcomingthedifficulty
+          nition:Amulti-levelframework.QuarterlyJournalofExperimentalPsychology ofunderstandingsystemsoflinearequationsthroughlearningethnomathemat-
+          76,9(2023),1953–1972. https://doi.org/10.1177/17470218231175325 _eprint: ics. 1470,1(2020),012074. https://doi.org/10.1088/1742-6596/1470/1/012074
+          https://doi.org/10.1177/17470218231175325. Publisher:IOPPublishing.       
+       [14] EihabKhasawneh,CameronGosling,andBrettWilliams.2021. Whatimpact [36] AngelaM.Wigmore,EckhardPflugel,GordonJ.A.Hunter,JamesDenholm-Price,
+          doesmathsanxietyhaveonuniversitystudents?9,1(2021),37. https://doi.org/ andMartinColbert.2010. TalkMathsBetter!EvaluatingandImprovingan
+          10.1186/s40359-021-00537-2          IntelligentInterfaceforCreatingandEditingMathematicalText.In2010Sixth
+       [15] MarkusKnauff,ThomasMulack,JanKassubek,HelmutRSalih,andMarkW InternationalConferenceonIntelligentEnvironments.307–310. https://doi.org/10.
+          Greenlee.2002.Spatialimageryindeductivereasoning:afunctionalMRIstudy. 1109/IE.2010.62
+          13,2(2002),203–212. https://doi.org/10.1016/S0926-6410(01)00116-1 [37] BethWithamandGayleBrewer.2024.“GivingthePeopleWhoUsetheService
+       [16] KennethR.KoedingerandMitchellJ.Nathan.2004.TheRealStoryBehindStory aVoice”:StudentExperiencesofUniversityDisabilityServices.Disabilities4,1
+          Problems:EffectsofRepresentationsonQuantitativeReasoning. 13,2(2004). (2024),1–10. https://doi.org/10.3390/disabilities4010001
+          https://doi.org/10.1207/s15327809jls1302_1                                
+       [17] MetteLindharthAlsKristensen,DorteMoeskærLarsen,LarsSeidelin,andConnie   
+          Svabo.2024. TheRoleofMathematicsinSTEMActivities:Synthesesanda A DETAILEDTESTCONDITIONSAND
+          FrameworkfromaLiteratureReview. InternationalJournalofEducationin         
+          Mathematics,ScienceandTechnology12,2(2024),418–431. https://doi.org/10. RESULTS
+          46328/ijemst.3357                                                         
+       [18] KerryLeeandSweeFongNgand.2011. NeuroscienceandtheTeachingof A.1 TestEnvironment
+          Mathematics. EducationalPhilosophyandTheory43,1(2011),81–86. https:       
+                                              • Device:Windowslaptop                
+          //doi.org/10.1111/j.1469-5812.2010.00711.xarXiv:https://doi.org/10.1111/j.1469-
+          5812.2010.00711.x                   • Browser:GoogleChrome                
+       [19] FranklinMingzheLi,MichaelXieyangLiu,YangZhang,andPatrickCarrington. • EquatIOVersion:Freeversion(AccessedJune12,2025)
+          2022.FreedomtoChoose:UnderstandingInputModalityPreferencesofPeople        
+          withUpper-bodyMotorImpairmentsforActivitiesofDailyLiving.InProceedings • AccessMethod:Viaredirectlinkhttps://equatio.texthelp.
+          ofthe24thInternationalACMSIGACCESSConferenceonComputersandAccessi- com(sourcedthroughChatGPT)
+          bility(Athens,Greece)(ASSETS’22).AssociationforComputingMachinery,New • InstallationProcess:
+          York,NY,USA,Article39,16pages. https://doi.org/10.1145/3517428.3544814    
+       [20] Mathful.2025.Mathful:AI-PoweredMathSolverandLearningPlatform. https: – InstalledChromeextensionanddesktopapplication.
+          //mathful.com/Accessed:2025-06-01.   – Attemptedsign-inviadesktopapp,whichredirectedtoa
+       [21] MathGPTPro.2025.MathGPTPro:AI-PoweredMathTutoringPlatform. https:       
+                                                browserloginpagethatrepeatedlyfailedtoload.
+          //info.mathgptpro.com/Accessed:2025-06-01.                                
+       [22] MariaMokobane,BasilJ.Pillay,andAnnekeMeyer.2019.Finemotordeficits – SigninginwithGooglealsoledtonon-loadingpage.
+          andattentiondeficithyperactivitydisorderinprimaryschoolchildren.25(2019), – Ultimately accessed EquatIO through the redirect link
+          1232. https://doi.org/10.4102/sajpsychiatry.v25i0.1232                    
+       [23] NationalCouncilofTeachersofMathematics.2003.MathematicsasaFoundation above;thislinkwasnoteasilydiscoverablethroughstan-
+          foraProductiveScienceandEngineeringWorkforce.InPan-OrganizationalSum- dardwebsearch.
+          mitontheUSScienceandEngineeringWorkforce:MeetingSummary,MaryeAnne         
+          Fox(Ed.).NationalAcademiesPress(US),Washington,DC. https://www.ncbi.      
+          nlm.nih.gov/books/NBK36367/       A.2 TestingProcess-EquatIO              
+       [24] RachelO’Neill,RuchiPalan,etal.2023. ATrialoftheAssistiveTechnology      
+          EquatIOinanIrishUniversity.MSORConnections21,3(2023),48–56. EquationsweredictatedusingEquatIO’sspeechinputfeature.Be-
+       [25] NicolaJPitchford,ChiaraPapini,LauraAOuthwaite,andAntheaGulliford.2016. lowarethepromptsusedandtheircorrespondingoutputs.
+          FineMotorSkillsPredictMathsAbilityBetterthanTheyPredictReadingAbility     
+          intheEarlyPrimarySchoolYears.FrontPsychol7(May2016),783.                  
+                                            Prompt1:”Theintegralfromzerotoinfinityofxsquared,dx”.
+       [26] V.A.Ressa,S.S.Lazarus,A.R.Hinkle,andC.M.Rogers.2021. Scribe:Re-         
+          search(NCEOAccommodationToolkit#14a).TechnicalReport.NationalCenter       
+                                              • ExpectedOutput:                     
+          onEducationalOutcomes. https://nceo.info/Resources/publications/online-   
+          accommodation-toolkit/Scribe-researchNCEOissupportedthroughCoopera-       
+                                                          ∫ ∞                       
+          tiveAgreement#H326G160001withtheOfficeofSpecialEducationPrograms, 𝑥2𝑑𝑥    
+          U.S.DepartmentofEducation.                                                
+       [27] DmitriRozgonjuk,TiinaKraav,KristelMikkor,KerliOrav-Puurand,andKarin 0   
+          Täht.2020.MathematicsanxietyamongSTEMandsocialsciencesstudents:the        
+          rolesofmathematicsself-efficacy,anddeepandsurfaceapproachtolearning.7, • ActualOutput:
+          1(2020),46. https://doi.org/10.1186/s40594-020-00246-z                    
+       [28] RobertStevensandAlistairEdwards.1994.Mathtalk:Thedesignofaninterface    
+          forreadingalgebrausingspeech.InComputersforHandicappedPersons,Wolf-       
+          gangL.Zagler,GeoffreyBusby,andRolandR.Wagner(Eds.).SpringerBerlin         
+          Heidelberg,Berlin,Heidelberg,313–320.                                     
+       [29] StudyFetchLLC.2025. StudyFetch:AI-PoweredLearningPlatform. https:       
+          //www.studyfetch.com/Accessed:2025-06-01.                                 
+       [30] PAULOTAN.2017. BuildingInclusiveMathematicsClassroomsforStudents        
+          withDisabilities. FortheLearningofMathematics37,3(2017),21–24. https:     
+          //www.jstor.org/stable/26548465                                           
+       [31] TexthelpLtd.2025.Equatio–EquationEditortoCreateAccessibleDigitalMath.   
+          https://www.texthelp.com/products/equatio/Accessed:2025-06-01.            
+       [32] IsabelValeandAnaBarbosa.2017.Theimportanceofseeinginmathematics         
+          communication. (2017). http://repositorio.ipvc.pt/handle/20.500.11960/3762 • Notes:Integralnotationandlimitswerenotrecognized;the
+          Accepted:2023-12-18T13:44:43ZPublisher:ETEN.                              
+                                               outputwasapartial,incorrecttranscription.
+
+===== PAGE 6 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+       ASSETS’25,October26–29,2025,Denver,CO,USA                          Geetal.   
+                                                                                    
+       Prompt2:”Theintegralfromzerotopiovertwo,cosineofx,dx”. Prompt2:”Theintegralfromzerotopiovertwo,cosineofx,dx”.
+          • ExpectedOutput:                   • ExpectedOutput:                     
+                    ∫ 𝜋                                  ∫ 𝜋                        
+                      2 cos(𝑥)𝑑𝑥                          2 cos(𝑥)𝑑𝑥                
+                     0                                   0                          
+          • ActualOutput:                     • ActualOutput:                       
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                              • Notes:Thesystemaccuratelyparsedboththelimitsandthe
+          • Notes:Similarissueswithparsing.Fractionalupperlimitand                  
+                                               function.“Piovertwo”wascorrectlyrenderedasaLaTeX
+           functionnotationwerepartiallyrecognizedbutinaccurately                   
+                                               fraction.                            
+           rendered.                                                                
+                                            Prompt3:”Indexofrefractiononesineofthetaoneequalsindexof
+       Prompt3:”Indexofrefractiononesineofthetaoneequalsindexof                     
+                                            refractiontwosineofthetatwo”.           
+       refractiontwosineofthetatwo”.                                                
+                                              • ExpectedOutput:                     
+          • ExpectedOutput:                                                         
+                  𝑛 1sin(𝜃                                                          
+                      1                                                             
+                       )=𝑛 2sin(𝜃                                                   
+                             2                                                      
+                             )                                                      
+                                                       𝑛 1sin(𝜃                     
+                                                           1                        
+                                                           )=𝑛 2sin(𝜃               
+                                                                 2                  
+                                                                  )                 
+                                              • ActualOutput:                       
+          • ActualOutput:                                                           
+          • Notes:EquatIOdidnotassociate“indexofrefraction”with                     
+           thevariable𝑛.                                                            
+                                              • Notes:UnlikeEquatIO,Phoenixcorrectlymapped“indexof
+                                               refraction”to𝑛andhandledsymbolicinputwell.
+       A.3 TestingProcess-Phoenix                                                   
+       The same prompts were dictated using Phoenix’s speech input Received20February2007;revised12March2009;accepted5June2009
+       featureintheidenticaltestenvironment.Theoutputsbelowwere                     
+       generatedusingthelatestprototypeversionofPhoenixasofJune                     
+       2025.                                                                        
+       Prompt1:”Theintegralfromzerotoinfinityofxsquared,dx”.                        
+          • ExpectedOutput:                                                         
+                     ∫ ∞                                                            
+                        𝑥2𝑑𝑥                                                        
+                      0                                                             
+          • ActualOutput:                                                           
+          • Notes:Phoenixsuccessfullyrecognizedandformattedthein-                   
+           tegralexpression,includingbothboundsandtheintegrand.                     

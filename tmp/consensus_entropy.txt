@@ -1,0 +1,2210 @@
+Consensus Entropy: Harnessing Multi-VLM Agreement for
+Self-Verifying and Self-Improving OCR
+Yulong Zhang1,2,3*, Tianyi Liang2,4*, Xinyue Huang5, Erfei Cui3, Guoqing Wang4, Xu Guo1,2,
+Chenhui Li4, Gongshen Liu3†
+1Fudan University 2Shanghai Innovation Institute
+3Shanghai Jiao Tong University 4East China Normal University 5Sun Yat-sen University
+VLM1
+ VLM2
+ VLM3
+Input
+Predictions
+Ensemble
+min E
+E
+Rephrase
+Consensus Entropy δ
+Pair-wise Entropy 
+Threshold Gate θ
+Consensus Entropy Routing & Ensemble
+CE-OCR
+C OCRA--
+C OCRA--
+CE-O R E
+CE-O R E
+C OCRA--CE-O R E
+CE-OCR
+CE-OCR
+CE-OCR
+CE-OCR
+CE-OCR
+ δ> θ
+δ=0
+0<δ< θ
+0.00 0.17 0.29
+0.17 0.00 0.43
+0.29 0.43 0.00
+VLM1 VLM2 VLM3
+VLM1
+VLM2
+VLM3
+0.23 0.30 0.36
+Ω
+ : Output Space
+Figure 1.Overview of the CE-OCR Framework.Given an input image, multiple Vision-Language Models (VLMs) independently generate
+OCR predictions. Pairwise similarities among these results yield a probability distribution over consensus quality, from which theConsensus
+Entropyδ is derived. Based onδ, a threshold gateθ determines the next step: low-entropy ensemble predictions are accepted, while inputs
+with entropy exceeding the threshold are routed to a stronger VLM for rephrasing. This framework enables automatic self-verification and
+quality improvement of OCR outputs without training or supervision.
+Abstract
+Optical Character Recognition (OCR) is fundamental to
+Vision-Language Models (VLMs) and high-quality data gen-
+eration for LLM training. Yet, despite progress in average
+OCR accuracy, state-of-the-art VLMs still struggle with de-
+tecting sample-level errors and lack effective unsupervised
+quality control. We introduce Consensus Entropy (CE), a
+training-free, model-agnostic metric that estimates output
+reliability by measuring inter-model agreement entropy. The
+core insight is that correct predictions converge in output
+space, while errors diverge. Based on CE, we develop CE-
+OCR, a lightweight multi-model framework that verifies out-
+puts by ensemble agreement, selects the best outputs, and
+* Equal contribution. † Corresponding authors.
+Email: yulong.zhang.longzhao@gmail.com; lgshen@sjtu.edu.cn
+further improves efficiency through adaptive routing. Ex-
+periments demonstrate that CE is robust for quality verifi-
+cation, improving F1 scores by 42.1% over VLM-as-Judge.
+CE-OCR achieves consistent OCR gains, outperforming self-
+consistency and single-model baselines at the same cost. No-
+tably, CE requires no training or supervision, enabling plug-
+and-play integration. Code: https://github.com/
+Aslan-yulong/consensus-entropy.
+1. Introduction
+The Optical Character Recognition (OCR) task serves as a
+critical bridge connecting textual information in the phys-
+ical world with digital information systems. Therefore,
+the quality and diversity of OCR-derived data crucially
+determine the reliability and generalization capability of
+large language models (LLMs), as it constitutes one of the
+arXiv:2504.11101v4  [cs.CV]  6 May 2026\nmost important pipelines for acquiring real-world textual
+data to fuel LLM training processes [ 24, 47, 55]. In re-
+cent years, the rapid progress of Vision-Language Models
+(VLMs) [1, 8, 9, 19, 20, 36, 57] has transformed OCR ca-
+pabilities from task-specific algorithms into a core compo-
+nent of multimodal perceptual understanding. Consequently,
+OCR accuracy has become a critical metric for assessing the
+visual-linguistic reasoning capacity of such models. At the
+same time, the scarcity of high-quality OCR data and the
+high cost of manual annotation have made both the evalu-
+ation of data quality and the assessment of model outputs
+enduring challenges in OCR research.
+Current OCR evaluation methods predominantly rely on
+standardized benchmark metrics [38], creating a disconnect
+between reported performance and real-world reliability. Our
+extensive OCR experiments with state-of-the-art models, in-
+cluding Qwen2.5-VL-72B [1] and GPT-4o [44], reveal that
+even top-performing VLMs exhibitfrequent semantic inac-
+curacies and formatting inconsistencies that evade detec-
+tion by conventional metrics. Notably, models with higher
+benchmark scores sometimes underperform in practical ap-
+plications compared to those with slightly lower benchmark
+rankings. Current evaluation approaches fall into two cat-
+egories with distinct limitations: multimodal re-evaluation
+based on cross-validation is constrained by the evaluation
+models’ own uncertainties and often introduces secondary
+noise [4, 21, 29, 67, 68], while VLM-as-Judge methods for
+textual quality assessment cannot effectively verify the con-
+sistency between visual inputs and textual outputs. These
+evaluation challenges hamper trustworthy OCR development
+for real-world applications. This raises a critical question:
+Since even state-of-the-art VLMs cannot guarantee error-
+free OCR results, can we leverage models’ own capabilities
+to self-verify and self-improve OCR results without human
+supervision?
+To answer this question, we study the behavior of 210
+VLMs on OCRBench [ 38] and observe some simple yet
+powerful patterns: (1) OCR tasks generally admit a unique
+semantic ground truth, even if formatting may vary; (2) when
+VLMs predict correctly, their outputs tightly cluster in se-
+mantic space; and (3) when they err, the predictions diverge
+and show high entropy. These insights lead to the introduc-
+tion of Consensus Entropy (CE), a label-free uncertainty
+metric that estimates prediction reliability by measuring the
+entropy of pairwise similarities among model outputs. Low
+CE indicates high agreement and reliability; high CE signals
+ambiguity and potential error. CE improves quality verifica-
+tion F1 scores by 15.2, a 42.1% gain over VLM-as-Judge.
+Building upon this metric, we develop CE-Ensemble, which
+uses CE-weighted aggregation to combine multiple model
+outputs. Finally, we construct the complete CE-OCR frame-
+work that incorporates adaptive routing: inputs with low
+CE are processed by CE-Ensemble, while high-CE cases
+are routed to stronger VLMs. Experiments on OCRBench,
+OCRBench-V2 [17], and CCOCR [64] show that CE-OCR
+achieves an 8.2% gain in OCR tasks while only routing 7.3%
+samples.
+Our contributions are three-fold:
+• We observe that when multiple VLMs process the same im-
+age, correct predictions converge while errors diverge—a
+fundamental behavior not captured by existing OCR meth-
+ods. This insight motivatesConsensus Entropy (CE),
+the core contribution of this work. CE is a simple unsu-
+pervised metric that identifies trustworthy OCR outputs
+without labels or retraining, resolving the long-standing
+challenge of OCR self-verification.
+• We propose a training-free CE-Ensemble and CE-OCR
+framework with adaptive routing, enabling automatic
+quality-aware OCR that selectively combines multiple
+models’ strengths or redirects to stronger models for chal-
+lenging cases. This approach improves OCR accuracy
+while keeping computational costs nearly flat.
+• We validate CE across diverse OCR tasks and VLMs,
+demonstrating its effectiveness in output evaluation, data
+selection, and performance enhancement at low cost.
+2. Related Work
+Evaluating OCR Capabilities of Multimodal Large Mod-
+els.OCR has evolved from early commercial tools [ 43] to
+modern approaches divided into pipeline systems [ 40, 49,
+56] and end-to-end models [3, 60]. Recent multimodal large
+models have demonstrated impressive OCR capabilities,
+evaluated through both module-level benchmarks [3, 17, 35,
+38, 60, 63, 64]. However, these benchmarks lack data diver-
+sity and comprehensive evaluation. System-level approaches
+like olmOCR [47] and MinerU [23, 56] enhance OCR and
+document understanding, but a key limitation remains: exist-
+ing frameworks mainly emphasize global accuracy, overlook-
+ing the reliability of individual outputs—a critical issue when
+OCR results feed downstream models [ 11, 12]. Similarly,
+these models have also been extended to cross-modal gen-
+eration tasks including text-to-image [33], video-audio [51],
+and text-to-3D [61], highlighting the potential for broader ap-
+plications. Our proposed Consensus Entropy metric directly
+addresses this gap by providing atraining-free approach
+to estimate output reliability at the instance level.
+Limitations of LLM-Based Evaluation.OCR evalu-
+ation currently relies primarily on the “LLM-as-Judge”
+paradigm [29, 67, 68], where LLMs serve as automated eval-
+uators. However, comprehensive surveys [4, 21] identify sys-
+tematic weaknesses in this approach, including sensitivity to
+prompt [39], training data contamination [53], and format bi-
+ases [32]. A particularly concerning issue is preference leak-
+age [30], where correlations between generation and eval-
+uation models inflate evaluation scores. These limitations
+become more pronounced in adversarial settings [2, 13, 48],\nleading to inconsistent assessments. Traditional metrics like
+BLEU [45] and ROUGE [34] similarly fail to capture seman-
+tic accuracy in OCR tasks. Moreover, LLM evaluators have
+difficulty with multimodal tasks demanding precise layout
+understanding [25], a capability essential for OCR involving
+complex layouts and mathematical content. To address this,
+our CEovercomes these limitations by providing model-
+agnostic qualityassessment without reliance on potentially
+biased evaluators.
+Uncertainty Estimation & Model Agreement.Uncertainty
+Estimation employs probabilistic methods (modeling param-
+eter uncertainty) [18, 28, 37], token-level confidence estima-
+tion [7, 26, 42], and latent space techniques [46, 59]; cross-
+modal tasks leverage semantic entropy [65] and calibrated
+confidence [6, 62], as well as consistency-based verification
+for structured reasoning [66]. Multi-model consensus uses
+ensemble strategies: selecting outputs [22, 31, 50] or regen-
+erating from selected candidates [10, 27, 41, 54]. However,
+current work focuses on general text generation [ 59, 62],
+largely overlooking OCR. Inspired by prior methods, our
+CE-OCR framework leverages character-level consensusdi-
+rectly from the outputs of any model (open-source or
+proprietary), without needing access to interior parame-
+ters[11].
+3. Method
+Our framework, illustrated in Figure 1, addresses the fun-
+damental challenge of uncertainty estimation in OCR tasks
+through a novel multi-model agreement approach. The pro-
+posed Consensus Entropy Metrictransforms quality assess-
+ment from a supervised evaluation task into an unsuper-
+vised agreement analysis.
+−0.5 0 0.5 1 1.5−0.5
+0
+0.5
+1
+1.5
+−0.5 0 0.5 1 1.5−0.5
+0
+0.5
+1
+1.5
+−0.5 0 0.5 1 1.5−0.5
+0
+0.5
+1
+1.5
+−0.5 0 0.5 1 1.5−0.5
+0
+0.5
+1
+1.5
+−0.5 0 0.5 1 1.5−0.5
+0
+0.5
+1
+1.5
+−0.5 0 0.5 1 1.5−0.5
+0
+0.5
+1
+1.5
+Prediction Space – Dim 1 Prediction Space – Dim 1 Prediction Space – Dim 1
+Prediction Space – Dim 1 Prediction Space – Dim 1 Prediction Space – Dim 1
+Prediction Space – Dim 2
+Prediction Space – Dim 2
+Prediction Space – Dim 2
+Prediction Space – Dim 2
+Prediction Space – Dim 2
+Prediction Space – Dim 2
+(a1) Low Entropy (b1) Medium Entropy (c1) High Entropy
+(a2) Low Entropy Joint (b2) Medium Entropy Joint (c2) High Entropy Joint
+Ground
+TruthGround
+Truth
+Ground
+Truth
+Correct Converge 
+Correct Converge 
+Error Diverge
+Error Diverge
+Figure 2.Prediction behaviors across entropy levels.Each plot
+visualizes VLM predictions in a 2D space. In low-entropy cases (a),
+predictions tightly cluster around the ground truth (green), while in
+medium (b) and high-entropy (c) settings, predictions increasingly
+diverge (Details in Appendix B).
+3.1. Consensus Entropy
+We introduce Consensus Entropy (CE), a novel approach
+to OCR quality assessment that requires no ground truth
+supervision. Our method builds on a key insight illustrated
+in Figure 2: when multiple independent models process
+the same image,correct outputs naturally converge in
+a shared representation space while erroneous outputs
+diverge. This pattern of convergence and divergence serves
+as a powerful signal for estimating output quality without
+requiring labeled data.
+Our framework begins by collecting outputs from a set
+of independent OCR modelsM={M 1,M 2,...,M n} for
+an imageI. To estimate prediction agreement, we measure
+the pairwise similarity between all model outputs (Oi,O j).
+The choice of metric is task-dependent: for tasks requiring
+character-level precision (e.g., standard OCR, mathematical
+expressions), we use Edit Distance; for tasks where semantic
+meaning is key, we compute cosine similarity between output
+embeddings from a pre-trained text encoder.
+Probability Distribution Derivation.For character-level
+tasks, we compute normalized similarity at each positionk:
+sij(k) = 1− EditDist(ok
+i,o k
+j )
+max(|ok
+i|,|o k
+j| ),(1)
+whereok
+i andok
+j are subsequences up to positionk. The prob-
+ability distribution is then: pij(k) =s ij(k)/P
+j′sij′(k).
+For example, given three VLM outputs for an invoice
+number—“Invoice”, “1nvoice”, “Invoice”—the normalized
+similarities to the first output are (1.0,0.86,1.0) , yield-
+ing p= (0.35,0.30,0.35) and entropy H= 1.09 (near-
+uniform), whereas two identical outputs would yieldH= 0
+(perfect agreement).
+We then calculate the pairwise entropy E between all
+model output pairs:
+Eij =−
+X
+k
+pij(k) logp ij(k),(2)
+wherepij(k) is the probability distribution derived from the
+similarity between thei-th andj-th model outputs at position
+k. Unlike using a single scalar value like cosine similarity
+for the entire output, our entropy-based approach captures
+the distributional uncertainty between outputs.
+For each model output, we then compute its average en-
+tropy distance to all other outputs: E i = 1
+n−1
+P
+j̸=iEij.
+This average entropy distanceE i estimates how consistent
+each model’s output is with the collective predictions—lower
+values indicate outputs that align well with the consensus.
+To derive the final Consensus Entropy scoreδ, we model
+the overall outputs distribution. For semantic tasks, we use
+kernel density estimation (KDE)[ 52] on the output embed-
+dings in output space Ω, where each output’s contribution is\nFigure 3. Normalized entropy [0,1] analysis of four combination
+methods. Single point (dashed) and uniform (dotted) distributions
+as bounds.
+weighted inversely by its average entropy distanceE i. For
+tasks using edit distance, where outputs do not have an ex-
+plicit vector representation, we compute the final entropy
+from the distribution of pairwise distances. Both approaches
+yield a final Consensus Entropy valueδ.
+p(v) =
+nX
+i=1
+wi·N(v|v i,Σ i),(3)
+wherewi is inversely proportional toE i, giving greater
+weight to outputs with lower entropy distance (higher con-
+sensus), andN(v|v i,Σ i) is a multivariate Gaussian kernel
+centered at vi with covariance matrix Σi that adapts based
+on the local density of predictions.
+In practice, for the semantic case, we can discretize the
+semantic space using anN×N grid. The probability at each
+cell is computed based on the weighted KDE, and the final
+Consensus Entropyδ=− PN 2
+i=1pi logp i, where pi is the
+probability at celli in the grid. This discretization enables
+efficient computation while maintaining accuracy.
+To identify the optimal strategy for combining probability
+distributions in our CE framework, we evaluated four aggre-
+gation methods: Sum, Max, Mean, and Mean Distance. As
+shown in Figure 3, all methods maintain consistent prefer-
+ence ordering, indicating robustness of the entropy-based
+approach. The Mean Distance method directly averages the
+E values and isgrid-invariant(CE values remain consistent
+across varying resolutionsN) andorder-preserving(higher
+agreement always yields lower CE). These properties, val-
+idated by simulations (Appendix B), make Mean Distance
+the most robust choice for practical deployment. Additional
+analyses are provided in Appendix B.
+As shown in Figure 2, this entropy value effectively cap-
+turesthe degree of agreement among model predictions.
+In low-entropy scenarios (Figure 2: a2), predictions form
+tight clusters around the ground truth. In contrast, medium-
+entropy (Figure 2: b2) and high-entropy (Figure 2: c2) set-
+tings show progressively greater divergence.
+The Consensus Entropyδ serves as our core uncertainty
+metric—lower values indicate higher agreement and likely
+correctness, while higher values signal potential errors or
+ambiguities. This metric provides a direct measure of output
+reliabilitywithout requiring ground truth labels, enabling
+fully unsupervised quality assessment at scale. As refer-
+enced in Figure 1,δ serves as the key decision signal in our
+routing framework, determining whether to accept ensemble
+predictions or seek expert refinement.
+3.2. Ensemble and Router
+The CE framework is designed to be flexible and adaptable,
+allowing for various ensemble strategies and routing mech-
+anisms based on the computed Consensus Entropy. The
+core idea is toleverage the entropy value to guide the
+decision-making processfor handling OCR outputs, bal-
+ancing between efficiency and quality.
+Threshold Gate and Routing Mechanism.After comput-
+ing Consensus Entropyδ, we introduce athreshold-based
+routing mechanism to balance efficiency and quality. The
+key component is a threshold gate parameter θ that deter-
+mines how outputs are processed:
+R(δ,θ) =
+(
+0,ifδ≤θ
+1,ifδ >θ (4)
+where R(δ,θ) = 0 indicates using the ensemble out-
+put, andR(δ,θ) = 1 triggers routing to a stronger VLM.θ
+serves as a critical decision boundary that can be adjusted
+based on task-specific requirements, as illustrated in Figure 1.
+Lower thresholds prioritize quality by routing more samples
+to expert models, while higher thresholds favor computa-
+tional efficiency by accepting more ensemble predictions.
+We calibrateθ through empirical analysis on development
+data, identifying the entropy value that optimizes the quality-
+efficiency trade-off. Our experimentsindicate that θ values
+around 0.5provide an optimal balance for most OCR tasks,
+effectively identifying high-quality predictions while routing
+only the most problematic samples for expert processing.
+Ensemble Strategy.When Consensus Entropy falls below
+the threshold (δ≤θ ), we apply a weighted ensemble strat-
+egy to combine predictions from multiple models. Unlike
+simple averaging approaches, our weights directly leverage
+the entropy framework: Oens = Pn
+i=1wi·O i, where the
+weighting coefficientswi are derived from the average en-\ntropy distancesE i:
+wi = 1/E iPn
+j=1 1/E j
+.(5)
+This approach assignshigher weights to outputs with
+lower entropy distances(higher consensus), whiledown-
+weighting outputs with higher entropy distances(po-
+tential outliers). In practice, implementing this weighted
+combination for text requires a token-level aggregation ap-
+proach. We first align all outputs usingdynamic program-
+ming to identify corresponding tokens across predictions.
+Then, for each position, we select the token with the highest
+weighted consensust∗
+k =argmax
+t∈Tk
+P
+i:t∈Oiwi, whereTk is
+the set of all candidate tokens at position k across model
+outputs, and the sum aggregates weights from all models
+whose outputs contain tokentat that position.
+Expert Routing.When CE exceeds the threshold (δ >θ),
+indicating low agreement among models, we route the sam-
+ple to a more powerful VLM (referred to as Mexp) for
+rephrasing. This stronger model processes the input im-
+age along with the ensemble prediction and original model
+outputs as context:
+Ofinal =M exp(I,{O 1,O 2,...,O n},O ens).(6)
+The framework enables a dynamic, quality-aware OCR
+pipeline that automatically adapts to input complexity. By
+leveraging CE to guide both ensemble aggregation and ex-
+pert routing decisions,we achieve superior OCR perfor-
+mance without requiring additional training or supervi-
+sion.Complete algorithms are presented in Appendix E.
+4. Experiments
+We evaluate CE through: (1) unsupervised quality verifica-
+tion, using CE as a standalone filter to identify correct vs.
+incorrect outputs without any ensemble or routing; (2) CE-
+Ensemble, which incorporates CE-weighted multi-model
+aggregation for performance gains; and (3) full CE-OCR,
+which combines CE-Ensemble with adaptive routing and
+stronger-model rephrasing, followed by ablation studies to
+isolate each component’s contribution and beyond-OCR ex-
+ploration to demonstrate broader applicability. We structure
+our evaluation progressively: this section (§4.2) validates CE
+alone as a verification metric; §4.3 introduces CE-Ensemble
+by adding multi-model aggregation; §4.4 extends to the full
+CE-OCR pipeline with routing and rephrasing.
+4.1. Experimental Setup
+Implementation.We use inference-only evaluation with di-
+verse VLMs followingvlmevalkit[ 15] defaults. Most models
+run on single NVIDIA H800 (80GB) GPU; largest models
+(e.g., Qwen2.5-VL-72B) use 2-4 GPUs. Our work involves
+Ori CE≤0.7CE≤0.4CE≤0.2CE≤0.1
+0.60
+0.65
+0.70
+0.75
+0.80
+0.85
+0.90
+0.95
+1.00 InternVL2.5-8B
+InternVL2.5-78B
+Qwen2-VL-2B
+Qwen2.5-VL-7B
+Qwen2.5-VL-72B
+GPT4o
+Phi-3-Vision
+Yi-Vision
+210models_avg
+Consensus Entropy Threshold
+Average Accuracy
+Figure 4.Model Performance on OCRBench under Different
+CE Thresholds.A pure filtering experiment: each target model
+is paired with one reference model (ref1: Qwen2VL-7B; ref2:
+Qwen2VL-72B) to compute CE—no ensemble or rephrase is ap-
+plied. 210models avg: average across 210 models. Shaded area
+covers ref1 and ref2 accuracy; solid line is their mean.
+only inference, eliminating training and minimizing com-
+putational cost.Edit distance uses Levenshtein; cosine uses
+bge-m3 [5], applied only to OCRBench-V2. All experiments
+apply temperature 0.0 (single-run) except Self-Consistency
+(T=0.7, 3 runs).
+Datasets.Primary evaluation on OCRBench [ 38],
+OCRBench-V2 [17] and CCOCR [ 64]. For human align-
+ment assessment, we curate 1K PDF pages from real-world
+scenarios, manually scored (1.0: Perfect to 0.0: Mostly In-
+correct) based on text matching accuracy. We report all
+scores on a scale of 0.0-100.0, except OCRBench (0-1000).
+Baselines.We useVLM-as-Judge, employing GPT-4o [ 44],
+Qwen2-VL-72B, and Qwen2-VL-7B [57] with OCR-quality
+prompts;VL-Uncertainty[ 65], which measures halluci-
+nation via semantic clustering on LLM embeddings;Sin-
+gle Model, directly outputting VLM predictions;Self-
+Consistency[ 58], selecting by voting among multiple sam-
+ples from the same VLM; andROVER[ 16], a classical
+ensemble method using discrete voting on text outputs.
+4.2. Unsupervised OCR Self-Verification with CE
+Setup.Comprehensive experiments are conducted on OCR-
+Bench across varying CE thresholds. We also evaluate the
+unsupervised identification capability of CE for accurate
+OCR predictions against VLM-as-Judge baselines.
+CE Threshold Analysis.Figure 4 illustrates the relationship
+between CE thresholds and model accuracy across different
+VLMs. The results show a clear trend: as the CE thresh-
+old decreases, the average accuracy of model responses in-
+creases.This pattern holds true for the majority of the
+210 VLMs tested, including both open-source and pro-
+prietary models.\nTable 1.OCR-Verifying: F1 comparison of VLM-as-Judge (VLM-J) vs. CE on Human-Annotated Data.For fair comparison, both
+methods use asinglereference VLM (no ensemble): VLM-J inputs image + text to a reference model for scoring; CE generates OCR with
+the same reference model and computes consensus entropy between two sequences.
+Human Score GPT4o Qwen2-VL-7B Qwen2-VL-72B
+Band VLM-J CE (Ours) VLM-J CE (Ours) VLM-J CE (Ours)
+0.9-1.0 72.1257.29 70.0570.88 72.2766.13
+0.7-0.8 18.4240.19 19.8239.56 23.0140.14
+0.4-0.6 21.4738.67 0.0027.34 11.4328.47
+0.0-0.3 48.2165.44 54.7467.42 52.8369.57
+Overall 40.048.0 (+20.0%) 36.151.3 (+42.1%) 39.851.0 (+28.1%)
+Human Evaluation Comparison.Utilizing our curated
+dataset of 1,000 PDF pages from real-world scenarios, which
+includes documents of various languages, types, and com-
+plexities, we compared the CE method with the VLM-as-
+Judge approach. Table 1 shows that CE method consistently
+achieves higher F1 scores, ranging from 48.0 to 51.3, com-
+pared to 36.1 to 40.0 for the VLM-as-Judge. This marks an
+average improvement of 15.2 in F1 scores for OCR quality
+verification, a 42.1% gain over baselines. The robustness
+of CE across various document complexities highlights its
+effectiveness for practical OCR applications.
+4.3. CE-Ensemble Evaluation
+Setup.We evaluate CE-Ensemble on OCRBench using 24
+models, testing all 3-5 model combinations ( C3
+24 = 2024,
+C4
+24 = 10626, C5
+24 = 42504, 55154 combinations in total,
+full results in Appendix I ).
+Table 2.Statistical analysis of performance gains from CE-
+Ensemble outputs.The table summarizes average improvements
+(∆+
+max: average gain of ensemble over the lowest single-model
+score, ∆+
+min: over the best single-model score, ∆+
+avg: over the
+average score of all participating models) and the proportion of
+positive cases across 3-5 model ensembles using CE-based output
+selection on OCRBench. CE yields positive gains in most cases.
+Size ∆+
+max ∆+
+min ∆+
+avg ∆+%
+max ∆+%
+min ∆+%
+avg
+3 50.2 4.2 28.3 100% 66.2% 94.7%
+4 67.5 12.7 41.7 100% 82.2% 100.0%
+5 78.3 17.8 50.3 100% 91.11% 100.0%
+Statistical analysis.Table 2 shows thatas ensemble size
+increases, both the average and minimum gains improve
+significantly. Notably, ∆+%
+max remains at 100% for all sizes,
+indicating CE always avoids the worst predictions. Mean-
+while, the steady rise of ∆+%
+min and the near-100% ∆+%
+avg
+demonstrate that CE-Ensembles increasingly select predic-
+tions close to the best in each group. This confirms that
+CE is robust and effective in leveraging multiple models to
+approach or surpass the best single-model performance.
+Representative Ensembles Analysis.We select top VLMs
+and well-known open-source VLMs as Examples in Table 3.
+Table 3 shows that CE ensembles not onlysurpass the
+current state-of-the-art (SOTA) score of 926, but also
+leverage weaker or smaller models to further boost the
+performance ceiling of SOTA models.Notably, ensem-
+blesenable low-cost open-source models (with fewer than
+10B parameters) to outperform much larger high-cost
+closed-source SOTA models, highlighting the effectiveness
+of CE in enabling resource-efficient models to exceed the
+performance of high-cost, large-scale alternatives.
+Table 3.Representative CE Ensemble Examples On OCRBench.
+†: cheap open-source models (<10 B) outperform larger closed-
+source SOTA models.∗: weaker models further boost the upper
+limit of SOTA models.
+Model Combinations of CE-Ensemble (Individual Scores)
+∗Ovis2-1B, Qwen2.5VL-7B, Step1V ,Step1o
+(890, 874, 886,926)CE-Ensemble: 955 Gain: +29
+†Ovis2-1B,Ovis2-4B, Qwen2VL-7B, Qwen2.5VL-7B
+(890,909, 843, 874)CE-Ensemble: 933 Gain: +24
+∗Ovis2-4B, Qwen2.5VL-7B,Step1o
+(909, 874,926)CE-Ensemble: 938 Gain: +12
+InternVL2.5-78B, Qwen2.5VL-72B,Qwen2VL-72B
+(853, 879,888)CE-Ensemble: 920 Gain: +32
+†InternVL2.5-8B, Qwen2VL-7B,Qwen2.5VL-7B
+(821, 843,874)CE-Ensemble: 897 Gain: +23
+4.4. Evaluation on CE-OCR for Self-Improving
+Setup.Experiments are conducted on multiple benchmarks
+(threshold=0.5). Below-threshold samples use weighted en-
+semble, above-threshold samples route to stronger VLM.
+Table 4.Performance comparison of CE-OCR and CE-
+Ensemble (Cosine Distance) against individual models and ba-
+sic ensemble on OCRBench-V2 task categories.En: English
+OCR, Elem: Element Parsing, Cn All: Chinese Overall.
+Method En Math Elem Cn All
+GPT4o 61.2 43.4 29.8 32.2
+InternVL2.5-26B 65.6 37.4 32.6 44.2
+Gemini Pro 61.2 47.7 30.9 43.1
+CE-Ensemble 67.2 50.134.045.7
+CE-OCR (GPT4o Rephrase)71.6 53.133.848.0
+Relative∆vs Ensemble (%) +6.5% +6.0% -0.5% +5.0%
+Relative∆vs Best Single (%) +9.1% +11.3% +3.7% +8.6%\n0 30 60 90 120 150 180 210 240
+0
+200
+400
+600
+800
+Token Length
+Cumulative Score
+Method Types:
+(Single) GPT-4o
+(Single) Qwen2-VL-72B
+(Single) InternVL-78B
+(Single) Qwen2-VL-7B
+(Single) Qwen2.5-VL-72B
+(Single) InternVL-8B
+(Single) Qwen2.5-VL-7B
+(Routing) Qwen2.5-VL-72B for Rephrase@ 
+Qwen2-VL-72B+Qwen2.5-VL-72B
+(Routing) Qwen2.5-VL-72B for Rephrase@
+Qwen2-VL-7b+Qwen2.5-VL-7b+Qwen2.5-VL-72B
+(Routing) Qwen2.5-VL-72B for Rephrase@ 
+Qwen2-VL-7b+Qwen2.5-7B+InternVL2.5-8B
+(Routing) GPT-4o@
+Qwen2-VL-7B+Qwen2.5-VL-7B+GPT-4o
+(SC@3) Qwen2-VL-72B
+(SC@3) Qwen2.5-VL-72B
+(SC@3) InternVL2.5-8B
+(SC@3) Qwen2-VL-7B
+(SC@3) GPT-4o
+Single
+CE-Guided Routing
+Self-Consistency
+Figure 5.Performance comparison across token lengths on
+OCRBench.SC@3: Self-Consistency with 3 samples; Routing:
+ensemble with rephrasing; Single: Single models.
+Table 5.Performance comparison of different OCR methods
+based on cumulative scores.
+Method Score Improvement (%)
+SC@3 (Average) 828 -2.8%
+SC@3 (Best: Qwen2VL-72B) 875 +2.7%
+Routing (Average)907+6.5%
+Routing (Best: Qwen2.5VL-72B)922 +8.2%
+Single (Average) 852 -
+Single (Best: Qwen2VL-72B) 888 -
+Results Analysis.Table 4 shows that our CE-OCR frame-
+work demonstrates superior performance over both indi-
+vidual models and basic ensemble approaches across a
+broad spectrum of OCR tasks, particularly excelling in com-
+plex scenarios such as mathematical calculations, where it
+achieves a 6.0% accuracy improvement over conventional
+ensembles. The framework’s efficacy is derived from its
+dynamic selection mechanism based on CE values. Inputs
+with high consensus among models leverage weighted en-
+semble outputs, while those with low consensus are directed
+to a stronger VLM for improved prediction. This selective
+routing strategy optimizes resource utilization, withonly
+7.3% of inputs requiring stronger model rephrasing(Ta-
+ble 6). According to Table 12, our method substantially
+outperforms Self-Consistency. While SC averages outputs
+from identical prompts, our approach dynamically selects
+processing strategies based on model consensus. Figure 5
+shows our models maintain superior performance across all
+token lengths, demonstratingCE-OCR maintains higher
+cumulative scores as token length increases.By estimating
+uncertainty and effectively integrating the strengths of multi-
+ple models, the framework offers a practical, training-free
+solution for diverse real-world OCR challenges.
+4.5. Ablation Studies
+We conduct ablation studies to evaluate each component’s
+contribution. Table 6 shows the results when removing indi-
+vidual components from our full framework.
+Table 6.Ablation study results on OCRBench.We examine the
+CE Framework with different components removed.
+Configuration Score↑% Routed Rel. Perf.
+w/o CE (Single Max) 888 0% 97.9%
+w/o Ensemble (Single Avg) 852 0% 93.9%
+w/o Routing (All Ensemble) 902 0% 99.4%
+Full CE-OCR Framework9077.3%100%
+Consensus Entropy (CE).Removing CE leads to a per-
+formance drop and eliminates the ability to verify output
+quality, demonstrating its critical role in uncertainty quan-
+tification. CE significantly outperforms traditional VLM-as-
+Judge methods, achieving an F1 score improvement of 15.2
+(Table 1). This validates CE’s capability to assess OCR qual-
+ity without explicit supervision. CE works because higher
+entropy indicates model disagreement, which correlates with
+output uncertainty and enables unsupervised quality assess-
+ment.
+Multi-Model Ensemble.Using single models instead of the
+ensemble results in a 7.2% performance degradation. The
+ensemble’s diversity is essential for optimal CE calculation
+and robust performance across different input types. CE
+improves ensemble performance by providing quantifiable
+comparison values that enable unsupervised selection of the
+best model outputs.
+Adaptive Routing & Rephrasing.The framework with-
+out routing achieves 99.4% of full performance but pro-
+cesses all inputs with the ensemble. Our adaptive routing
+reduces computational cost by routing only 7.3% of inputs
+to stronger models while maintaining near-identical accu-
+racy. CE enables unsupervised identification of low-quality
+outputs, which are then improved through stronger models
+or better prompt rephrasing.
+Table 7.Threshold sensitivity analysis on OCRBench-V2.Each
+cell shows accuracy improvement (∆×10 2) / rephrase percentage
+(%). Lowerθmeans more samples rephrased.
+Model θ= 0.95 θ= 0.9 θ= 0.8 θ= 0.6 θ= 0.2
+Gemini Pro +1.6/11.5 +3.1/22.3 +4.3/43.5 +5.4/66.3 +6.1/91.5
+GPT-4o +3.8/15.0 +5.1/24.9 +6.8/48.7 +7.7/71.3 +8.8/91.2
+Threshold Sensitivity.We analyze the impact of routing
+thresholdθ on the accuracy-computation trade-off (Table 7).
+Lowerθ values route more samples for rephrasing, improv-
+ing accuracy but increasing computational cost. The optimal
+θbalances performance gains with efficiency.\nModel Diversity & Other Experiments.We evaluate CE-
+Ensemble using both identical model instances and models
+from the same architectural series. Table 8 demonstrates
+consistent gains across same-family ensembles and identical-
+model sampling. While diversity enhances CE, it remains
+effective with architecturally similar models, capturing task
+uncertainty through sampling variance.
+Table 8.Same-family model gains.Identical row: same model
+with stochastic sampling (T=0.7); Families: greedy (T=0).
+Model Family Avg Gain Max Gain>1% Cases
+InternVL +1.24% +1.7% 75%
+Ovis2 +1.06% +1.2% 67%
+QwenVL +1.83% +2.9% 79%
+Identical (T=0.7, 3 runs) +2.1% +3.2% 100%
+4.6. Comparison with Classical Baselines
+Table 9 compares CE-Ensemble with representative ensem-
+ble methods under the same 3-VLM setup. ROVER’s dis-
+crete word-level voting works for closed-vocabulary ASR
+but fails catastrophically on open-ended VLM tasks (Doc-
+VQA−42.1%, Math-VQA−92.0%), because VLM outputs
+are diverse and non-aligned in phrasing. VL-Uncertainty
+[65] uses semantic clustering on LLM embeddings; it
+achieves modest gains on structured OCR (+3.3%) but de-
+grades on semantic VQA tasks (Doc-VQA −10.1%, KR
+−3.5%), as character-level differences critical for OCR are
+invisible to semantic embeddings. In contrast, CE-Ensemble
+improves across all four categories (+8.2% average), con-
+firming that output-space agreement analysis is more robust
+for generation tasks.
+Table 9.Comparison with other ensemble methods.Best Single:
+highest score among participating models. All methods use the
+same 3-VLM setup for fair comparison. CE consistently outper-
+forms all baselines across tasks.
+Method OCR Doc-VQA Math KR Avg∆
+Best Single 61.2 87.5 40.0 60.3 0%
+VL-Uncertainty 64.5 78.7 45.1 58.2 +0.2%
+ROVER 57.5 50.7 3.2 50.4 -33.8%
+CE-Ensemble 67.2 90.5 45.6 66.3 +8.2%
+4.7. Layout-Sensitive & VQA Tasks Beyond OCR
+Setup.We evaluate CE’s effectiveness on diverse VQA
+tasks to verify its sensitivity to layout structure and semantic
+understanding. We employ Edit Distance (character-level)
+for layout-sensitive tasks and Cosine Distance (bge-m3 [5])
+for semantic VQA.
+Layout-Sensitive Tasks.Table 10 shows Edit Distance-
+based CE achieves strong gains on layout-heavy tasks: Doc-
+VQA (+3.4%), Formula (+7.3%), Math-VQA (+14.0%), con-
+firming CE effectively captures spatial structure through
+character-level divergence.
+Semantic VQA.Cosine Distance-based CE similarly ex-
+cels on semantic tasks: Scene-VQA (+6.0%), Science-VQA
+(+3.9%), Knowledge-Reasoning (+10.0%), demonstrating
+CE’s broad applicability beyond OCR.
+Table 10.CE performance on non-OCR VQA tasks.Baseline:
+highest accuracy scores among participating models; Better metric:
+distance metric with greater improvement.
+Category Baseline CE-Ensemble (∆) Better Metric
+Scene-VQA (easy) 92.598.0 (+6.0%)Cosine Distance
+Doc-VQA (easy) 87.590.5 (+3.4%)Edit Distance
+Formula (easy) 82.088.0 (+7.3%)Edit Distance
+Science-VQA 61.363.7 (+3.9%)Cosine Distance
+Math-VQA 40.045.6 (+14.0%)Cosine Distance
+Knowl.-Reason. 60.366.3 (+10.0%)Cosine Distance
+Visual-Und. 75.782.4 (+8.9%)Cosine Distance
+4.8. Computational Cost and Efficiency Analysis
+CE Calculation Cost.Table 20 shows CE computation on
+1,000 OCR output pairs (∼1K chars). Edit Distance (CPU)
+is fastest at 0.0002s, requiring no GPU. All GPU methods
+achieve<0.1s except bge-m3 (CPU).
+VLM Ensemble Efficiency.CE ensembles of small VLMs
+outperform single large models at lower cost. E.g., 3×7B
+ensemble (3.5× speedup, 20× token/s improvement, 8× less
+memory) outperforms single 70B+, while using one GPU vs.
+4×80GB (detailed VLM cost in Appendix F).
+Table 11.Computational cost of CE on 1,000 long-text pairs
+(average length∼1K chars).
+CE Method Device Time Cost (s) Memory
+Avg Med Total (GiB)
+Edit Distance CPU 2.0e-4 0 1.63e-1 -
+bge-m3 GPU 3.48e-2 3.11e-2 3.48e1 4.01
+bge-m3 CPU 2.65 2.09 2.65e3 -
+5. Conclusion
+We propose Consensus Entropy (CE), a training-free metric
+that measures agreement among multiple VLMs to estimate
+OCR uncertainty. CE is paired with a simple ensemble-and-
+route procedure: when CE is low, trust the majority; when
+high, route the sample to a stronger model or flag for review.
+Experiments show that this pair outperforms single VLM
+and VLM-as-Judge on verification tasks while using fewer
+resources. Future work could further extend CE to other
+vision-language tasks [14, 59] and incorporate divergence
+patterns into training methodologies [10]. We hope CE and
+its ensemble serve as a minimal yet strong baseline for OCR
+uncertainty estimation.\nAcknowledgments
+This work was supported in part by the Joint Funds of the
+National Natural Science Foundation of China (Grant No.
+U21B2020).
+We thank Xinyue Huang, and all coauthors for
+the collaborative discussions and contributions.
+We also gratefully acknowledge Fudan University,
+Shanghai Jiao Tong University, and the Shanghai
+Innovation Institute for their support and resources.
+References
+[1] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge,
+Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang,
+Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhaohai Li,
+Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng
+Xu, Jiabo Ye, Xi Zhang, Tianbao Xie, Zesen Cheng, Hang
+Zhang, Zhibo Yang, Haiyang Xu, and Junyang Lin. Qwen2.5-
+vl technical report.arXiv preprint arXiv:2502.13923, 2025.
+2
+[2] Tim Beyer, Sophie Xhonneux, Simon Geisler, Gauthier Gidel,
+Leo Schwinn, and Stephan G¨unnemann. Llm-safety evalua-
+tions lack robustness, 2025. 2
+[3] Lukas Blecher, Guillem Cucurull, Thomas Scialom, and
+Robert Stojnic. Nougat: Neural optical understanding for
+academic documents.arXiv:2308.13418, 2024. 2
+[4] Yupeng Chang, Xu Wang, Jindong Wang, Yuan Wu, Linyi
+Yang, Kaijie Zhu, Hao Chen, Xiaoyuan Yi, Cunxiang Wang,
+Yidong Wang, et al. A survey on evaluation of large lan-
+guage models.ACM transactions on intelligent systems and
+technology, 15(3):1–45, 2024. 2
+[5] Jianlv Chen, Shitao Xiao, Peitian Zhang, Kun Luo, Defu Lian,
+and Zheng Liu. Bge m3-embedding: Multi-lingual, multi-
+functionality, multi-granularity text embeddings through self-
+knowledge distillation, 2024. 5, 8, 12
+[6] Kedi Chen, Qin Chen, Jie Zhou, Xinqi Tao, Bowen Ding, Jing-
+wen Xie, Mingchen Xie, Peilong Li, Feng Zheng, and Liang
+He. Enhancing uncertainty modeling with semantic graph
+for hallucination detection.arXiv preprint arXiv:2501.02020,
+2025. 3
+[7] Liang Chen, Yang Deng, Yatao Bian, Zeyu Qin, and et al.
+Beyond factuality: A comprehensive evaluation of large lan-
+guage models as knowledge generators. InEMNLP 2023,
+pages 6325–6341. Association for Computational Linguistics,
+2023. 3
+[8] Zhe Chen, Weiyun Wang, Yue Cao, Yangzhou Liu, Zhang-
+wei Gao, Erfei Cui, Jinguo Zhu, Shenglong Ye, Hao Tian,
+Zhaoyang Liu, et al. Expanding performance boundaries
+of open-source multimodal models with model, data, and
+test-time scaling.arXiv preprint arXiv:2412.05271, 2024. 2
+[9] Zhe Chen, Weiyun Wang, Hao Tian, Shenglong Ye, Zhangwei
+Gao, Erfei Cui, Wenwen Tong, Kongzhi Hu, Jiapeng Luo,
+Zheng Ma, et al. How far are we to gpt-4v? closing the gap
+to commercial multimodal models with open-source suites.
+Science China Information Sciences, 67(12):220101, 2024. 2
+[10] Zhijun Chen, Jingzheng Li, Pengpeng Chen, Zhuoran Li, Kai
+Sun, Yuankai Luo, Qianren Mao, Dingqi Yang, Hailong Sun,
+and Philip S. Yu. Harnessing multiple large language models:
+A survey on llm ensemble, 2025. 3, 8
+[11] Yuqin Dai, Guoqing Wang, Yuan Wang, Kairan Dou, Kaichen
+Zhou, Zhanwei Zhang, Shuo Yang, Fei Tang, Jun Yin, Pengyu
+Zeng, et al. Evinote-rag: Enhancing rag models via answer-
+supportive evidence notes.arXiv preprint arXiv:2509.00877,
+2025. 2, 3
+[12] Yuqin Dai, Shuo Yang, Guoqing Wang, Yong Deng, Zhan-
+wei Zhang, Jun Yin, Pengyu Zeng, Zhenzhe Ying, Changhua
+Meng, Can Yi, et al. Careful queries, credible results: Teach-
+ing rag models advanced web search tools with reinforcement
+learning.arXiv preprint arXiv:2508.07956, 2025. 2
+[13] Yuqin Dai, Ning Gao, Wei Zhang, Jie Wang, Zichen Luo, Jin-
+peng Wang, Yujie Wang, Ruiyuan Wu, and Chaozheng Wang.
+Sead: Self-evolving agent for multi-turn service dialogue.
+arXiv preprint arXiv:2602.03548, 2026. 2
+[14] Seyed Pouyan Mousavi Davoudi, Alireza Shafiee Fard, and
+Alireza Amiri-Margavi. Collective reasoning among llms a
+framework for answer validation without ground truth, 2025.
+8
+[15] Haodong Duan, Junming Yang, Yuxuan Qiao, Xinyu Fang,
+Lin Chen, Yuan Liu, Xiaoyi Dong, Yuhang Zang, Pan Zhang,
+Jiaqi Wang, et al. Vlmevalkit: An open-source toolkit for
+evaluating large multi-modality models. InProceedings of the
+32nd ACM International Conference on Multimedia, pages
+11198–11201, 2024. 5, 12
+[16] Jonathan G Fiscus. Post-processing techniques applied to
+speech recognition output. InDARPA Speech Recognition
+Workshop, pages 59–62, 1997. Also known as ROVER (Rec-
+ognizer Output V oting Error Reduction). 5
+[17] Ling Fu, Biao Yang, Zhebin Kuang, Jiajun Song, Yuzhe Li,
+Linghao Zhu, Qidi Luo, Xinyu Wang, Hao Lu, Mingxin
+Huang, Zhang Li, Guozhi Tang, Bin Shan, Chunhui Lin, Qi
+Liu, Binghong Wu, Hao Feng, Hao Liu, Can Huang, Jingqun
+Tang, Wei Chen, Lianwen Jin, Yuliang Liu, and Xiang Bai.
+Ocrbench v2: An improved benchmark for evaluating large
+multimodal models on visual text localization and reasoning,
+2024. 2, 5
+[18] Yarin Gal and Zoubin Ghahramani. Dropout as a bayesian
+approximation: Representing model uncertainty in deep learn-
+ing. Ininternational conference on machine learning, pages
+1050–1059. PMLR, 2016. 3
+[19] Zhangwei Gao, Zhe Chen, Erfei Cui, Yiming Ren, Weiyun
+Wang, Jinguo Zhu, Hao Tian, Shenglong Ye, Junjun He,
+Xizhou Zhu, et al. Mini-internvl: a flexible-transfer pocket
+multi-modal model with 5% parameters and 90% perfor-
+mance.Visual Intelligence, 2(1):1–17, 2024. 2
+[20] Team GLM, Aohan Zeng, Bin Xu, Bowen Wang, Chenhui
+Zhang, Da Yin, Diego Rojas, Guanyu Feng, Hanlin Zhao,
+Hanyu Lai, Hao Yu, Hongning Wang, Jiadai Sun, Jiajie
+Zhang, Jiale Cheng, Jiayi Gui, Jie Tang, Jing Zhang, Juanzi
+Li, Lei Zhao, Lindong Wu, Lucen Zhong, Mingdao Liu, Min-
+lie Huang, Peng Zhang, Qinkai Zheng, Rui Lu, Shuaiqi Duan,
+Shudan Zhang, Shulin Cao, Shuxun Yang, Weng Lam Tam,
+Wenyi Zhao, Xiao Liu, Xiao Xia, Xiaohan Zhang, Xiaotao\nGu, Xin Lv, Xinghan Liu, Xinyi Liu, Xinyue Yang, Xixuan
+Song, Xunkai Zhang, Yifan An, Yifan Xu, Yilin Niu, Yuantao
+Yang, Yueyan Li, Yushi Bai, Yuxiao Dong, Zehan Qi, Zhaoyu
+Wang, Zhen Yang, Zhengxiao Du, Zhenyu Hou, and Zihan
+Wang. Chatglm: A family of large language models from
+glm-130b to glm-4 all tools, 2024. 2
+[21] Jiawei Gu, Xuhui Jiang, Zhichao Shi, Hexiang Tan, Xuehao
+Zhai, Chengjin Xu, Wei Li, Yinghan Shen, Shengjie Ma,
+Honghao Liu, et al. A survey on llm-as-a-judge.arXiv
+preprint arXiv:2411.15594, 2024. 2
+[22] Neel Guha, Mayee F Chen, Trevor Chow, Ishan S Khare,
+and Christopher Re. Smoothie: Label free language model
+routing. InNeuIPS, 2024. 3
+[23] Conghui He, Wei Li, Zhenjiang Jin, Chao Xu, Bin Wang, and
+Dahua Lin. Opendatalab: Empowering general artificial intel-
+ligence with open datasets.arXiv preprint arXiv:2407.13773,
+2024. 2
+[24] Conghui He, Wei Li, Zhenjiang Jin, Chao Xu, Bin Wang, and
+Dahua Lin. Opendatalab: Empowering general artificial intel-
+ligence with open datasets.arXiv preprint arXiv:2407.13773,
+2024. 2
+[25] Yupan Huang, Tengchao Lv, Lei Cui, Yutong Lu, and Furu
+Wei. Layoutlmv3: Pre-training for document ai with unified
+text and image masking. InProceedings of the 30th ACM
+international conference on multimedia, pages 4083–4091,
+2022. 3
+[26] Yuheng Huang, Jiayang Song, Zhijie Wang, Huaming Chen,
+and Lei Ma. Look before you leap: An exploratory study of
+uncertainty measurement for large language models.CoRR,
+abs/2307.10236, 2023. 3
+[27] Dongfu Jiang, Xiang Ren, and Bill Yuchen Lin. Llm-blender:
+Ensembling large language models with pairwise ranking and
+generative fusion. InACL, 2023. 3
+[28] Alex Kendall and Yarin Gal. What uncertainties do we need
+in bayesian deep learning for computer vision?Advances in
+neural information processing systems, 30, 2017. 3
+[29] Seungone Kim, Jamin Shin, Yejin Cho, Joel Jang, Shayne
+Longpre, Hwaran Lee, Sangdoo Yun, Seongjin Shin, Sung-
+dong Kim, James Thorne, et al. Prometheus: Inducing fine-
+grained evaluation capability in language models. InThe
+Twelfth International Conference on Learning Representa-
+tions, 2023. 2
+[30] Dawei Li, Renliang Sun, Yue Huang, Ming Zhong, Bohan
+Jiang, Jiawei Han, Xiangliang Zhang, Wei Wang, and Huan
+Liu. Preference leakage: A contamination problem in llm-as-
+a-judge, 2025. 2
+[31] Junyou Li, Qin Zhang, Yangbin Yu, Qiang Fu, and Deheng Ye.
+More agents is all you need.arXiv preprint arXiv:2402.05120,
+2024. 3
+[32] Yifan Li, Yifan Du, Kun Zhou, Jinpeng Wang, Xin Zhao, and
+Ji-Rong Wen. Evaluating object hallucination in large vision-
+language models. InProceedings of the 2023 Conference on
+Empirical Methods in Natural Language Processing, pages
+292–305, 2023. 2
+[33] Tianyi Liang, Jiangqi Liu, Yifei Huang, Shiqi Jiang, Jianshen
+Shi, Changbo Wang, and Chenhui Li. Textcengen: Attention-
+guided text-centric background adaptation for text-to-image
+generation. InInternational Conference on Machine Learning
+(ICML), 2025. 2
+[34] Chin-Yew Lin. ROUGE: A package for automatic evaluation
+of summaries. InText Summarization Branches Out, pages 74–
+81, Barcelona, Spain, 2004. Association for Computational
+Linguistics. 3
+[35] Chenglong Liu, Haoran Wei, Jinyue Chen, Lingyu Kong,
+Zheng Ge, Zining Zhu, Liang Zhao, Jianjian Sun, Chunrui
+Han, and Xiangyu Zhang. Focus anywhere for fine-grained
+multi-page document understanding.arXiv:2405.14295,
+2024. 2
+[36] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee.
+Visual instruction tuning, 2023. 2
+[37] Xiaoou Liu, Tiejin Chen, Longchao Da, Chacha Chen, Zhen
+Lin, and Hua Wei. Uncertainty quantification and confidence
+calibration in large language models: A survey, 2025. 3
+[38] Yuliang Liu, Zhang Li, Mingxin Huang, Biao Yang, Wenwen
+Yu, Chunyuan Li, Xu-Cheng Yin, Cheng-Lin Liu, Lianwen
+Jin, and Xiang Bai. Ocrbench: on the hidden mystery of
+ocr in large multimodal models.Science China Information
+Sciences, 67(12), 2024. 2, 5, 13
+[39] Yuxuan Liu, Tianchi Yang, Shaohan Huang, Zihan Zhang,
+Haizhen Huang, Furu Wei, Weiwei Deng, Feng Sun, and
+Qi Zhang. Calibrating llm-based evaluator. InProceed-
+ings of the 2024 Joint International Conference on Com-
+putational Linguistics, Language Resources and Evaluation
+(LREC-COLING 2024), pages 2638–2656, 2024. 2
+[40] Patrice Lopez. Grobid. https : / / github . com /
+kermitt2/grobid, 2008–2025. 2
+[41] Bo Lv, Chen Tang, Yanan Zhang, Xin Liu, Ping Luo, and
+Yue Yu. Urg: A unified ranking and generation method for
+ensembling language models. InFindings of the ACL, 2024.
+3
+[42] Potsawee Manakul, Adian Liusie, and Mark J. F. Gales. Self-
+checkgpt: Zero-resource black-box hallucination detection
+for generative large language models. InEMNLP 2023, pages
+9004–9017. Association for Computational Linguistics, 2023.
+3
+[43] Shunji Mori, Ching Y Suen, and Kazuhiko Yamamoto. His-
+torical review of ocr research and development.Proceedings
+of the IEEE, 80(7):1029–1058, 1992. 2
+[44] OpenAI. Gpt-4o technical overview. https://openai.
+com/index/gpt- 4o- system- card/ , 2024. Ac-
+cessed: 2025-04-06. 2, 5
+[45] Kishore Papineni, Salim Roukos, Todd Ward, and Wei-Jing
+Zhu. Bleu: a method for automatic evaluation of machine
+translation. InProceedings of the 40th annual meeting of the
+Association for Computational Linguistics, pages 311–318,
+2002. 3
+[46] Felix Petersen, Aashwin Mishra, Hilde Kuehne, Christian
+Borgelt, Oliver Deussen, and Mikhail Yurochkin. Uncertainty
+quantification via stable distribution propagation, 2024. 3
+[47] Jake Poznanski, Jon Borchardt, Jason Dunkelberger, Regan
+Huff, Daniel Lin, Aman Rangapur, Christopher Wilhelm,
+Kyle Lo, and Luca Soldaini. olmOCR: Unlocking Trillions
+of Tokens in PDFs with Vision Language Models, 2025. 2\n[48] Javier Rando, Jie Zhang, Nicholas Carlini, and Florian Tram`er.
+Adversarial ml problems are getting harder to solve and to
+evaluate, 2025. 2
+[49] Zejiang Shen, Kyle Lo, Lucy Lu Wang, Bailey Kuehl,
+Daniel S Weld, and Doug Downey. Vila: Improving structured
+content extraction from scientific pdfs using visual layout
+groups.Transactions of the Association for Computational
+Linguistics, 10:376–392, 2022. 2
+[50] Chenglei Si, Weijia Shi, Chen Zhao, Luke Zettlemoyer, and
+Jordan Boyd-Graber. Getting more out of mixture of language
+model reasoning experts. InFindings of EMNLP, 2023. 3
+[51] SII-OpenMOSS Team, Donghua Yu, Mingshu Chen, Qi Chen,
+Qi Luo, Qianyi Wu, Qinyuan Cheng, Ruixiao Li, Tianyi
+Liang, Wenbo Zhang, Wenming Tu, Xiangyu Peng, Yang Gao,
+Yanru Huo, Ying Zhu, Yinze Luo, Yiyang Zhang, Yuerong
+Song, Zhe Xu, Zhiyu Zhang, Chenchen Yang, Cheng Chang,
+Chushu Zhou, Hanfu Chen, Hongnan Ma, Jiaxi Li, Jingqi
+Tong, Junxi Liu, Ke Chen, Shimin Li, Songlin Wang, Wei
+Jiang, Zhaoye Fei, Zhiyuan Ning, Chunguo Li, Chenhui
+Li, Ziwei He, Zengfeng Huang, Xie Chen, and Xipeng Qiu.
+Mova: Towards scalable and synchronized video-audio gen-
+eration, 2026. Technical report. Corresponding authors: Xie
+Chen and Xipeng Qiu. Project leaders: Qinyuan Cheng and
+Tianyi Liang. 2
+[52] Bernard W Silverman.Density estimation for statistics and
+data analysis. Routledge, 2018. 3
+[53] Aarohi Srivastava, Abhinav Rastogi, Abhishek Rao, Abu
+Awal Md Shoeb, Abubakar Abid, Adam Fisch, Adam R
+Brown, Adam Santoro, Aditya Gupta, Adri`a Garriga-Alonso,
+et al. Beyond the imitation game: Quantifying and extrap-
+olating the capabilities of language models.arXiv preprint
+arXiv:2206.04615, 2022. 2
+[54] Selim Tekin, Fatih Ilhan, Tiansheng Huang, Sihao Hu, and
+Ling Liu. Llm-topla: Efficient llm ensemble by maximising
+diversity. InFindings of EMNLP, 2024. 3
+[55] Bin Wang, Chao Xu, Xiaomeng Zhao, Linke Ouyang, Fan
+Wu, Zhiyuan Zhao, Rui Xu, Kaiwen Liu, Yuan Qu, Fukai
+Shang, Bo Zhang, Liqun Wei, Zhihao Sui, Wei Li, Botian
+Shi, Yu Qiao, Dahua Lin, and Conghui He. Mineru: An
+open-source solution for precise document content extraction,
+2024. 2
+[56] Bin Wang, Chao Xu, Xiaomeng Zhao, Linke Ouyang, Fan
+Wu, Zhiyuan Zhao, Rui Xu, Kaiwen Liu, Yuan Qu, Fukai
+Shang, Bo Zhang, Liqun Wei, Zhihao Sui, Wei Li, Botian
+Shi, Yu Qiao, Dahua Lin, and Conghui He. Mineru: An
+open-source solution for precise document content extraction,
+2024. 2
+[57] Peng Wang, Shuai Bai, Sinan Tan, Shijie Wang, Zhihao Fan,
+Jinze Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge,
+Yang Fan, Kai Dang, Mengfei Du, Xuancheng Ren, Rui Men,
+Dayiheng Liu, Chang Zhou, Jingren Zhou, and Junyang Lin.
+Qwen2-vl: Enhancing vision-language model’s perception of
+the world at any resolution.arXiv preprint arXiv:2409.12191,
+2024. 2, 5
+[58] Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed
+Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou.
+Self-consistency improves chain of thought reasoning in lan-
+guage models.arXiv preprint arXiv:2203.11171, 2022. 5,
+13
+[59] Yiming Wang, Pei Zhang, Baosong Yang, Derek F Wong, and
+Rui Wang. Latent space chain-of-embedding enables output-
+free llm self-evaluation.arXiv preprint arXiv:2410.13640,
+2024. 3, 8
+[60] Haoran Wei, Chenglong Liu, Jinyue Chen, Jia Wang, Lingyu
+Kong, Yanming Xu, Zheng Ge, Liang Zhao, Jianjian Sun,
+Yuang Peng, et al. General ocr theory: Towards ocr-2.0 via a
+unified end-to-end model.arXiv:2409.01704, 2024. 2
+[61] Nan Xiang, Tianyi Liang, Haiwen Huang, Shiqi Jiang,
+Hao Huang, Yifei Huang, Liangyu Chen, Changbo Wang,
+and Chenhui Li. Sel3dcraft: Interactive visual prompts
+for user-friendly text-to-3d generation.arXiv preprint
+arXiv:2508.00428, 2025. 2
+[62] Miao Xiong, Zhiyuan Hu, Xinyang Lu, YIFEI LI, Jie Fu,
+Junxian He, and Bryan Hooi. Can LLMs express their uncer-
+tainty? an empirical evaluation of confidence elicitation in
+LLMs. InThe Twelfth International Conference on Learning
+Representations, 2024. 3
+[63] Zhong Xu, Jianbin Tang, and Antonio Jimeno Yepes. Pub-
+laynet: largest dataset ever for document layout analysis.
+In2019 International conference on document analysis and
+recognition, pages 1015–1022, 2019. 2
+[64] Zhibo Yang, Jun Tang, Zhaohai Li, Pengfei Wang, Jianqiang
+Wan, Humen Zhong, Xuejing Liu, Mingkun Yang, Peng
+Wang, Shuai Bai, LianWen Jin, and Junyang Lin. Cc-ocr:
+A comprehensive and challenging ocr benchmark for evaluat-
+ing large multimodal models in literacy, 2024. 2, 5, 13
+[65] Ruiyang Zhang, Hu Zhang, and Zhedong Zheng. Vl-
+uncertainty: Detecting hallucination in large vision-language
+model via uncertainty estimation, 2024. 3, 5, 8
+[66] Yulong Zhang, Li Wang, Wei Du, Peilin Li, Yuqin
+Dai Zhiyuan Zhao, Lingyong Fang, Ziniu Liu, Ru Zhang,
+Huijia Zhu, and Gongshen Liu. Ncv: A node-wise con-
+sistency verification approach for low-cost structured error
+localization in llm reasoning, 2025. 3
+[67] Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan
+Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan
+Li, Dacheng Li, Eric Xing, et al. Judging llm-as-a-judge with
+mt-bench and chatbot arena.Advances in Neural Information
+Processing Systems, 36:46595–46623, 2023. 2
+[68] Lianghui Zhu, Xinggang Wang, and Xinlong Wang. Judgelm:
+Fine-tuned large language models are scalable judges.arXiv
+preprint, 2023. 2\nAppendix
+We provide more details of the proposed method and additional experimental results to help better understand our paper.
+The appendix is organized to present comprehensive information on our experimental setup, prompting strategies, additional
+results, and limitations of the current approach.
+Contents
+A . Experiment Setting 12
+A.1 . Datasets for Evaluation. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13
+A.2 . Baselines . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13
+B . Additional Experimental Results 13
+B.1. Comparative Analysis of OCR Methods . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14
+B.2. CE Thresholds Analysis . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+B.3. Model Calibration Analysis . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+B.4. Identical Model Sampling Analysis . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+B.5. GPT-4o Output Verbosity Analysis . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+B.6. Distance Metric Comparison . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+C . RealData Source 18
+D . Annotation Interface for Human Evaluation 18
+E . Algorithm Details 21
+E.1. CE Hyperparameters and Settings . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21
+F. Computational Cost and Efficiency Analysis 22
+G . OCR Evaluation Case Studies: CE vs. VLM-as-Judge Comparison 23
+H . Prompt 25
+H.1 . Evaluation Metrics . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26
+H.2 . Details of Compared Methods . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26
+I. Ensemble Results 26
+I.1 . CCOCR . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26
+I.2 . OCRBench-V2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 27
+I.3 . OCRBench . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 27
+J. Additional Representation Space Analysis 41
+K . Limitations and Future Directions 41
+A. Experiment Setting
+Implementation.We use inference-only evaluation with diverse VLMs followingvlmevalkit[ 15] defaults. Most models
+run on single NVIDIA H800 (80GB) GPU; largest models (e.g., Qwen2.5-VL-72B) use 2-4 GPUs. Our work involvesonly
+inference, eliminating training and minimizing computational cost.Edit distance uses Levenshtein; cosine uses bge-m3 [5],
+applied only to OCRBench-V2. All experiments apply temperature 0.0 (single-run) except Self-Consistency (T=0.7, 3 runs).
+The experimental environment is configured with Ubuntu 22.04.2 LTS running on Linux kernel 5.10.134-16.103.al8.x8664
+with x86 64 architecture. PyTorch 2.6.0 is compiled with CUDA 12.4 support (+cu124), indicating compatibility with the
+installed CUDA toolkit.
+12\nA.1. Datasets for Evaluation.
+Our research utilizes three datasets: OCRBench [ 38], OCRBench-V2 [ 38], and CCOCR [ 64], with the majority of our
+experiments conducted on OCRBench.
+To align our evaluation with human preferences in real-world contexts, we also curated a unique dataset consisting of
+1,000 PDF pages randomly selected from actual scenarios. These documents were processed using the state-of-the-art
+Qwen2.5-VL-72B model to perform OCR tasks. The resultant texts were manually compared to the original PDF pages, and
+each was assigned a quality score ranging from 1.0 (Perfect Match) to 0.0 (Mostly Incorrect), with varying degrees of text
+matching accuracy. This diverse dataset collection allows for a comprehensive assessment of OCR performance across various
+domains, languages, and formatting complexities, providing insights into both machine efficiency and human-centric accuracy.
+Detailed scoring criteria and methodology are available in Appendix C. Data cases are shown in Appendix G. Our annotated
+dataset is publicly available at:https://huggingface.co/datasets/Aslan-mingye/OCR-Quality.
+A.2. Baselines
+We establish two representative baseline approaches. These methods are widely adopted in current applications of VLMs, and
+serve as comparative references across varying levels of complexity and supervision.
+VLM-as-Judge.This baseline follows the mainstream paradigm of using large language models as evaluators to score
+candidate outputs. Specifically, we employ GPT4o, Qwen2-VL-72B, and Qwen2-VL-7B as evaluation models, each guided
+by standardized prompts to assess OCR output quality. The evaluation criteria emphasize semantic correctness, visual-text
+alignment, and structural fidelity.
+Single Model Output.To better highlight the performance gains introduced by Consensus Entropy, we adopt a direct
+single-model output strategy as a baseline. In this setting, each image is processed by a single VLM (e.g., GPT4o or Qwen2.5-
+VL-72B), and its raw prediction is used as the final result without post-processing. This configuration reflects common practice
+in many real-world OCR applications and provides a conservative lower-bound reference for evaluating the effectiveness of
+our framework.
+Self Consitency (SC).[ 58]selecting by majority voting among multiple samples from the same VLM. We set the temperature
+at 0.7 to make the models inference for 3 times and choose the best predictions.
+B. Additional Experimental Results
+This section presents additional detailed analyses of our Consensus Entropy framework to complement the results discussed in
+the main paper. The extended results provide deeper insights into the behavior and effectiveness of different entropy calculation
+methods, the impact of distribution characteristics, and practical implications for deployment.
+Figure 6. Normalized entropy comparison across different distribution types using the same aggregation methods. While Mean Distance
+shows the most distinctive pattern, all methods maintain similar relative positioning across distribution types, confirming the robustness of
+the entropy-based approach regardless of the specific computation method chosen.
+The specific version of GPT4o is gpt-40-2024-11-20.
+13\nFigure 6 extends our analysis of different aggregation methods by comparing their behavior across identical distribution
+types. The results demonstrate that while Mean Distance exhibits the most distinctive entropy pattern, all methods maintain
+consistent relative entropy values across distribution types. This consistency further validates our entropy-based approach by
+showing that the qualitative rankings of uncertainty remain stable regardless of the specific aggregation method employed.
+B.1. Comparative Analysis of OCR Methods
+To provide a comprehensive evaluation of different OCR approaches, we conducted a detailed comparison of three main
+strategies: Self-Consistency (SC@3), Routing-based ensemble, and Single model performance. Table 12 presents the results
+of this analysis, highlighting the relative performance improvements of each method.
+Table 12. Performance comparison of different OCR methods based on cumulative scores. SC@3 represents Self-Consistency with 3
+samples, Routing refers to the ensemble with rephrasing, and Single indicates individual model performance. Blue highlights indicate the
+best performance in each category, while green highlights mark the second best.
+Method Score Improvement (%)
+SC@3 (Average) 828 -2.8
+SC@3 (Best: Qwen2-VL-72B) 875 2.7
+Routing (Average) 907 6.5
+Routing (Best: Qwen2.5-VL-72B) 922 8.2
+Single (Average) 852 -
+Single (Best: Qwen2-VL-72B) 888 -
+The results demonstrate several key findings: First, the Routing-based ensemble approach consistently outperforms
+both SC@3 and Single model methods, with the best routing configuration achieving a score of 922, representing an 8.2%
+improvement over the best single model performance. Second, while SC@3 shows potential for improvement (2.7% over
+baseline when using Qwen2-VL-72B), its average performance actually decreases by 2.8%, indicating high variance in its
+effectiveness. Third, the gap between average and best performance is smallest for the Routing method (15 points) compared
+to SC@3 (47 points) and Single models (36 points), suggesting more consistent and reliable performance across different
+configurations.
+Figure 7. Effects of kernel bandwidth and distribution correlation on entropy estimates. Higher correlation values consistently result in lower
+entropy curves, highlighting how the spatial relationship between predictions influences the consensus measurement.
+Figure 7 investigates how kernel bandwidth settings and the correlation between distributions affect entropy estimates.
+A key finding is that higher correlation values consistently produce lower entropy curves, indicating that tightly clustered
+predictions (as would be expected for correct OCR outputs) naturally result in lower entropy measurements. This property is
+precisely what enables our CE metric to effectively distinguish between high-confidence and low-confidence predictions.
+14\nFigure 8. Visualization of entropy patterns across various scale and correlation settings. These examples illustrate how our entropy calculation
+responds to different distribution characteristics, with tighter, more correlated clusters resulting in lower entropy values regardless of scale.
+We also conducted experiments on OCRBench-V2 regarding the relationship between CE thresholds and benchmark scores,
+as shown in Table 18.
+B.2. CE Thresholds Analysis
+Table 18 reports the average scores of three models on OCRBench-V2 under different CE thresholds, showing that CE remains
+effective for verifying OCR and VQA-style tasks beyond the main OCRBench setting. Here, CE is used as a routing signal:
+lower thresholds keep only low-entropy (high-confidence) predictions, while higher thresholds allow more samples to pass.
+To make the routing behaviour more explicit, we further summarize the accuracy–computation trade-off in terms ofaccuracy
+improvement vs. rephrase ratio. Table 13 (numbers reproduced from the main paper and rebuttal) shows, for representative
+models on OCRBench-V2, the gain in accuracy (∆×10 2) and the percentage of samples routed for rephrasing at different
+thresholds. Smallerθ values route more samples and yield higher accuracy but incur greater computation, while largerθ values
+are more efficient but less aggressive. For CE-OCR experiments on OCRBench, we use a single global threshold θ= 0.5
+(Section 4.3); for OCRBench-V2 routing, the sweep in Table 13 indicates that values aroundθ≈0.5 offer a good balance
+between accuracy gains and routing cost.
+15\nTable 13. Threshold sensitivity analysis on OCRBench-V2. Each cell shows accuracy improvement (∆×10 2) / rephrase percentage (%).
+Lowerθroutes more samples for rephrasing, improving accuracy at the cost of additional computation.
+Model θ= 0.95 θ= 0.9 θ= 0.8 θ= 0.6 θ= 0.2
+Gemini Pro +1.6 / 11.5 +3.1 / 22.3 +4.3 / 43.5 +5.4 / 66.3 +6.1 / 91.5
+GPT-4o +3.8 / 15.0 +5.1 / 24.9 +6.8 / 48.7 +7.7 / 71.3 +8.8 / 91.2
+B.3. Model Calibration Analysis
+Note:ECE and Brier Score metrics are designed for classification probability calibration and are mismatched for our
+generation-based approach.This analysis is provided for reference only and should not be used as the primary evaluation
+criterion for CE, which is a post-hoc uncertainty metric derived from output agreement rather than probability
+prediction.
+For completeness, we evaluated CE using Expected Calibration Error (ECE), Brier Score, and AUC metrics against
+VLM-as-Judge methods using Qwen2.5VL-72B with different reference model combinations (diverse: InternVL+GPT4o vs
+related: QwenVL series). Despite ECE and Brier scores being primarily designed for classification probabilities, CE achieves
+favorable metrics (best ECE: 0.0842, Brier: 0.1169, AUC: 0.9226), though these values should not be overinterpreted given
+the methodological mismatch.
+Table 14. Calibration metrics for CE and VLM-as-Judge on Qwen2.5VL-72B predictions. CE demonstrates better calibration despite being
+designed for generation tasks rather than classification.
+Method ECE↓Brier↓AUC↑
+Judge-Related 0.1090 0.1404 0.8041
+Judge-Diverse 0.0952 0.1392 0.7727
+CE-Related 0.0938 0.1362 0.9181
+CE-Diverse0.0842 0.1169 0.9226
+B.4. Identical Model Sampling Analysis
+To evaluate CE’s robustness with minimal model diversity, we conducted experiments using identical models with stochastic
+sampling (temperature=0.7, 3 runs). Table 15 shows that even with the same model architecture and weights, CE-Ensemble
+consistently improves performance by leveraging sampling variance. This demonstrates that CE captures task-level uncertainty
+effectively, even when architectural diversity is absent.
+Table 15. CE-Ensemble performance with identical models using stochastic sampling. Individual run scores shown in parentheses. CE
+consistently selects better outputs across sampling variance.
+Model Text Rec. Scene VQA Doc VQA KIE Formula ALL
+Qwen2VL-7B 272 173 155 185 67 852
+(266,266,269) (171,168,170) (156,151,149) (182,181,181) (59,61,63) (834,827,832)
+Qwen2VL-72B 264 181 173 186 71 875
+(265,263,261) (179,182,177) (166,170,173) (183,183,183) (61,64,71) (854,865,865)
+Qwen2.5VL-72B 264 176 175 184 71 870
+(256,260,264) (172,174,174) (171,169,173) (184,182,186) (71,69,67) (854,854,864)
+B.5. GPT-4o Output Verbosity Analysis
+During threshold analysis (Figure 4 in main paper), GPT-4o exhibited non-monotonic accuracy patterns. Investigation revealed
+that GPT-4o generates verbose outputs for short-answer questions in OCRBench. For example, when other models answer
+“11.90”, GPT-4o responds: “The total amount of this receipt is **RM 11.90**, as stated under ‘total incl. GST @6%”’.
+16\nThis verbosity artificially inflates CE values. Table 16 shows that after cleaning outputs via regex and LLM-based filtering,
+GPT-4o’s accuracy exhibits expected monotonicity with CE thresholds.
+Table 16. GPT-4o performance under different CE thresholds before and after output cleaning. Cleaned outputs restore monotonic
+relationship between CE and accuracy.
+CE Threshold Original Cleaned
+≤0.7 0.781 0.831
+≤0.4 0.833 0.884
+≤0.2 0.833 0.928
+≤0.1 0.844 0.930
+B.6. Distance Metric Comparison
+CE supports multiple distance metrics depending on task requirements. Table 17 compares Edit Distance (character-level) and
+Cosine Distance (semantic-level) across different task types. Edit Distance excels in pure OCR tasks requiring character-level
+precision, while Cosine Distance (using bge-m3) performs better on complex VQA tasks with semantic variations. Both
+maintain the same CE framework—only the pairwise similarity computation differs.
+Table 17. Comparison of distance metrics for CE computation. The choice of metric depends on task characteristics: character-level
+precision vs semantic understanding.
+Method Granularity Best For Cost Used In
+Edit Distance Character OCR, Math, Code, Very low Main OCRBench
+Simple VQA (CPU) experiments; Table 1
+Cosine Semantic Complex VQA, Low (small Appendix
+Distance Diverse questions model) OCRBench-V2; Table 4
+Table 18. Performance of 3 models on OCRBench-V2 under Different CE Thresholds.
+Model CE Threshold Total QAs EN Overall CN Overall ALL Overall
+Gemini-PRO
+1.0 10000 0.519 0.431 0.520
+0.9 8816 0.549 0.465 0.546
+0.8 7252 0.580 0.535 0.582
+0.7 6009 0.614 0.560 0.610
+0.6 5221 0.643 0.588 0.633
+0.5 4499 0.640 0.596 0.652
+0.4 3276 0.702 0.650 0.668
+0.3 2323 0.772 0.698 0.701
+0.2 1664 0.785 0.648 0.743
+0.1 1041 0.828 0.690 0.790
+GPT4o
+1.0 10000 0.465 0.322 0.473
+0.9 8357 0.521 0.394 0.541
+0.8 6571 0.559 0.463 0.584
+0.7 5341 0.585 0.529 0.604
+0.6 4566 0.595 0.581 0.615
+0.5 3903 0.614 0.625 0.639
+0.4 3031 0.652 0.647 0.652
+0.3 2423 0.665 0.708 0.682
+0.2 1665 0.769 0.663 0.736
+Continued on next page
+17\nTable 18 – continued from previous page
+Model Threshold Total Questions EN Overall CN Overall ALL Overall
+0.1 1192 0.823 0.740 0.796
+Intern2.5VL-26B
+1.0 10000 0.494 0.442 0.532
+0.9 7160 0.558 0.511 0.580
+0.8 5948 0.581 0.553 0.593
+0.7 5198 0.614 0.551 0.620
+0.6 4629 0.626 0.623 0.642
+0.5 3976 0.634 0.646 0.664
+0.4 2850 0.673 0.630 0.697
+0.3 2056 0.677 0.658 0.744
+0.2 1638 0.776 0.696 0.772
+0.1 1118 0.829 0.742 0.799
+C. RealData Source
+The datasets used in our OCR evaluation experiments were carefully curated to reflect diverse real-world document scenarios.
+Below we present the detailed composition of these datasets, encompassing various languages, document types, and content
+domains.
+Table 19. Sources of the human-labeled OCR Dataset
+ebook paper textbook other
+ZH zhishilei, zhongwenzaix-
+ian, gift, thomas
+- by, kps, kmath, zhong-
+gaokao, gaojiaoshe, gao-
+dengjiaoyu, k12 edu plat-
+form, jiaoan, zju icicles
+-
+EN theeye, physicsandmath-
+stutor, planetebook
+escholarship, biorxiv,
+springer, sagepub,
+scholarworks, psyarxiv,
+chemrxiv, iopscience,
+royalsocietypublishing,
+criso
+kps, bookboon, california
+14sets, scholarworks
+dev books repository
+MLrenhang, banshujiang - openstax, math -
+Other- - - coursehero, studypool
+The dataset composition encompasses a wide range of content types and sources, ensuring comprehensive evaluation of
+OCR capabilities. Chinese language materials include electronic books from major repositories as well as educational content
+across various academic levels. English content spans scholarly publications from multiple disciplines, educational materials,
+and literature. Multilingual resources incorporate specialized content with mixed language elements, while additional sources
+provide diverse formatting challenges. This heterogeneous collection enables robust assessment of OCR performance across
+domains, languages, and formatting complexities representative of real-world document processing requirements.
+For human evaluation of OCR quality, we developed a standardized 4-level scoring system:
+1.Perfect Match (0.9-1.0): The prediction matches the image text exactly with no errors.
+2.Minor Errors (0.7-0.8): Very close to the image text with only small mistakes that do not affect understanding.
+3.Partially Correct (0.4-0.6): Contains noticeable errors or captures only part of the text.
+4.Mostly Incorrect (0.0-0.3): Largely incorrect or unrelated to the text in the image.
+This scoring system was used consistently across all human evaluations in our experiments to ensure reliable assessment of
+OCR quality.
+D. Annotation Interface for Human Evaluation
+To ensure the quality of our real-world dataset and provide reliable human judgments for OCR performance evaluation, we
+developed a dedicated annotation interface. Figure 9 presents our custom-built tool designed specifically for OCR evaluation
+18\ntasks.
+Figure 9. OCR Human Evaluation Interface: This annotation tool enables efficient assessment of OCR quality across multiple models. The
+interface displays the source image alongside OCR results, allowing annotators to assign quality scores based on a standardized 4-level
+rating system (from completely correct to mostly incorrect). The tool tracks progress, enables navigation between samples, and supports
+targeted image selection, facilitating comprehensive human evaluation of OCR performance on real-world data.
+The annotation interface is implemented using Gradio, a Python library for creating web-based interfaces. This tool
+facilitates efficient human evaluation of OCR results by displaying the original image alongside the extracted text. Annotators
+19\ncan assign one of four quality ratings to each OCR output: (1) Completely Correct, (2) Minor Errors, (3) Partially Correct,
+or (4) Mostly Incorrect. This standardized rating system ensures consistency across evaluations and provides fine-grained
+assessment of OCR quality.
+The interface includes several features to enhance annotation efficiency: a status display showing progress through the
+dataset, navigation controls to move between samples, the ability to skip difficult cases, and a direct jump function to specific
+image indices. All annotations are automatically saved to the original data file, creating a persistent record of human judgments.
+This annotation tool played a critical role in developing our ground truth evaluations and validating the effectiveness of the
+Consensus Entropy framework against human quality assessments.
+20\nE. Algorithm Details
+This section provides detailed pseudocode for the key algorithms used in our Consensus Entropy framework.
+Algorithm 1Consensus Entropy for Multi-Model OCR Evaluation
+Require:{O 1,O 2,...,O n}- outputs fromnOCR models for imageI
+Require:σ- base kernel bandwidth parameter
+Require:α- adaptive bandwidth scaling factor
+Require:N- grid resolution for probability density estimation
+// Compute pairwise entropies and weights
+fori= 1tondo
+forj= 1ton,j̸=ido
+Eij←ComputePairwiseEntropy(O i,O j)
+end for
+E i← 1
+n−1
+P
+j̸=iEij{Average entropy distance}
+wi← 1/E iPn
+k=1 1/E k
+{Normalize weights}
+Σi←σ·(1 +α· E i)·I{Adaptive covariance}
+end for
+// Project outputs to semantic space and estimate distribution on N×N grid
+{v1,v 2,...,v n}←ProjectToSemanticSpace({O 1,O 2,...,O n})
+P←EstimateDistributionOnGrid({v i,w i,Σ i}n
+i=1,N)
+// Calculate entropy fromN×Ngrid-based distribution
+δ←− PN
+x=1
+PN
+y=1P[x,y]·logP[x,y]{Discrete entropy calculation onN×Ngrid}
+returnδ{Return Consensus Entropy}
+Algorithm 2CE-OCR: Entropy-guided Ensemble and Routing Framework
+Require:I- input image containing text
+Require:{M 1,M 2,...,M n}- set of OCR models
+Require:M exp - stronger vision-language model for rephrasing
+Require:θ- entropy threshold for routing
+{O1,O 2,...,O n}←{M 1(I),M 2(I),...,M n(I)}{Generate predictions}
+δ←ConsensusEntropy({O 1,O 2,...,O n}){Calculate entropy using Algorithm 1}
+ifδ≤θthen
+// Use precomputed weights from Algorithm 1
+Ofinal←WeightedEnsemble({O 1,O 2,...,O n},{w 1,w 2,...,w n})
+else
+Oens←SimpleEnsemble({O 1,O 2,...,O n}){Basic ensemble}
+Ofinal←M exp(I,{O 1,O 2,...,O n},O ens){Route to stronger model for rephrasing}
+end if
+returnO final
+E.1. CE Hyperparameters and Settings
+For reproducibility, we summarize the key hyperparameters used in all CE experiments.
+Distance Metrics.As detailed in Table 17, CE supports two distance metrics: (1) character-level Edit Distance for pure
+OCR tasks, mathematical formulas, code, and simple VQA, and (2) semantic Cosine Distance for complex VQA and diverse
+questions. In practice, all OCRBench (main paper Table 1) and human-evaluation experiments use Edit Distance on raw text
+strings, while OCRBench-V2 experiments employ Cosine Distance based on bge-m3 embeddings (and bge-large-zh-v1.5 in
+early pilot experiments), following the configurations discussed in the rebuttal.
+Kernel and Grid Parameters.In the semantic case, we apply isotropic Gaussian kernels with covariance Σi =σ·(1 +
+α·E i)·I on a fixedN×N grid, as specified in Algorithm 1. The bandwidth base σ, scaling factorα, and grid resolutionN
+21\nare treated as global constants shared by all models on a given benchmark and tuned once on a held-out development split. We
+observe that CE is empirically robust to moderate changes in these values; performance is dominated by the choice of distance
+metric and routing threshold rather than fine-grained kernel tuning.
+Sampling Temperature.Unless otherwise stated, all VLMs run with temperature 0.0 (greedy decoding). Self-Consistency
+baselines and identical-model CE-Ensemble experiments use temperature 0.7 with 3 samples, as reported in Section 4 and
+Table 15.
+F. Computational Cost and Efficiency Analysis
+We measure both CE calculation costs and efficiency, comparing single-query verification (requiring one pairwise CE
+computation) against ensemble approaches.
+Computational Cost of CE.We benchmarked CE computation on 1,000 OCR output pairs (average length∼1K characters).
+Table 20 presents detailed computational cost analysis. Edit Distance (CPU) is the fastest method at 0.0002s per computation,
+requiring no GPU resources. All methods except bge-m3 (CPU) achieve sub-0.1s computation times. For maximum efficiency,
+we recommend using Edit Distance for character-level tasks and GPU-accelerated models for semantic tasks, while avoiding
+CPU execution of large models.
+VLM Cost Comparison.Paper ”Figure 5: Performance comparison across token lengths” show that CE based on small
+VLMsoutperform stronger single models and require fewer tokens, less GPU memory, and offer faster inference.
+Notably, while 70B+ models demand at least 4×80GB GPUs, multiple small models can run concurrently on a single GPU,
+highlighting the efficiency of the CE framework.
+CE Method Time Cost (s) Memory (GiB)Avg Med Total
+Edit Distance (CPU) 0.0002 0.0000 0.1626 -
+bge1.5-zh (GPU) 0.0116 0.0117 11.5716 1.19
+bge-m3 (GPU) 0.0348 0.0311 34.7902 4.01
+bge-m3 (CPU) 2.6518 2.0933 2651.7895 -
+Table 20.Computational cost of CE on 1,000 long-text pairs (average length∼1K chars).Avg/Med/Total: average,median, total time
+cost of one pair.
+Table 21. VLM cost comparison on OCRBench. Ensembles of small models achieve better performance with lower resource requirements
+than single large models.
+Model Time (s) Token/s Memory (GiB)
+InternVL2.5-4B 409 6.98 7.90
+InternVL2.5-8B 672 4.28 20.71
+InternVL2.5-26B 951 3.03 52.67
+InternVL2.5-78B 1772 1.62 158.53
+Ovis2-4B 680 27.49 9.09
+Ovis2-8B 611 30.27 18.26
+Ovis2-34B 1191 15.33 66.60
+Qwen2.5VL-3B 633 19.05 8.04
+Qwen2.5VL-7B 771 153.16 16.99
+Qwen2.5VL-72B 2715 7.52 140.98
+22\nG. OCR Evaluation Case Studies: CE vs. VLM-as-Judge Comparison
+To provide a more intuitive understanding of how Consensus Entropy (CE) compares with VLM-as-Judge methods in
+real-world OCR tasks, we present several representative cases that highlight their respective performance characteristics.
+Scoring Methodology.All cases use the 4-level scoring system defined in Appendix C: Perfect Match (0.9–1.0), Minor
+Errors (0.7–0.8), Partially Correct (0.4–0.6), and Mostly Incorrect (0.0–0.3). For CE interpretation: low CE (<0.3 ) indicates
+high consensus and likely correct output; medium CE (0.3–0.7) suggests moderate disagreement; high CE (>0.7 ) signals
+significant divergence and probable errors.
+Figure 10. Case 1: High-quality Chinese OCR sample with strong agreement between human evaluation (4/4), CE score (0.9891), and
+VLM-as-Judge score (0.9).
+Figure 11. Case 2: Low-quality English OCR sample with unanimous poor quality assessment across human evaluation (1/4), CE score
+(0.0204), and VLM-as-Judge score (0.0).
+Case 2 Analysis.Although the OCR output in Case 2 may appear superficially readable, it contains critical errors in financial
+and numerical figures that cause high VLM disagreement. These character-level discrepancies—easily missed by semantic-only
+methods—result in elevated CE values, correctly flagging the output as unreliable for downstream applications such as invoice
+23\nprocessing or data extraction.
+Figure 12. Case 3: High-quality academic Chinese text correctly identified by all evaluation methods, demonstrating strong performance
+on complex domain-specific content.
+Figure 13. Case 4: Structured tabular content with perfect human score (4/4) and near-perfect automated evaluation scores from both
+CE (0.9643) and VLM-as-Judge (1.0).
+24\nFigure 14. Case 5: Multiple-choice test questions accurately evaluated by all methods, showing robust performance on educational
+content with specialized formatting.
+These cases demonstrate that both CE and VLM-as-Judge methods generally align with human evaluation, but with
+important differences. CE shows particularly strong correlation with human judgments on complex documents (Cases 1, 3, and
+5), where nuanced understanding is required. The strong agreement between human scores and automated methods validates
+our approach, particularly the training-free CE method which achieves comparable performance to supervised VLM-as-Judge
+approaches without requiring explicit quality assessment prompting.
+Notably, in cases with clear quality issues (Case 2), both methods accurately identify poor OCR results, confirming their
+reliability for quality filtering applications. For structured content (Case 4), both approaches excel, suggesting that format
+preservation is well-captured by these evaluation techniques.
+These qualitative examples complement our quantitative results in Section 4, reinforcing that CE provides a robust,
+unsupervised alternative to more complex and computationally expensive VLM-as-Judge methods for OCR quality assessment.
+H. Prompt
+The effectiveness of OCR tasks in VLLMs is significantly influenced by the design of prompts. We present the primary
+prompts utilized in our experiments below, each serving a specific purpose in the evaluation framework. These prompts were
+carefully crafted based on extensive preliminary explorations to maximize OCR performance while maintaining consistency
+across different models.
+OCR VLM-as-Judge Prompt
+You are an expert evaluator assessing the quality of OCR (Optical Character Recognition) model predictions.
+You will receive:
+- A question
+- A prediction generated by the OCR model.
+- The corresponding image containing text.
+Your task is to judge how well the predicted text matches the visual textual content in the image, with respect to the question’s intent.
+Evaluation criteria:
+1. Focus only on whether the prediction correctly reflects the textual content of the image.
+2. Assign a score from 0 to 1 in steps of 0.1, using the following four-level guideline:
+Scoring Reference:
+-0.9-1.0 (Perfect Match)
+The prediction matches the image text exactly, with no errors or omissions.
+-0.7–0.8 (Minor Errors, Still Clear)
+The prediction is very close to the image text, with only small mistakes that do not affect understanding.
+-0.4–0.6 (Partially Correct)
+The prediction contains noticeable errors or captures only part of the text, reducing clarity.
+25\n-0.0–0.3 (Mostly or Completely Incorrect)
+The prediction is largely incorrect or unrelated to the text in the image.
+Respond only with the numerical score (e.g., 0.9). Do not include any explanation or commentary.
+OCR CE-Guided Router Prompt
+You are an expert AI assistant tasked with improving answers to visual questions. Please look at the image and examine the following question and
+the current answers from different models.
+Question:{question}
+Current model predictions:{predictions str}
+Your task is to synthesize these predictions and create a single improved answer that:
+1. Is more accurate based on the visual content
+2. Is concise and direct
+3. Uses a natural, conversational tone
+4. Maintains the core meaning of the original answers if they were correct
+5. Improves clarity and precision
+Do not invent details not present in the image. Your answer should be grounded in what is actually visible.
+Please provide ONLY the improved answer with no explanations or additional text.
+OCR Qwen2.5VL-72B Prompt
+You are a very professional expert at OCR tasks. Please analyze the following image and extract all text content.
+1. Ensure that the extracted text matches the original in the image and maintains the original structure.
+2. If the image contains two columns, you should extract all text in the left column before you move on to the right.
+3. Ignore the headers, but keep the footnotes, title.
+4. You could either use LaTeX, KaTeX or Markdown format for math formulas, physics equations, chemical expressions etc.
+5. Do not add or modify the original content!
+H.1. Evaluation Metrics
+To evaluate model performance, we employed multiple metrics assessing various aspects of OCR quality. The character error
+rate (CER) and word error rate (WER) measured the character-level and word-level accuracy respectively, capturing fine-
+grained recognition performance. BLEU and ROUGE-L scores assessed the overall textual similarity between predictions and
+ground truth, with ROUGE-L particularly sensitive to longer n-gram overlaps that indicate structural preservation. For semantic
+accuracy, we calculated embedding similarity using sentence transformers, which effectively captures meaning preservation
+even when exact wording differs. Additionally, we employed task-specific metrics for specialized OCR applications: formula
+recognition used a LaTeX-aware F1 score that accounts for equivalent expressions, while table extraction was evaluated using
+TEDS (Table Edit Distance Similarity) to measure structural fidelity. Collectively, these metrics provided a comprehensive
+evaluation framework that assessed both the syntactic accuracy and semantic fidelity of OCR outputs across diverse document
+understanding scenarios.
+H.2. Details of Compared Methods
+Our comparative analysis incorporated several state-of-the-art approaches for OCR evaluation and improvement. The VLM-as-
+Judge paradigm was implemented using three different foundation models: GPT4o, Qwen2-VL-72B, and Qwen2-VL-7B,
+each prompted with the standardized evaluation instructions shown in Section A.2. For traditional evaluation metrics, we
+utilized the benchmark methodology from OCRBench, employing exact match and fuzzy matching criteria with standardized
+preprocessing to normalize formatting variations. The self-verification methods included both the token-level confidence based
+approach and our proposed Consensus Entropy framework. For token-level confidence, we aggregated model-reported logit
+scores and calibrated them using temperature scaling. The CE framework was implemented with multiple variations in entropy
+calculation methods, including Mean Distance, Sum, Max, and Mean methods as detailed in Section 3.1 of the main paper. All
+baseline methods were evaluated using identical test samples and environmental configurations to ensure fair comparison.
+I. Ensemble Results
+I.1. CCOCR
+Table 22 summarizes the ensemble performance of three CE -selected model combinations on the CCOCR benchmark,
+spanning four major OCR task categories:KIE,Document Parsing,Multilingual OCR, andMulti -scene OCR. For each
+26\ncombination, we report both the ensemble results (first row) and the performance of the best-performing single model in the
+group (second row,italicized). The final column reports theOverall Score, computed as the average across the four tasks.
+Table 22. CCOCR Ensemble Results
+Models Task Performance Overall
+KIE Doc Parsing Multi Language Multi Scene Score
+Qwen2.5-VL-3B, Qwen2.5-VL-7B, Qwen2.5-VL-72B 89.27 64.85 79.75 85.56 79.86
+Best Single (Qwen2.5-VL-72B)89.51 62.34 80.77 86.34 79.74
+Qwen2.5-VL-3B, Qwen2.5-VL-7B, Qwen2-VL-7B-Instruct 87.16 61.19 77.49 83.09 77.23
+Best Single (Qwen2.5-VL-7B)87.42 60.67 78.49 84.12 77.67
+InternVL2 5-4B, Qwen2.5-VL-7B, Qwen2.5-VL-72B 88.71 62.48 79.90 84.90 79.00
+Best Single (Qwen2.5-VL-72B)89.51 62.34 80.77 86.34 79.74
+I.2. OCRBench-V2
+Table 23 presents the bilingual evaluation of seven CE-selected multi-model aggregation schemes on OCRBench-V2. Each
+scheme combines four to five vision -language models (VLMs).Ensemble Scoredenotes the overall performance of the
+aggregated model, whereasSingle Bestis the highest -scoring individual model within the same ensemble for the corresponding
+language subset. Their absolute difference, ∆ =Ensemble Score−Single Best , is reported in the right-most column. Results
+with the highest score in each language subset are highlighted in blue, and all positive gains (∆>0) are shaded in green.
+Table 23. OCRBench-V2 Ensemble Results
+Models Ensemble Score Single Best∆
+English Chinese English Chinese English Chinese
+internvl2 5 26b, qwen2vl-8b, gemini pro
+MiniCPM-V-2 6 0.588 0.528 0.555 0.442 0.033 0.086
+gemini pro, gpt4o, internvl2 5 26b
+qwen2vl-8b 0.589 0.521 0.555 0.442 0.034 0.079
+internvl2 5 26b, gpt4o, qwen2vl-8b
+MiniCPM-V-2 6 0.567 0.483 0.555 0.442 0.012 0.041
+internvl2 8b, cambrian 8b, llava onevision qwen2 7b ov 0.538 0.395 0.404 0.363 0.134 0.032
+idefics3, llava onevision qwen2 7b ov, MiniCPM-V-2 6 0.550 0.466 0.416 0.307 0.134 0.159
+internvl2 8b, cambrian 8b, llavar 0.521 0.387 0.404 0.363 0.117 0.024
+internvl2 8b, cambrian 8b, textharmony 0.520 0.394 0.404 0.363 0.116 0.031
+I.3. OCRBench
+Tables 24, 25,26 present supplementary results on OCRBENCH, covering CE-selected ensemble combinations of 3, 4, and 5
+models. Each row represents a specific ensemble configuration. TheScorecolumn reports the final ensemble performance
+obtained via CE-based prediction selection. TheMax,Min, andAvgcolumns correspond to the highest, lowest, and mean
+scores among the participating individual models. The rightmost columns denote the absolute gains of the ensemble over its
+components: ∆max =Score−Min , ∆min =Score−Max , and ∆avg =Score−Avg . Blue highlights indicate the best result
+among both the ensemble and its constituent models, while green shading marks positive relative gains.
+27\nTable 24. OCRBench Ensemble Results (5 models)
+Models Score Max Min Avg∆ max ∆min ∆avg
+Ovis2-1B, Qwen2.5-VL-72B, SenseChat-Vision
+Step1V , Step1o 95.8 92.6 87.9 89.50 7.9 3.2 6.30
+Ovis2-4B, Qwen2.5-VL-7B, SenseChat-Vision
+Step1V , Step1o 95.7 92.6 87.4 89.78 8.3 3.1 5.92
+Ovis2-4B, Qwen2.5-VL-72B, SenseChat-Vision
+Step1V , Step1o 95.6 92.6 87.9 89.88 7.7 3.0 5.72
+Ovis2-4B, Qwen-VL-Plus-0809, SenseChat-Vision
+Step1V , Step1o 95.6 92.6 84.3 89.16 11.3 3.0 6.44
+MiniCPM-V-2 6, Qwen2.5-VL-72B, SenseChat-Vision
+Step1V , Step1o 95.6 92.6 85.2 88.74 10.4 3.0 6.86
+Ovis2-1B, Qwen2.5-VL-7B, SenseChat-Vision
+Step1V , Step1o 95.5 92.6 87.4 89.40 8.1 2.9 6.10
+Ovis2-4B, SenseChat-Vision, Step1V
+Step1o, bailingMM-Lite 95.5 92.6 85.2 89.34 10.3 2.9 6.16
+GLM4V PLUS, MUG-U-7B, Qwen2.5-VL-72B
+Step1V , Step1o 95.5 92.6 84.3 88.90 11.2 2.9 6.60
+Ovis1.6-Gemma2-27B, Qwen2.5-VL-72B, SenseChat-Vision
+Step1V , Step1o 95.5 92.6 85.6 88.82 9.9 2.9 6.68
+MUG-U-7B, Qwen2-VL-7B-Instruct, SenseChat-Vision
+Step1o, bailingMM-Lite 95.5 92.6 84.3 88.52 11.2 2.9 6.98
+GLM4V PLUS, Qwen2.5-VL-7B, SenseChat-Vision
+Step1V , Step1o 95.5 92.6 84.3 88.46 11.2 2.9 7.04
+InternVL2 5-78B-MPO, Qwen2.5-VL-72B, SenseChat-Vision
+Step1V , Step1o 95.4 92.6 87.9 89.88 7.5 2.8 5.52
+Ovis2-4B, Qwen2-VL-7B-Instruct, SenseChat-Vision
+Step1V , Step1o 95.4 92.6 84.3 89.16 11.1 2.8 6.24
+Ovis2-4B, Qwen2-VL-7B-Instruct, Qwen2.5-VL-72B
+Step1V , Step1o 95.4 92.6 84.3 88.86 11.1 2.8 6.54
+GLM4V PLUS, Qwen2.5-VL-72B, SenseChat-Vision
+Step1V , Step1o 95.4 92.6 84.3 88.56 11.1 2.8 6.84
+Ovis2-1B, Qwen2-VL-7B-Instruct, Qwen2.5-VL-72B
+Step1V , Step1o 95.4 92.6 84.3 88.48 11.1 2.8 6.92
+MUG-U-7B, Ovis2-1B, Qwen2.5-VL-72B
+Step1V , Step1o 95.3 92.6 87.9 89.84 7.4 2.7 5.46
+MUG-U-7B, Qwen2.5-VL-7B, SenseChat-Vision
+Step1V , Step1o 95.3 92.6 87.4 89.82 7.9 2.7 5.48
+InternVL2 5-78B-MPO, Ovis2-1B, Qwen2.5-VL-72B
+Step1V , Step1o 95.3 92.6 87.9 89.80 7.4 2.7 5.50
+MUG-U-7B, Ovis2-4B, Qwen-VL-Plus-0809
+continued on next page
+28\ncontinuation sheet 24:OCRBench Ensemble Results (5 models)
+Models Score Max Min Avg∆ max ∆min ∆avg
+Step1V , Step1o 95.3 92.6 84.3 89.50 11.0 2.7 5.80
+MUG-U-7B, Qwen2-VL-72B-Instruct, SenseChat-Vision
+Step1o, bailingMM-Lite 95.3 92.6 85.2 89.42 10.1 2.7 5.88
+Ovis2-8B, SenseChat-Vision, Step1V
+Step1o, bailingMM-Lite 95.3 92.6 85.2 89.02 10.1 2.7 6.28
+Ovis2-1B, Qwen-VL-Plus-0809, SenseChat-Vision
+Step1V , Step1o 95.3 92.6 84.3 88.78 11.0 2.7 6.52
+Ovis2-1B, Qwen2-VL-7B-Instruct, SenseChat-Vision
+Step1V , Step1o 95.3 92.6 84.3 88.78 11.0 2.7 6.52
+Qwen2.5-VL-72B, SenseChat-Vision, Step1V
+Step1o, bailingMM-Lite 95.3 92.6 85.2 88.74 10.1 2.7 6.56
+MUG-U-7B, Qwen-VL-Plus-0809, SenseChat-Vision
+Step1o, bailingMM-Lite 95.3 92.6 84.3 88.52 11.0 2.7 6.78
+GLM4V PLUS, Ovis2-1B, Qwen2.5-VL-72B
+Step1V , Step1o 95.3 92.6 84.3 88.48 11.0 2.7 6.82
+GLM4V PLUS, MUG-U-7B, Qwen-VL-Plus-0809
+Step1V , Step1o 95.3 92.6 84.3 88.18 11.0 2.7 7.12
+MUG-U-7B, Ovis2-4B, Qwen2.5-VL-72B
+Step1V , Step1o 95.2 92.6 87.9 90.22 7.3 2.6 4.98
+InternVL2 5-78B-MPO, Ovis2-1B, Qwen2.5-VL-7B
+Step1V , Step1o 95.2 92.6 87.4 89.70 7.8 2.6 5.50
+MUG-U-7B, Qwen2-VL-72B-Instruct, Qwen2.5-VL-7B
+Step1V , Step1o 95.2 92.6 87.4 89.70 7.8 2.6 5.50
+Ovis2-8B, Qwen2.5-VL-72B, SenseChat-Vision
+Step1V , Step1o 95.2 92.6 87.9 89.56 7.3 2.6 5.64
+MUG-U-7B, Ovis2-4B, Qwen2-VL-7B-Instruct
+Step1V , Step1o 95.2 92.6 84.3 89.50 10.9 2.6 5.70
+Ovis2-8B, Qwen2.5-VL-7B, SenseChat-Vision
+Step1V , Step1o 95.2 92.6 87.4 89.46 7.8 2.6 5.74
+MUG-U-7B, SenseChat-Vision, Step1V
+Step1o, bailingMM-Lite 95.2 92.6 85.2 89.38 10.0 2.6 5.82
+MUG-U-7B, Qwen2.5-VL-7B, SenseChat-Vision
+Step1o, bailingMM-Lite 95.2 92.6 85.2 89.14 10.0 2.6 6.06
+MUG-U-7B, MiniCPM-V-2 6, Qwen2.5-VL-72B
+Step1V , Step1o 95.2 92.6 85.2 89.08 10.0 2.6 6.12
+Ovis2-1B, SenseChat-Vision, Step1V
+Step1o, bailingMM-Lite 95.2 92.6 85.2 88.96 10.0 2.6 6.24
+GLM4V PLUS, MUG-U-7B, Qwen2.5-VL-7B
+Step1V , Step1o 95.2 92.6 84.3 88.80 10.9 2.6 6.40
+Qwen2.5-VL-7B, SenseChat-Vision, Step1V
+Step1o, bailingMM-Lite 95.2 92.6 85.2 88.64 10.0 2.6 6.56
+continued on next page
+29\ncontinuation sheet 24:OCRBench Ensemble Results (5 models)
+Models Score Max Min Avg∆ max ∆min ∆avg
+MiniCPM-V-2 6, Ovis2-1B, Qwen2.5-VL-7B
+Step1V , Step1o 95.2 92.6 85.2 88.56 10.0 2.6 6.64
+Ovis2-1B, Qwen-VL-Plus-0809, Qwen2.5-VL-72B
+Step1V , Step1o 95.2 92.6 84.3 88.48 10.9 2.6 6.72
+Qwen2-VL-7B-Instruct, SenseChat-Vision, Step1V
+Step1o, bailingMM-Lite 95.2 92.6 84.3 88.02 10.9 2.6 7.18
+InternVL2 5-78B-MPO, MUG-U-7B, Qwen2.5-VL-72B
+Step1V , Step1o 95.1 92.6 87.9 90.22 7.2 2.5 4.88
+MUG-U-7B, Ovis2-4B, Qwen2.5-VL-7B
+Step1V , Step1o 95.1 92.6 87.4 90.12 7.7 2.5 4.98
+Ovis2-4B, Qwen2-VL-72B-Instruct, SenseChat-Vision
+Step1V , Step1o 95.1 92.6 88.6 90.06 6.5 2.5 5.04
+InternVL2 5-78B-MPO, Qwen2.5-VL-7B, SenseChat-Vision
+Step1V , Step1o 95.1 92.6 87.4 89.78 7.7 2.5 5.32
+MUG-U-7B, Ovis2-8B, Step1V
+Step1o, bailingMM-Lite 95.1 92.6 85.2 89.36 9.9 2.5 5.74
+MUG-U-7B, Qwen-VL-Max-0809, SenseChat-Vision
+Step1o, bailingMM-Lite 95.1 92.6 85.2 89.28 9.9 2.5 5.82
+MUG-U-7B, Qwen2.5-VL-72B, SenseChat-Vision
+Step1o, bailingMM-Lite 95.1 92.6 85.2 89.24 9.9 2.5 5.86
+MUG-U-7B, Qwen2-VL-7B-Instruct, SenseChat-Vision
+Step1V , Step1o 95.1 92.6 84.3 89.20 10.8 2.5 5.90
+Ovis2-4B, Ovis2-8B, Qwen2.5-VL-72B
+Step1o, bailingMM-Lite 95.1 92.6 85.2 89.18 9.9 2.5 5.92
+MUG-U-7B, Ovis2-1B, Qwen-VL-Plus-0809
+Step1V , Step1o 95.1 92.6 84.3 89.12 10.8 2.5 5.98
+MUG-U-7B, Qwen-VL-Plus-0809, Qwen2-VL-72B-Instruct
+Step1V , Step1o 95.1 92.6 84.3 89.08 10.8 2.5 6.02
+InternVL2 5-26B, Ovis2-1B, SenseChat-Vision
+Step1V , Step1o 95.1 92.6 85.4 89.00 9.7 2.5 6.10
+Qwen2-VL-72B-Instruct, SenseChat-Vision, Step1V
+Step1o, bailingMM-Lite 95.1 92.6 85.2 88.92 9.9 2.5 6.18
+InternVL2 5-38B, MUG-U-7B, Qwen2.5-VL-7B
+SenseChat-Vision, Step1o 95.1 92.6 84.1 88.92 11.0 2.5 6.18
+Ovis2-4B, Qwen-VL-Plus-0809, Qwen2.5-VL-72B
+Step1V , Step1o 95.1 92.6 84.3 88.86 10.8 2.5 6.24
+Ovis2-8B, Qwen-VL-Plus-0809, SenseChat-Vision
+Step1V , Step1o 95.1 92.6 84.3 88.84 10.8 2.5 6.26
+Ovis2-8B, Qwen2-VL-7B-Instruct, SenseChat-Vision
+Step1V , Step1o 95.1 92.6 84.3 88.84 10.8 2.5 6.26
+MUG-U-7B, Qwen2-VL-7B-Instruct, Qwen2.5-VL-7B
+continued on next page
+30\ncontinuation sheet 24:OCRBench Ensemble Results (5 models)
+Models Score Max Min Avg∆ max ∆min ∆avg
+Step1V , Step1o 95.1 92.6 84.3 88.80 10.8 2.5 6.30
+InternVL2 5-38B, MUG-U-7B, Qwen2.5-VL-7B
+Step1V , Step1o 95.1 92.6 84.1 88.76 11.0 2.5 6.34
+MiniCPM-V-2 6, Ovis2-1B, Qwen2.5-VL-72B
+Step1V , Step1o 95.1 92.6 85.2 88.66 9.9 2.5 6.44
+Ovis2-1B, Qwen2.5-VL-72B, Step1V
+Step1o, bailingMM-Lite 95.1 92.6 85.2 88.66 9.9 2.5 6.44
+MiniCPM-V-2 6, Qwen2.5-VL-7B, SenseChat-Vision
+Step1V , Step1o 95.1 92.6 85.2 88.64 9.9 2.5 6.46
+Ovis2-1B, Qwen2.5-VL-7B, Step1V
+Step1o, bailingMM-Lite 95.1 92.6 85.2 88.56 9.9 2.5 6.54
+Qwen-VL-Plus-0809, Qwen2.5-VL-7B, SenseChat-Vision
+Step1V , Step1o 95.1 92.6 84.3 88.46 10.8 2.5 6.64
+GLM4V PLUS, Ovis2-1B, Qwen2.5-VL-7B
+Step1V , Step1o 95.1 92.6 84.3 88.38 10.8 2.5 6.72
+MUG-U-7B, Qwen-VL-Plus-0809, Step1V
+Step1o, bailingMM-Lite 95.1 92.6 84.3 88.36 10.8 2.5 6.74
+GLM4V PLUS, Ovis2-4B, Qwen-VL-Plus-0809
+SenseChat-Vision, Step1o 95.1 92.6 84.3 88.30 10.8 2.5 6.80
+GLM4V PLUS, SenseChat-Vision, Step1V
+Step1o, bailingMM-Lite 95.1 92.6 84.3 88.02 10.8 2.5 7.08
+GLM4V PLUS, Qwen2-VL-72B-Instruct, Step1V
+Step1o, bailingMM-Lite 95.1 92.6 84.3 87.90 10.8 2.5 7.20
+MUG-U-7B, Qwen2.5-VL-72B, SenseChat-Vision
+Step1V , Step1o 95.0 92.6 87.9 89.92 7.1 2.4 5.08
+MUG-U-7B, Ovis2-8B, Qwen2.5-VL-72B
+Step1V , Step1o 95.0 92.6 87.9 89.90 7.1 2.4 5.10
+Ovis2-4B, Qwen2-VL-72B-Instruct, Qwen2.5-VL-72B
+Step1V , Step1o 95.0 92.6 87.9 89.76 7.1 2.4 5.24
+MUG-U-7B, Ovis2-1B, Qwen2.5-VL-7B
+Step1V , Step1o 95.0 92.6 87.4 89.74 7.6 2.4 5.26
+MUG-U-7B, Ovis2-4B, Step1V
+Step1o, bailingMM-Lite 95.0 92.6 85.2 89.68 9.8 2.4 5.32
+InternVL2 5-38B, MUG-U-7B, Ovis2-4B
+Step1V , Step1o 95.0 92.6 84.1 89.46 10.9 2.4 5.54
+MUG-U-7B, Ovis2-1B, Step1V
+Step1o, bailingMM-Lite 95.0 92.6 85.2 89.30 9.8 2.4 5.70
+Ovis2-34B, Ovis2-4B, Qwen2.5-VL-72B
+SenseChat-Vision, Step1V 95.0 90.9 87.9 89.30 7.1 4.1 5.70
+MUG-U-7B, Qwen2-VL-72B-Instruct, Step1V
+Step1o, bailingMM-Lite 95.0 92.6 85.2 89.26 9.8 2.4 5.74
+continued on next page
+31\ncontinuation sheet 24:OCRBench Ensemble Results (5 models)
+Models Score Max Min Avg∆ max ∆min ∆avg
+InternVL2 5-78B-MPO, Ovis2-1B, Qwen2-VL-7B-Instruct
+SenseChat-Vision, Step1o 95.0 92.6 84.3 89.24 10.7 2.4 5.76
+Ovis2-4B, Qwen2.5-VL-72B, SenseChat-Vision
+Step1o, bailingMM-Lite 95.0 92.6 85.2 89.20 9.8 2.4 5.80
+MUG-U-7B, Ovis2-8B, Qwen2-VL-7B-Instruct
+Step1V , Step1o 95.0 92.6 84.3 89.18 10.7 2.4 5.82
+InternVL2 5-78B-MPO, Qwen-VL-Plus-0809, SenseChat-Vision
+Step1V , Step1o 95.0 92.6 84.3 89.16 10.7 2.4 5.84
+Ovis2-4B, Qwen2.5-VL-72B, Step1V
+Step1o, bailingMM-Lite 95.0 92.6 85.2 89.04 9.8 2.4 5.96
+InternVL2 5-38B, MUG-U-7B, Qwen2-VL-72B-Instruct
+Step1V , Step1o 95.0 92.6 84.1 89.04 10.9 2.4 5.96
+MUG-U-7B, NVLM, Qwen2.5-VL-72B
+Step1V , Step1o 95.0 92.6 84.9 89.02 10.1 2.4 5.98
+MiniCPM-V-2 6, Ovis2-1B, Qwen2.5-VL-72B
+SenseChat-Vision, Step1o 95.0 92.6 85.2 88.82 9.8 2.4 6.18
+InternVL2 5-78B, Qwen2.5-VL-7B, SenseChat-Vision
+Step1V , Step1o 95.0 92.6 85.3 88.66 9.7 2.4 6.34
+Ovis2-8B, Qwen2-VL-7B-Instruct, Qwen2.5-VL-72B
+Step1V , Step1o 95.0 92.6 84.3 88.54 10.7 2.4 6.46
+InternVL2 5-78B, Ovis2-4B, Qwen-VL-Plus-0809
+SenseChat-Vision, Step1o 95.0 92.6 84.3 88.50 10.7 2.4 6.50
+InternVL2 5-38B, Ovis2-1B, Qwen2.5-VL-7B
+SenseChat-Vision, Step1o 95.0 92.6 84.1 88.50 10.9 2.4 6.50
+Ovis2-4B, Qwen-VL-Plus-0809, Step1V
+Step1o, bailingMM-Lite 95.0 92.6 84.3 88.32 10.7 2.4 6.68
+GLM4V PLUS, MUG-U-7B, Qwen2-VL-7B-Instruct
+Step1V , Step1o 95.0 92.6 84.3 88.18 10.7 2.4 6.82
+MiniCPM-V-2 6, Ovis2-1B, Qwen2-VL-7B-Instruct
+SenseChat-Vision, Step1o 95.0 92.6 84.3 88.10 10.7 2.4 6.90
+MiniCPM-V-2 6, Qwen-VL-Plus-0809, SenseChat-Vision
+Step1V , Step1o 95.0 92.6 84.3 88.02 10.7 2.4 6.98
+MiniCPM-V-2 6, Ovis2-1B, Qwen-VL-Plus-0809
+Step1V , Step1o 95.0 92.6 84.3 87.94 10.7 2.4 7.06
+Ovis2-1B, Qwen-VL-Plus-0809, Step1V
+Step1o, bailingMM-Lite 95.0 92.6 84.3 87.94 10.7 2.4 7.06
+GLM4V PLUS, Qwen-VL-Plus-0809, SenseChat-Vision
+Step1V , Step1o 95.0 92.6 84.3 87.84 10.7 2.4 7.16
+32\nTable 25. OCRBench Ensemble Results (4 models)
+Models Score Max Min Avg∆ max ∆min ∆avg
+Ovis2-1B, Qwen2.5-VL-7B, Step1V
+Step1o 95.5 92.6 87.4 89.40 8.1 2.9 6.10
+Qwen2.5-VL-72B, SenseChat-Vision, Step1V
+Step1o 95.4 92.6 87.9 89.62 7.5 2.8 5.78
+MUG-U-7B, Qwen2.5-VL-72B, Step1V
+Step1o 95.3 92.6 87.9 90.05 7.4 2.7 5.25
+MUG-U-7B, Qwen-VL-Plus-0809, Step1V
+Step1o 95.1 92.6 84.3 89.15 10.8 2.5 5.95
+Ovis2-1B, Qwen-VL-Plus-0809, Step1V
+Step1o 95.1 92.6 84.3 88.62 10.8 2.5 6.47
+Ovis2-1B, Qwen2-VL-72B-Instruct, SenseChat-Vision
+Step1o 95.0 92.6 88.8 89.95 6.2 2.4 5.05
+Ovis2-1B, Qwen2.5-VL-72B, Step1V
+Step1o 95.0 92.6 87.9 89.53 7.1 2.4 5.47
+Ovis2-1B, Qwen2-VL-7B-Instruct, SenseChat-Vision
+Step1o 95.0 92.6 84.3 88.83 10.7 2.4 6.17
+MUG-U-7B, Qwen2.5-VL-7B, Step1V
+Step1o 94.9 92.6 87.4 89.92 7.5 2.3 4.97
+Ovis2-1B, SenseChat-Vision, Step1V
+Step1o 94.9 92.6 88.6 89.90 6.3 2.3 5.00
+Ovis2-1B, Qwen2.5-VL-72B, SenseChat-Vision
+Step1o 94.9 92.6 87.9 89.72 7.0 2.3 5.17
+Qwen2.5-VL-7B, SenseChat-Vision, Step1V
+Step1o 94.9 92.6 87.4 89.50 7.5 2.3 5.40
+SenseChat-Vision, Step1V , Step1o
+bailingMM-Lite 94.9 92.6 85.2 88.95 9.7 2.3 5.95
+Ovis2-1B, Qwen2-VL-7B-Instruct, Step1V
+Step1o 94.9 92.6 84.3 88.62 10.6 2.3 6.28
+MUG-U-7B, Ovis2-4B, Step1V
+Step1o 94.8 92.6 88.6 90.80 6.2 2.2 4.00
+MUG-U-7B, Qwen2-VL-72B-Instruct, Step1V
+Step1o 94.8 92.6 88.6 90.28 6.2 2.2 4.53
+Ovis2-4B, Qwen2.5-VL-7B, Step1V
+Step1o 94.8 92.6 87.4 89.88 7.4 2.2 4.92
+Ovis2-1B, Qwen-VL-Max-0809, SenseChat-Vision
+Step1o 94.8 92.6 88.1 89.78 6.7 2.2 5.03
+MUG-U-7B, SenseChat-Vision, Step1o
+bailingMM-Lite 94.8 92.6 85.2 89.58 9.6 2.2 5.22
+Ovis2-4B, Qwen-VL-Plus-0809, SenseChat-Vision
+continued on next page
+33\ncontinuation sheet 25: OCRBench Ensemble Results (4 models)
+Models Score Max Min Avg∆ max ∆min ∆avg
+Step1o 94.8 92.6 84.3 89.30 10.5 2.2 5.50
+MUG-U-7B, Qwen2-VL-7B-Instruct, Step1V
+Step1o 94.8 92.6 84.3 89.15 10.5 2.2 5.65
+Qwen2-VL-72B-Instruct, SenseChat-Vision, Step1o
+bailingMM-Lite 94.8 92.6 85.2 89.00 9.6 2.2 5.80
+MUG-U-7B, Ovis2-8B, Step1V
+Step1o 94.7 92.6 88.6 90.40 6.1 2.1 4.30
+MUG-U-7B, Qwen2.5-VL-72B, SenseChat-Vision
+Step1o 94.7 92.6 87.9 90.25 6.8 2.1 4.45
+Qwen2-VL-72B-Instruct, SenseChat-Vision, Step1V
+Step1o 94.7 92.6 88.6 89.85 6.1 2.1 4.85
+MUG-U-7B, Qwen2.5-VL-72B, SenseChat-Vision
+Step1V 94.7 91.1 87.9 89.25 6.8 3.6 5.45
+InternVL2 5-26B, Qwen2-VL-72B-Instruct, Step1V
+Step1o 94.7 92.6 85.4 88.85 9.3 2.1 5.85
+Ovis2-1B, Qwen-VL-Plus-0809, SenseChat-Vision
+Step1o 94.7 92.6 84.3 88.83 10.4 2.1 5.88
+Ovis2-1B, Qwen2.5-VL-72B, SenseChat-Vision
+Step1V 94.7 89.4 87.9 88.72 6.8 5.3 5.97
+Qwen2-VL-7B-Instruct, SenseChat-Vision, Step1o
+bailingMM-Lite 94.7 92.6 84.3 87.88 10.4 2.1 6.83
+MUG-U-7B, Ovis2-1B, Step1V
+Step1o 94.6 92.6 88.6 90.33 6.0 2.0 4.28
+MUG-U-7B, Ovis2-1B, Qwen2.5-VL-72B
+Step1o 94.6 92.6 87.9 90.15 6.7 2.0 4.45
+MUG-U-7B, Qwen2.5-VL-7B, SenseChat-Vision
+Step1o 94.6 92.6 87.4 90.12 7.2 2.0 4.47
+Ovis2-4B, Qwen2.5-VL-72B, Step1V
+Step1o 94.6 92.6 87.9 90.00 6.7 2.0 4.60
+Ovis2-1B, Qwen2-VL-72B-Instruct, Step1V
+Step1o 94.6 92.6 88.6 89.75 6.0 2.0 4.85
+Qwen-VL-Max-0809, SenseChat-Vision, Step1V
+Step1o 94.6 92.6 88.1 89.67 6.5 2.0 4.92
+Ovis2-1B, Qwen2.5-VL-7B, SenseChat-Vision
+Step1o 94.6 92.6 87.4 89.60 7.2 2.0 5.00
+Ovis2-8B, Qwen2.5-VL-7B, Step1V
+Step1o 94.6 92.6 87.4 89.47 7.2 2.0 5.12
+Ovis2-4B, Qwen-VL-Plus-0809, Step1V
+Step1o 94.6 92.6 84.3 89.10 10.3 2.0 5.50
+Qwen-VL-Max-0809, SenseChat-Vision, Step1o
+bailingMM-Lite 94.6 92.6 85.2 88.83 9.4 2.0 5.78
+continued on next page
+34\ncontinuation sheet 25: OCRBench Ensemble Results (4 models)
+Models Score Max Min Avg∆ max ∆min ∆avg
+Qwen2-VL-72B-Instruct, Step1V , Step1o
+bailingMM-Lite 94.6 92.6 85.2 88.80 9.4 2.0 5.80
+Qwen-VL-Plus-0809, SenseChat-Vision, Step1V
+Step1o 94.6 92.6 84.3 88.72 10.3 2.0 5.88
+MUG-U-7B, Ovis2-4B, Qwen2.5-VL-72B
+Step1o 94.5 92.6 87.9 90.62 6.6 1.9 3.88
+MUG-U-7B, Qwen-VL-Max-0809, Step1V
+Step1o 94.5 92.6 88.1 90.10 6.4 1.9 4.40
+Ovis2-34B, Qwen2.5-VL-7B, Step1V
+Step1o 94.5 92.6 87.4 89.58 7.1 1.9 4.92
+MUG-U-7B, Qwen2.5-VL-72B, Step1o
+bailingMM-Lite 94.5 92.6 85.2 89.20 9.3 1.9 5.30
+Ovis2-4B, Qwen2.5-VL-72B, SenseChat-Vision
+Step1V 94.5 90.9 87.9 89.20 6.6 3.6 5.30
+InternVL2 5-38B, MUG-U-7B, Step1V
+Step1o 94.5 92.6 84.1 89.10 10.4 1.9 5.40
+Qwen2.5-VL-72B, SenseChat-Vision, Step1o
+bailingMM-Lite 94.5 92.6 85.2 88.78 9.3 1.9 5.72
+Qwen2-VL-7B-Instruct, SenseChat-Vision, Step1V
+Step1o 94.5 92.6 84.3 88.72 10.2 1.9 5.78
+GLM4V PLUS, Ovis2-1B, Step1V
+Step1o 94.5 92.6 84.3 88.62 10.2 1.9 5.88
+Ovis2-1B, Qwen2.5-VL-7B, SenseChat-Vision
+Step1V 94.5 89.4 87.4 88.60 7.1 5.1 5.90
+InternVL2 5-38B, Ovis2-1B, Step1V
+Step1o 94.5 92.6 84.1 88.58 10.4 1.9 5.92
+InternVL2 5-38B, Qwen2.5-VL-7B, Step1V
+Step1o 94.5 92.6 84.1 88.17 10.4 1.9 6.33
+Ovis2-1B, Qwen-VL-Plus-0809, SenseChat-Vision
+Step1V 94.5 89.4 84.3 87.83 10.2 5.1 6.67
+InternVL2 5-78B-MPO, Ovis2-8B, SenseChat-Vision
+Step1o 94.4 92.6 89.3 90.55 5.1 1.8 3.85
+MUG-U-7B, Qwen2-VL-72B-Instruct, SenseChat-Vision
+Step1o 94.4 92.6 88.8 90.47 5.6 1.8 3.92
+Ovis2-4B, Qwen2-VL-72B-Instruct, SenseChat-Vision
+Step1o 94.4 92.6 88.8 90.42 5.6 1.8 3.98
+MUG-U-7B, Ovis2-1B, Qwen2.5-VL-7B
+Step1o 94.4 92.6 87.4 90.03 7.0 1.8 4.38
+MUG-U-7B, Ovis2-4B, Qwen2-VL-72B-Instruct
+Qwen2.5-VL-72B 94.4 91.1 87.9 89.67 6.5 3.3 4.72
+MUG-U-7B, Ovis2-4B, Qwen2.5-VL-72B
+continued on next page
+35\ncontinuation sheet 25: OCRBench Ensemble Results (4 models)
+Models Score Max Min Avg∆ max ∆min ∆avg
+Step1V 94.4 91.1 87.9 89.62 6.5 3.3 4.78
+Ovis2-1B, Qwen-VL-Max-0809, Step1V
+Step1o 94.4 92.6 88.1 89.58 6.3 1.8 4.83
+MUG-U-7B, Ovis2-1B, Qwen2-VL-72B-Instruct
+Step1V 94.4 91.1 88.6 89.38 5.8 3.3 5.03
+MUG-U-7B, Qwen-VL-Plus-0809, SenseChat-Vision
+Step1o 94.4 92.6 84.3 89.35 10.1 1.8 5.05
+MUG-U-7B, Qwen2-VL-7B-Instruct, SenseChat-Vision
+Step1o 94.4 92.6 84.3 89.35 10.1 1.8 5.05
+Ovis2-4B, Qwen2-VL-7B-Instruct, SenseChat-Vision
+Step1o 94.4 92.6 84.3 89.30 10.1 1.8 5.10
+MiniCPM-V-2 6, Ovis2-8B, SenseChat-Vision
+Step1o 94.4 92.6 85.2 89.12 9.2 1.8 5.28
+Qwen-VL-Max-0809, Step1V , Step1o
+bailingMM-Lite 94.4 92.6 85.2 88.62 9.2 1.8 5.78
+InternVL2-76B, Ovis2-1B, Step1V
+Step1o 94.4 92.6 84.2 88.60 10.2 1.8 5.80
+MiniCPM-V-2 6, Qwen2.5-VL-7B, Step1V
+Step1o 94.4 92.6 85.2 88.45 9.2 1.8 5.95
+Qwen2.5-VL-7B, Step1V , Step1o
+bailingMM-Lite 94.4 92.6 85.2 88.45 9.2 1.8 5.95
+GLM4V PLUS, Qwen2.5-VL-7B, Step1V
+Step1o 94.4 92.6 84.3 88.22 10.1 1.8 6.17
+InternVL2 5-78B-MPO, Ovis2-4B, Step1V
+Step1o 94.3 92.6 88.6 90.75 5.7 1.7 3.55
+Ovis2-4B, Qwen-VL-Max-0809, SenseChat-Vision
+Step1o 94.3 92.6 88.1 90.25 6.2 1.7 4.05
+MUG-U-7B, Ovis2-4B, Step1o
+bailingMM-Lite 94.3 92.6 85.2 89.95 9.1 1.7 4.35
+InternVL2 5-78B-MPO, Qwen2.5-VL-7B, Step1V
+Step1o 94.3 92.6 87.4 89.88 6.9 1.7 4.42
+Ovis2-8B, Qwen2.5-VL-72B, Step1V
+Step1o 94.3 92.6 87.9 89.60 6.4 1.7 4.70
+Ovis2-4B, Qwen2-VL-72B-Instruct, Step1o
+bailingMM-Lite 94.3 92.6 85.2 89.38 9.1 1.7 4.92
+MiniCPM-V-2 6, Ovis2-4B, Step1V
+Step1o 94.3 92.6 85.2 89.33 9.1 1.7 4.97
+MUG-U-7B, Ovis1.6-Gemma2-27B, Qwen2.5-VL-72B
+Step1o 94.3 92.6 85.6 89.30 8.7 1.7 5.00
+Ovis2-4B, Qwen2.5-VL-72B, Step1o
+bailingMM-Lite 94.3 92.6 85.2 89.15 9.1 1.7 5.15
+continued on next page
+36\ncontinuation sheet 25: OCRBench Ensemble Results (4 models)
+Models Score Max Min Avg∆ max ∆min ∆avg
+MUG-U-7B, Qwen2.5-VL-7B, SenseChat-Vision
+Step1V 94.3 91.1 87.4 89.12 6.9 3.2 5.17
+MUG-U-7B, Qwen2.5-VL-7B, Step1o
+bailingMM-Lite 94.3 92.6 85.2 89.08 9.1 1.7 5.22
+Ovis2-1B, Qwen2-VL-72B-Instruct, Step1o
+bailingMM-Lite 94.3 92.6 85.2 88.90 9.1 1.7 5.40
+Ovis2-1B, Step1V , Step1o
+bailingMM-Lite 94.3 92.6 85.2 88.85 9.1 1.7 5.45
+GLM4V PLUS, SenseChat-Vision, Step1V
+Step1o 94.3 92.6 84.3 88.72 10.0 1.7 5.58
+InternVL2 5-26B, Qwen-VL-Max-0809, Step1V
+Step1o 94.3 92.6 85.4 88.67 8.9 1.7 5.62
+InternVL2 5-26B, Qwen2.5-VL-72B, Step1V
+Step1o 94.3 92.6 85.4 88.62 8.9 1.7 5.67
+Qwen2.5-VL-72B, Step1V , Step1o
+bailingMM-Lite 94.3 92.6 85.2 88.58 9.1 1.7 5.72
+GLM4V PLUS, Qwen2-VL-72B-Instruct, Step1V
+Step1o 94.3 92.6 84.3 88.58 10.0 1.7 5.72
+Ovis2-1B, Qwen2.5-VL-7B, Step1o
+bailingMM-Lite 94.3 92.6 85.2 88.55 9.1 1.7 5.75
+MUG-U-7B, Ovis2-4B, Qwen2.5-VL-7B
+Step1o 94.2 92.6 87.4 90.50 6.8 1.6 3.70
+InternVL2 5-78B-MPO, Qwen2-VL-72B-Instruct, SenseChat-Vision
+Step1o 94.2 92.6 88.8 90.42 5.4 1.6 3.77
+Ovis2-4B, Ovis2-8B, Step1V
+Step1o 94.2 92.6 88.6 90.35 5.6 1.6 3.85
+InternVL2 5-78B-MPO, Qwen2-VL-72B-Instruct, Step1V
+Step1o 94.2 92.6 88.6 90.22 5.6 1.6 3.98
+Ovis2-4B, Qwen2-VL-72B-Instruct, Step1V
+Step1o 94.2 92.6 88.6 90.22 5.6 1.6 3.98
+Ovis2-4B, Qwen2.5-VL-72B, SenseChat-Vision
+Step1o 94.2 92.6 87.9 90.20 6.3 1.6 4.00
+InternVL2 5-78B-MPO, MiniCPM-V-2 6, Ovis2-4B
+Step1o 94.2 92.6 85.2 89.90 9.0 1.6 4.30
+InternVL2 5-78B-MPO, MUG-U-7B, Qwen-VL-Plus-0809
+Step1o 94.2 92.6 84.3 89.72 9.9 1.6 4.47
+InternVL2 5-78B-MPO, Ovis2-4B, Qwen2-VL-7B-Instruct
+Step1o 94.2 92.6 84.3 89.67 9.9 1.6 4.53
+37\nTable 26. OCRBench Ensemble Results (3 models)
+Models Score Max Min Avg∆ max ∆min ∆avg
+Ovis2-8B, SenseChat-Vision, Step1o 94.1 92.6 89.3 90.43 4.8 1.5 3.67
+Qwen2.5-VL-7B, Step1V , Step1o 94.0 92.6 87.4 89.53 6.6 1.4 4.47
+Ovis2-1B, Step1V , Step1o 94.0 92.6 88.6 90.07 5.4 1.4 3.93
+Qwen2-VL-72B-Instruct, Step1V , Step1o 94.0 92.6 88.6 90.00 5.4 1.4 4.00
+Ovis2-4B, Qwen2-VL-72B-Instruct, Step1o 94.0 92.6 88.8 90.77 5.2 1.4 3.23
+MUG-U-7B, Step1V , Step1o 93.9 92.6 88.6 90.77 5.3 1.3 3.13
+MUG-U-7B, Ovis2-4B, Step1o 93.9 92.6 90.9 91.53 3.0 1.3 2.37
+MUG-U-7B, Qwen-VL-Plus-0809, Step1o 93.8 92.6 84.3 89.33 9.5 1.2 4.47
+Ovis2-4B, Qwen2.5-VL-7B, Step1o 93.8 92.6 87.4 90.30 6.4 1.2 3.50
+SenseChat-Vision, Step1V , Step1o 93.8 92.6 88.6 90.20 5.2 1.2 3.60
+Ovis2-4B, Qwen-VL-Plus-0809, Step1o 93.7 92.6 84.3 89.27 9.4 1.1 4.43
+Ovis2-4B, Step1V , Step1o 93.7 92.6 88.6 90.70 5.1 1.1 3.00
+Qwen2-VL-72B-Instruct, SenseChat-Vision, Step1o 93.7 92.6 88.8 90.27 4.9 1.1 3.43
+MUG-U-7B, SenseChat-Vision, Step1o 93.7 92.6 89.4 91.03 4.3 1.1 2.67
+Ovis2-4B, Qwen2-VL-7B-Instruct, Step1o 93.6 92.6 84.3 89.27 9.3 1.0 4.33
+Qwen-VL-Plus-0809, Step1V , Step1o 93.6 92.6 84.3 88.50 9.3 1.0 5.10
+Ovis2-4B, Step1o, bailingMM-Lite 93.6 92.6 85.2 89.57 8.4 1.0 4.03
+SenseChat-Vision, Step1o, bailingMM-Lite 93.6 92.6 85.2 89.07 8.4 1.0 4.53
+Qwen2-VL-72B-Instruct, Step1o, bailingMM-Lite 93.6 92.6 85.2 88.87 8.4 1.0 4.73
+MUG-U-7B, SenseChat-Vision, bailingMM-Lite 93.6 91.1 85.2 88.57 8.4 2.5 5.03
+MUG-U-7B, Ovis2-4B, Qwen2.5-VL-72B 93.6 91.1 87.9 89.97 5.7 2.5 3.63
+Ovis2-4B, Qwen-VL-Max-0809, Step1o 93.6 92.6 88.1 90.53 5.5 1.0 3.07
+Qwen-VL-Max-0809, Step1V , Step1o 93.6 92.6 88.1 89.77 5.5 1.0 3.83
+Ovis2-8B, Step1V , Step1o 93.6 92.6 88.6 90.17 5.0 1.0 3.43
+Ovis2-4B, SenseChat-Vision, Step1o 93.6 92.6 89.4 90.97 4.2 1.0 2.63
+Qwen-VL-Plus-0809, SenseChat-Vision, Step1o 93.5 92.6 84.3 88.77 9.2 0.9 4.73
+Qwen2-VL-7B-Instruct, Step1V , Step1o 93.5 92.6 84.3 88.50 9.2 0.9 5.00
+MUG-U-7B, Ovis1.6-Gemma2-27B, Step1o 93.5 92.6 85.6 89.77 7.9 0.9 3.73
+MUG-U-7B, Qwen2.5-VL-7B, Step1o 93.5 92.6 87.4 90.37 6.1 0.9 3.13
+Qwen2.5-VL-72B, SenseChat-Vision, Step1o 93.5 92.6 87.9 89.97 5.6 0.9 3.53
+MUG-U-7B, Ovis2-4B, Step1V 93.5 91.1 88.6 90.20 4.9 2.4 3.30
+MUG-U-7B, Step1o, bailingMM-Lite 93.4 92.6 85.2 89.63 8.2 0.8 3.77
+Ovis2-34B, Step1V , Step1o 93.4 92.6 88.6 90.30 4.8 0.8 3.10
+continued on next page
+38\ncontinuation sheet 26: OCRBench Ensemble Results (3 models)
+Models Score Max Min Avg∆ max ∆min ∆avg
+MUG-U-7B, Qwen2-VL-72B-Instruct, Step1V 93.4 91.1 88.6 89.50 4.8 2.3 3.90
+MUG-U-7B, Qwen2-VL-72B-Instruct, Step1o 93.4 92.6 88.8 90.83 4.6 0.8 2.57
+MUG-U-7B, Qwen2-VL-7B-Instruct, Step1o 93.3 92.6 84.3 89.33 9.0 0.7 3.97
+Ovis2-8B, Step1o, bailingMM-Lite 93.3 92.6 85.2 89.03 8.1 0.7 4.27
+Step1V , Step1o, bailingMM-Lite 93.3 92.6 85.2 88.80 8.1 0.7 4.50
+Qwen2.5-VL-72B, Step1o, bailingMM-Lite 93.3 92.6 85.2 88.57 8.1 0.7 4.73
+Ovis2-8B, Qwen2.5-VL-7B, Step1o 93.3 92.6 87.4 89.77 5.9 0.7 3.53
+MUG-U-7B, Qwen2.5-VL-7B, Step1V 93.3 91.1 87.4 89.03 5.9 2.2 4.27
+Ovis2-4B, Qwen2.5-VL-72B, Step1o 93.3 92.6 87.9 90.47 5.4 0.7 2.83
+Ovis2-8B, Qwen2-VL-72B-Instruct, Step1o 93.3 92.6 88.8 90.23 4.5 0.7 3.07
+Ovis2-1B, SenseChat-Vision, Step1o 93.3 92.6 89.0 90.33 4.3 0.7 2.97
+Ovis2-34B, SenseChat-Vision, Step1o 93.3 92.6 89.4 90.57 3.9 0.7 2.73
+InternVL2 5-38B, Step1V , Step1o 93.2 92.6 84.1 88.43 9.1 0.6 4.77
+NVLM, Ovis2-4B, Step1o 93.2 92.6 84.9 89.47 8.3 0.6 3.73
+Qwen2.5-VL-7B, SenseChat-Vision, Step1o 93.2 92.6 87.4 89.80 5.8 0.6 3.40
+Qwen2.5-VL-72B, Step1V , Step1o 93.2 92.6 87.9 89.70 5.3 0.6 3.50
+Qwen-VL-Max-0809, SenseChat-Vision, Step1o 93.2 92.6 88.1 90.03 5.1 0.6 3.17
+MUG-U-7B, Ovis2-4B, Qwen2-VL-72B-Instruct 93.2 91.1 88.8 90.27 4.4 2.1 2.93
+Ovis2-1B, Qwen2-VL-72B-Instruct, Step1o 93.2 92.6 88.8 90.13 4.4 0.6 3.07
+MUG-U-7B, Ovis2-8B, Step1o 93.2 92.6 89.3 91.00 3.9 0.6 2.20
+MUG-U-7B, NVLM, Step1o 93.1 92.6 84.9 89.53 8.2 0.5 3.57
+Qwen-VL-Max-0809, Step1o, bailingMM-Lite 93.1 92.6 85.2 88.63 7.9 0.5 4.47
+Qwen2.5-VL-7B, Step1o, bailingMM-Lite 93.1 92.6 85.2 88.40 7.9 0.5 4.70
+MUG-U-7B, Ovis2-4B, Qwen2.5-VL-7B 93.1 91.1 87.4 89.80 5.7 2.0 3.30
+MUG-U-7B, Qwen2.5-VL-72B, Step1o 93.1 92.6 87.9 90.53 5.2 0.5 2.57
+MUG-U-7B, Qwen-VL-Max-0809, Step1o 93.1 92.6 88.1 90.60 5.0 0.5 2.50
+Ovis2-8B, Qwen-VL-Max-0809, Step1o 93.1 92.6 88.1 90.00 5.0 0.5 3.10
+MUG-U-7B, SenseChat-Vision, Step1V 93.1 91.1 88.6 89.70 4.5 2.0 3.40
+GLM4V PLUS, MUG-U-7B, Step1o 93.0 92.6 84.3 89.33 8.7 0.4 3.67
+MUG-U-7B, Qwen-VL-Plus-0809, Step1V 93.0 91.1 84.3 88.00 8.7 1.9 5.00
+NVLM, Step1V , Step1o 93.0 92.6 84.9 88.70 8.1 0.4 4.30
+MUG-U-7B, Ovis2-4B, Qwen-VL-Max-0809 93.0 91.1 88.1 90.03 4.9 1.9 2.97
+MUG-U-7B, Qwen-VL-Max-0809, Step1V 93.0 91.1 88.1 89.27 4.9 1.9 3.73
+MUG-U-7B, Ovis2-34B, Step1o 93.0 92.6 89.7 91.13 3.3 0.4 1.87
+continued on next page
+39\ncontinuation sheet 26: OCRBench Ensemble Results (3 models)
+Models Score Max Min Avg∆ max ∆min ∆avg
+InternVL2 5-78B-MPO, MUG-U-7B, Step1o 93.0 92.6 90.9 91.53 2.1 0.4 1.47
+Qwen-VL-Plus-0809, Step1o, bailingMM-Lite 92.9 92.6 84.3 87.37 8.6 0.3 5.53
+MUG-U-7B, Ovis2-1B, bailingMM-Lite 92.9 91.1 85.2 88.43 7.7 1.8 4.47
+InternVL2 5-26B, Ovis2-4B, Step1o 92.9 92.6 85.4 89.63 7.5 0.3 3.27
+MUG-U-7B, Qwen2.5-VL-72B, SenseChat-Vision 92.9 91.1 87.9 89.47 5.0 1.8 3.43
+MUG-U-7B, Qwen2.5-VL-72B, Step1V 92.9 91.1 87.9 89.20 5.0 1.8 3.70
+Ovis2-4B, Qwen2.5-VL-72B, Step1V 92.9 90.9 87.9 89.13 5.0 2.0 3.77
+Ovis2-4B, Qwen2-VL-72B-Instruct, Step1V 92.9 90.9 88.6 89.43 4.3 2.0 3.47
+Ovis2-4B, Qwen2-VL-72B-Instruct, SenseChat-Vision 92.9 90.9 88.8 89.70 4.1 2.0 3.20
+MUG-U-7B, Ovis2-1B, Step1o 92.9 92.6 89.0 90.90 3.9 0.3 2.00
+InternVL2-76B, Qwen2-VL-72B-Instruct, Step1o 92.8 92.6 84.2 88.53 8.6 0.2 4.27
+Qwen2-VL-7B-Instruct, SenseChat-Vision, Step1o 92.8 92.6 84.3 88.77 8.5 0.2 4.03
+MUG-U-7B, Qwen2-VL-7B-Instruct, Step1V 92.8 91.1 84.3 88.00 8.5 1.7 4.80
+Qwen2-VL-7B-Instruct, Step1o, bailingMM-Lite 92.8 92.6 84.3 87.37 8.5 0.2 5.43
+NVLM, SenseChat-Vision, Step1o 92.8 92.6 84.9 88.97 7.9 0.2 3.83
+NVLM, Ovis2-8B, Step1o 92.8 92.6 84.9 88.93 7.9 0.2 3.87
+MUG-U-7B, MiniCPM-V-2 6, Step1o 92.8 92.6 85.2 89.63 7.6 0.2 3.17
+MUG-U-7B, Step1V , bailingMM-Lite 92.8 91.1 85.2 88.30 7.6 1.7 4.50
+Ovis2-4B, Qwen2.5-VL-72B, bailingMM-Lite 92.8 90.9 85.2 88.00 7.6 1.9 4.80
+InternVL2 5-78B, Step1V , Step1o 92.8 92.6 85.3 88.83 7.5 0.2 3.97
+Ovis2-4B, Qwen2.5-VL-7B, Step1V 92.8 90.9 87.4 88.97 5.4 1.9 3.83
+Ovis2-1B, Qwen2.5-VL-7B, Step1V 92.8 89.0 87.4 88.33 5.4 3.8 4.47
+Ovis2-8B, Qwen2.5-VL-72B, Step1o 92.8 92.6 87.9 89.93 4.9 0.2 2.87
+Ovis2-1B, Qwen2.5-VL-72B, Step1o 92.8 92.6 87.9 89.83 4.9 0.2 2.97
+Ovis2-4B, Qwen2.5-VL-72B, SenseChat-Vision 92.8 90.9 87.9 89.40 4.9 1.9 3.40
+MUG-U-7B, Ovis2-1B, Ovis2-4B 92.8 91.1 89.0 90.33 3.8 1.7 2.47
+Ovis2-1B, Qwen-VL-Plus-0809, Step1o 92.7 92.6 84.3 88.63 8.4 0.1 4.07
+Ovis2-1B, Qwen2-VL-7B-Instruct, Step1o 92.7 92.6 84.3 88.63 8.4 0.1 4.07
+InternVL2 5-78B, Qwen2-VL-7B-Instruct, Step1o 92.7 92.6 84.3 87.40 8.4 0.1 5.30
+NVLM, Qwen2-VL-72B-Instruct, Step1o 92.7 92.6 84.9 88.77 7.8 0.1 3.93
+Ovis2-34B, Step1o, bailingMM-Lite 92.7 92.6 85.2 89.17 7.5 0.1 3.53
+MUG-U-7B, Qwen2-VL-72B-Instruct, bailingMM-Lite 92.7 91.1 85.2 88.37 7.5 1.6 4.33
+Ovis2-4B, Qwen2-VL-72B-Instruct, bailingMM-Lite 92.7 90.9 85.2 88.30 7.5 1.8 4.40
+40\nJ. Additional Representation Space Analysis
+Additional analysis of VLM output convergence and divergence patterns on 210 models (beyond Figure 2) will be released
+with the code and dataset athttps://github.com/Aslan-yulong/consensus-entropy.
+K. Limitations and Future Directions
+Despite the promising results demonstrated by the Consensus Entropy framework, several limitations warrant acknowledgment
+and suggest avenues for future research. The current implementation relies on semantic embedding spaces that may not
+fully capture the nuances of specialized domains such as mathematical formulas or chemical notations. Additionally, the
+framework’s performance is contingent on having multiple independent VLMs available at inference time, which may impose
+computational constraints in resource-limited scenarios. The optimal threshold for routing decisions currently requires
+empirical calibration for each specific application domain, limiting immediate out-of-the-box deployment.
+Future research directions could address these limitations through domain-specific embedding techniques for specialized
+content types, more efficient ensemble methods requiring fewer models, and adaptive threshold mechanisms that automatically
+adjust to document characteristics. Additional investigations into the theoretical properties of prediction convergence patterns
+could lead to more principled frameworks for uncertainty quantification beyond the OCR domain. The insights from
+these convergence patterns might also inform model design and training objectives, potentially enhancing individual model
+robustness. Exploring the relationship between model architecture diversity and ensemble effectiveness represents another
+promising direction, particularly in identifying minimal but complementary model combinations that maximize performance
+gains while minimizing computational overhead.
+41
