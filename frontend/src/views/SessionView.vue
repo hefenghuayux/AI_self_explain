@@ -54,6 +54,9 @@ const question = ref<Question>()
 const timeline = ref<LearningTimelineItem[]>([])
 const activeSegment = ref<SegmentKey>("selfExplain")
 const steps = ref<StepResponse[]>([])
+const visibleSteps = computed(() => steps.value.filter((step) =>
+  !(step.id === currentStepId.value && step.status === "DRAFT" && !hasStepEvidence(step)),
+))
 const currentStepId = ref<number | null>(null)
 const currentStepContent = ref("")
 // 上次成功提交时自讲框里的内容，用于在当前会话内回填，方便学生直接修改后重讲。
@@ -970,9 +973,9 @@ async function respondToSolution(understood: boolean) {
                       @click="saveCurrentStepAndAdvance"
                     >下一步</el-button>
                   </div>
-                  <div v-if="steps.length" class="step-list" aria-label="自讲步骤列表">
+                  <div v-if="!submitting && visibleSteps.length" class="step-list" aria-label="自讲步骤列表">
                     <button
-                      v-for="step in steps"
+                      v-for="step in visibleSteps"
                       :key="step.id"
                       type="button"
                       class="step-item"
