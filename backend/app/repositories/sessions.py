@@ -297,7 +297,9 @@ class SessionRepository:
                     "event_type": "SUBMISSION",
                     "speaker": "STUDENT",
                     "submission_type": submission.submission_type,
-                    "content": submission.content,
+                    "content": _submission_timeline_content(
+                        submission.submission_type, submission.content
+                    ),
                     "correctness": None,
                     "completeness": None,
                     "action": None,
@@ -1995,6 +1997,25 @@ class SessionRepository:
 
 def student_human_review_message() -> str:
     return "已申请人工复核，你可以继续自讲。"
+
+
+# 历史记录里问题已单独成条的提交类型：回答条目再带一遍问题就是重复展示。
+_QUESTION_FREE_SUBMISSION_TYPES = frozenset({"GUIDED_ANSWER"})
+
+
+def _submission_timeline_content(submission_type: str, content: str) -> str:
+    """历史记录里的学生提交只保留作答部分。
+
+    GUIDED_ANSWER 的入库内容是「问题 + 答：答案」，问题本身已由子问题条目展示；
+    这里按写入时的同一分隔符还原作答部分，历史数据也能一并按新口径展示。
+    """
+    if submission_type not in _QUESTION_FREE_SUBMISSION_TYPES:
+        return content
+    answer_blocks = []
+    for block in content.split("\n\n"):
+        _question, separator, answer = block.partition("\n答：")
+        answer_blocks.append(f"答：{answer}" if separator else block)
+    return "\n\n".join(answer_blocks)
 
 
 def _format_guided_questions_for_timeline(guided_questions: list[dict[str, str]]) -> str:

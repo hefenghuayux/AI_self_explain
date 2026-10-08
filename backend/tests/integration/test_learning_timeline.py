@@ -214,7 +214,7 @@ def test_timeline_records_guided_questions_and_follow_up_for_evaluation_support(
         ("SUBMISSION", "STUDENT", "a 可能是 0 或 2，最小值也是 -1。"),
         ("EVALUATION", "AI", "先只处理最大值条件这一步。"),
         ("GUIDED_QUESTIONS", "AI", "1. 最大值应该怎样用端点函数值表示？"),
-        ("SUBMISSION", "STUDENT", "最大值应该怎样用端点函数值表示？\n答：max{f(0),f(2)}=3。"),
+        ("SUBMISSION", "STUDENT", "答：max{f(0),f(2)}=3。"),
         ("FOLLOW_UP", "AI", "这一问回答正确，接下来确认最小值。"),
     ]
 
