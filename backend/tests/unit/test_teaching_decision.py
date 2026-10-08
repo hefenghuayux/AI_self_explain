@@ -71,24 +71,20 @@ def test_teaching_action_is_selected_by_deterministic_priority(
 
 
 @pytest.mark.parametrize(
-    ("support_count_round", "solution_exposed", "expected_completion_type"),
+    ("support_count_round", "expected_completion_type"),
     [
-        (0, False, "INDEPENDENT"),
-        (1, False, "WITH_SUPPORT"),
-        (2, False, "WITH_SUPPORT"),
+        (0, "INDEPENDENT"),
+        (1, "WITH_SUPPORT"),
     ],
 )
 def test_low_support_first_round_end_completes_without_mastery_check(
     settings,
     support_count_round: int,
-    solution_exposed: bool,
     expected_completion_type: str,
 ) -> None:
     decision = decide_teaching(
         evaluation=evaluation("CORRECT", "COMPLETE"),
-        session=session(
-            support_count_round=support_count_round, solution_exposed=solution_exposed
-        ),
+        session=session(support_count_round=support_count_round),
         settings=settings,
     )
 
@@ -99,18 +95,13 @@ def test_low_support_first_round_end_completes_without_mastery_check(
     assert decision.completion_type == expected_completion_type
 
 
-@pytest.mark.parametrize(
-    ("support_count_round", "solution_exposed"),
-    [(3, False), (4, True), (2, True)],
-)
+@pytest.mark.parametrize("support_count_round", [2, 3, 4])
 def test_high_support_first_round_end_enters_mastery_check(
-    settings, support_count_round: int, solution_exposed: bool
+    settings, support_count_round: int
 ) -> None:
     decision = decide_teaching(
         evaluation=evaluation("CORRECT", "COMPLETE"),
-        session=session(
-            support_count_round=support_count_round, solution_exposed=solution_exposed
-        ),
+        session=session(support_count_round=support_count_round),
         settings=settings,
     )
 

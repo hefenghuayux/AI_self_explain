@@ -95,11 +95,8 @@ def decide_mastery_check_outcome(*, all_passed: bool) -> TeachingDecision:
 def _first_round_end_decision(
     *, session: Session, coverage: CoverageResult
 ) -> TeachingDecision:
-    """第一轮结束：按有效支持数和是否展示完整解析决定是否进入核验。"""
-    if needs_mastery_check(
-        support_count_round=session.support_count_round,
-        solution_exposed=session.solution_exposed,
-    ):
+    """第一轮结束：按已发送的有效支持数决定是否进入核验。"""
+    if needs_mastery_check(support_count_round=session.support_count_round):
         return _decision(
             coverage=coverage,
             next_status=STATUS_IN_PROGRESS,

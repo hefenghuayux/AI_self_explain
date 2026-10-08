@@ -20,27 +20,19 @@ def test_support_limit_allows_the_configured_number_of_supports(settings) -> Non
 
 
 @pytest.mark.parametrize(
-    ("support_count_round", "solution_exposed", "expected"),
+    ("support_count_round", "expected"),
     [
-        (0, False, False),
-        (1, False, False),
-        (1, True, False),
-        (2, False, False),
-        (2, True, True),
-        (3, False, True),
-        (3, True, True),
-        (6, True, True),
+        (0, False),
+        (1, False),
+        (2, True),
+        (3, True),
+        (6, True),
     ],
 )
-def test_mastery_check_trigger_depends_only_on_support_count_and_solution(
-    support_count_round: int, solution_exposed: bool, expected: bool
+def test_mastery_check_trigger_depends_only_on_support_count(
+    support_count_round: int, expected: bool
 ) -> None:
-    assert (
-        needs_mastery_check(
-            support_count_round=support_count_round, solution_exposed=solution_exposed
-        )
-        is expected
-    )
+    assert needs_mastery_check(support_count_round=support_count_round) is expected
 
 
 def test_completion_type_uses_only_deterministic_session_facts() -> None:

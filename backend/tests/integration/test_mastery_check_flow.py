@@ -291,15 +291,13 @@ def test_low_support_first_round_end_completes_without_mastery_check(
     assert saved["masteryCheck"] is None
 
 
-def test_two_supports_without_solution_completes_without_mastery_check(
-    settings, monkeypatch
-) -> None:
+def test_two_supports_without_solution_enters_mastery_check(settings, monkeypatch) -> None:
     with _client(settings, monkeypatch) as client:
         saved = _reach_mastery_check(client, settings, monkeypatch, support_count=2)
 
-    assert saved["status"] == "COMPLETED"
-    assert saved["completionType"] == "WITH_SUPPORT"
-    assert saved["masteryCheck"] is None
+    assert saved["status"] == "IN_PROGRESS"
+    assert saved["flowStage"] == "WAIT_MASTERY_CHECK"
+    assert saved["masteryCheck"] is not None
 
 
 def test_solution_exposed_with_two_supports_enters_mastery_check(settings, monkeypatch) -> None:

@@ -1570,10 +1570,7 @@ class SessionRepository:
                 related_evaluation_id=evaluation_id,
             )
         before_snapshot = session_snapshot(session)
-        if needs_mastery_check(
-            support_count_round=session.support_count_round,
-            solution_exposed=session.solution_exposed,
-        ):
+        if needs_mastery_check(support_count_round=session.support_count_round):
             session.flow_stage = FLOW_STAGE_WAIT_MASTERY_CHECK
             trigger_type = "ENTER_MASTERY_CHECK_AFTER_SOLUTION"
         else:
