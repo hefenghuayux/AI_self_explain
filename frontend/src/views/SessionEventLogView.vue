@@ -6,6 +6,7 @@ import EventLedger from "../components/EventLedger.vue"
 import EventTimeline from "../components/EventTimeline.vue"
 import { fetchSessionTrajectory } from "../api/session-events"
 import { summarizeDeepSeekCache } from "../utils/deepseekCache"
+import { orderRunRecords } from "../utils/trajectoryOrder"
 import { scopeRecords, type TrajectoryScope } from "../utils/trajectoryScope"
 import type { Trajectory, TrajectoryRecord } from "../types/session-event"
 
@@ -50,12 +51,13 @@ const runLabel = computed(() => {
 
 /**
  * 账本记录：单次运行取该运行的记录；全部运行把各运行按事件序拼起来。
- * 运行本身按首次出现的 seq 排序，运行内部也按 seq 排列，拼接后仍是全局事件序。
+ * 运行本身按首次出现的 seq 排序；运行内部先按真实发送顺序重排（学生输入跟到携带它的
+ * 模型请求之前），再拼接，跨运行的先后仍是全局事件序。
  */
 const runRecords = computed<TrajectoryRecord[]>(() =>
   allRunsSelected.value
-    ? runs.value.flatMap((run) => run.records)
-    : (selectedRun.value?.records ?? []),
+    ? runs.value.flatMap((run) => orderRunRecords(run.records))
+    : orderRunRecords(selectedRun.value?.records ?? []),
 )
 
 /** 全部运行没有单一 run，起止时间取最早一次运行，关键步骤数按所有运行累加。 */

@@ -234,9 +234,10 @@ describe("SessionEventLogView", () => {
     expect(wrapper.text()).toContain("question · question:1")
     expect(wrapper.text()).toContain("correctness=CORRECT · valid")
     expect(wrapper.text()).toContain("1.20 s")
+    // 学生输入按真实发送顺序排到上下文之后：题目上下文在 messages[1]，学生输入在尾部的 messages[4]。
     expect(
       wrapper.findAll("div.record-row").map((row) => row.attributes("data-kind")),
-    ).toEqual(["user", "context", "model_response"])
+    ).toEqual(["context", "user", "model_response"])
     expect(wrapper.text()).not.toContain("test-model · 1 条消息")
     // 界面只保留轨迹：不再出现 Surface / Trace 视图切换。
     expect(wrapper.text()).not.toContain("Trace 因果关系")
@@ -248,6 +249,22 @@ describe("SessionEventLogView", () => {
     expect(wrapper.text()).toContain("AI_EVALUATING → WAIT_STUDENT_ACTION")
   })
 
+  it("运行内学生输入跟到携带它的模型请求之前，序号仍是事件 seq", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(trajectoryPayload()))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const wrapper = await mountView()
+    await showAllRecords(wrapper)
+
+    // 完整范围 5 条：上下文(#2) → 学生(#1) → 模型请求(#3) → 模型回复(#4) → 状态变化(#5)。
+    expect(
+      wrapper.findAll("div.record-row").map((row) => row.find(".record-index").text()),
+    ).toEqual(["#2", "#1", "#3", "#4", "#5"])
+    expect(
+      wrapper.findAll("div.record-row").map((row) => row.attributes("data-kind")),
+    ).toEqual(["context", "user", "model_request", "model_response", "state_change"])
+  })
+
   it("没有耗时的记录显示“未记录”，不显示 null ms", async () => {
     const payload = trajectoryPayload()
     payload.runs[0].records[0] = { ...payload.runs[0].records[0], durationMs: null }
@@ -257,7 +274,8 @@ describe("SessionEventLogView", () => {
     const wrapper = await mountView()
 
     expect(wrapper.text()).not.toContain("null ms")
-    expect(wrapper.find("div.record-row").text()).toContain("未记录")
+    // 学生输入排在上下文之后，取第 2 行才是这条被显式写成 null 的记录。
+    expect(wrapper.findAll("div.record-row")[1].text()).toContain("未记录")
   })
 
   it("展开后显示未压缩的完整原文，而不是带省略号的摘要", async () => {
@@ -265,7 +283,7 @@ describe("SessionEventLogView", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     const wrapper = await mountView()
-    const contextRow = wrapper.findAll("div.record-row")[1]
+    const contextRow = wrapper.findAll("div.record-row")[0]
     expect(contextRow.find("pre.record-full").exists()).toBe(false)
 
     await contextRow.get("button.expand-button").trigger("click")
@@ -293,7 +311,8 @@ describe("SessionEventLogView", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 
     const wrapper = await mountView()
-    const row = wrapper.findAll("div.record-row")[0]
+    // 学生输入排在上下文之后，第 2 行才是学生记录。
+    const row = wrapper.findAll("div.record-row")[1]
     await row.get("button.expand-button").trigger("click")
     await flushPromises()
 
@@ -317,7 +336,7 @@ describe("SessionEventLogView", () => {
     })
 
     const wrapper = await mountView()
-    const contextRow = wrapper.findAll("div.record-row")[1]
+    const contextRow = wrapper.findAll("div.record-row")[0]
     await contextRow.get("button.expand-button").trigger("click")
 
     // 长度按完整原文统计，不是被截断的摘要。
@@ -370,7 +389,7 @@ describe("SessionEventLogView", () => {
     // 色块与账本行同源：5 条记录里精简范围只有 3 条，色块也必须是 3 个。
     expect(
       wrapper.findAll("button.timeline-block").map((block) => block.attributes("data-kind")),
-    ).toEqual(["user", "context", "model_response"])
+    ).toEqual(["context", "user", "model_response"])
 
     await showAllRecords(wrapper)
 
@@ -460,14 +479,15 @@ describe("SessionEventLogView", () => {
     await wrapper.get("select").setValue(allOption.attributes("value")!)
     await flushPromises()
 
-    // 两次运行各 5 条记录，精简范围各留 3 条；合并后按事件序排列。
+    // 两次运行各 5 条记录，精简范围各留 3 条；每条运行内部按真实发送顺序（上下文 → 学生），
+    // 运行之间仍是事件序。
     expect(wrapper.findAll("div.record-row")).toHaveLength(6)
     expect(wrapper.findAll("div.record-row").map((row) => row.find(".record-index").text())).toEqual([
-      "#1",
       "#2",
+      "#1",
       "#4",
-      "#11",
       "#12",
+      "#11",
       "#14",
     ])
     const note = wrapper.get(".section-note").text()
