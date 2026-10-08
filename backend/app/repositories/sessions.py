@@ -223,11 +223,10 @@ class SessionRepository:
         return self.database_session.scalars(statement).first()
 
     def get_latest_non_terminal_evaluation(self, session_id: int) -> AIEvaluation | None:
-        """返回最近一次非终态评价，用于核验问题的证据。
+        """返回最近一次非终态评价。
 
-        终态评价（正确且完整）没有 mainReason 和 judgeReason，不能作为核验
-        证据；核验问题只围绕学生仍然暴露的薄弱点，因此要往前找最近一次未
-        解决问题的评价。
+        核验问题只依据题目上下文和共享历史生成，评价结论不再进入提示词；这里
+        用它定位学生最近一次仍未解决的自讲尝试，供核验记录关联。
         """
         statement = (
             select(AIEvaluation)

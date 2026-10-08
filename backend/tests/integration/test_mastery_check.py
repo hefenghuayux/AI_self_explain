@@ -209,90 +209,6 @@ def load_entities(database_session, session_id: int, question_id: int, attempt_i
     )
 
 
-def test_evidence_comes_from_structured_event_not_raw_json(settings, monkeypatch) -> None:
-    """评价证据集中从模型响应事件读取，不依赖 AIEvaluation.raw_response。"""
-    prepare_client(settings, monkeypatch)
-    session_id, question_id, attempt_id, evaluation_id = seed_valid_evaluation(settings)
-
-    engine = create_engine(settings.database_url)
-    try:
-        with OrmSession(engine) as database_session:
-            evaluation = database_session.get(AIEvaluation, evaluation_id)
-            evaluation.raw_response = '{"corrupted": true}'
-            database_session.commit()
-    finally:
-        engine.dispose()
-
-    with mastery_service(settings) as (database_session, service):
-        session = database_session.get(SessionModel, session_id)
-        attempt = database_session.get(ExplanationAttempt, attempt_id)
-        evidence = service._build_evidence(
-            session=session, attempt=attempt, evaluation_id=evaluation_id
-        )
-
-    assert evidence is not None
-    assert evidence.evaluation_id == evaluation_id
-    assert evidence.main_reason == "知识应用问题"
-    assert evidence.judge_reason == "学生写出了计算方向，但没有说明依据。"
-    assert evidence.student_text == "我把两个数合起来。"
-
-
-def test_terminal_evaluation_has_no_mastery_check_evidence(settings, monkeypatch) -> None:
-    """终态评价没有 mainReason 和 judgeReason，不能作为核验证据。"""
-    prepare_client(settings, monkeypatch)
-    session_id, question_id, attempt_id, evaluation_id = seed_valid_evaluation(settings)
-
-    engine = create_engine(settings.database_url)
-    try:
-        with OrmSession(engine) as database_session:
-            terminal_output = {
-                "correctness": "CORRECT",
-                "completeness": "COMPLETE",
-                "hasProgress": True,
-                "mainReason": None,
-                "otherReasons": [],
-                "judgeReason": None,
-            }
-            run_id = f"run_session_{session_id}_attempt_{attempt_id}"
-            database_session.query(SessionEvent).filter(
-                SessionEvent.session_id == session_id,
-                SessionEvent.run_id == run_id,
-                SessionEvent.event_type == "model.responded",
-            ).delete(synchronize_session=False)
-            database_session.commit()
-            EventStore(database_session).append(
-                session_id=session_id,
-                event_type="model.responded",
-                run_id=run_id,
-                data={
-                    "output": terminal_output,
-                    "rawContent": json.dumps(terminal_output, ensure_ascii=False),
-                    "validation": "valid",
-                    "durationMs": 10,
-                },
-            )
-            database_session.commit()
-    finally:
-        engine.dispose()
-
-    def fail_on_ai_call(self, request: ModelRequestSnapshot) -> AIModelResponse:
-        raise AssertionError("缺少核验证据时不应调用 AI")
-
-    monkeypatch.setattr(AIModelClient, "evaluate", fail_on_ai_call)
-
-    with mastery_service(settings) as (database_session, service):
-        session = database_session.get(SessionModel, session_id)
-        attempt = database_session.get(ExplanationAttempt, attempt_id)
-        result = service.generate_questions(
-            question=database_session.get(QuestionModel, question_id),
-            session=session,
-            attempt=attempt,
-            evaluation_id=evaluation_id,
-        )
-
-    assert result is None
-
-
 def test_illegal_question_count_requests_human_review(settings, monkeypatch) -> None:
     prepare_client(settings, monkeypatch)
     session_id, question_id, attempt_id, evaluation_id = seed_valid_evaluation(settings)
@@ -303,12 +219,10 @@ def test_illegal_question_count_requests_human_review(settings, monkeypatch) -> 
     )
 
     with mastery_service(settings) as (database_session, service):
-        session, question, attempt = load_entities(
+        session, question, _ = load_entities(
             database_session, session_id, question_id, attempt_id
         )
-        result = service.generate_questions(
-            question=question, session=session, attempt=attempt, evaluation_id=evaluation_id
-        )
+        result = service.generate_questions(question=question, session=session)
 
     assert result is None
     session = read_session(settings, session_id)
@@ -334,12 +248,10 @@ def test_transport_retry_exhaustion_requests_human_review(settings, monkeypatch)
     monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
 
     with mastery_service(settings) as (database_session, service):
-        session, question, attempt = load_entities(
+        session, question, _ = load_entities(
             database_session, session_id, question_id, attempt_id
         )
-        result = service.generate_questions(
-            question=question, session=session, attempt=attempt, evaluation_id=evaluation_id
-        )
+        result = service.generate_questions(question=question, session=session)
 
     assert result is None
     session = read_session(settings, session_id)
@@ -351,41 +263,16 @@ def test_transport_retry_exhaustion_requests_human_review(settings, monkeypatch)
     )
 
 
-def test_missing_evaluation_evidence_returns_none_without_ai_call(settings, monkeypatch) -> None:
-    prepare_client(settings, monkeypatch)
-    session_id, question_id, attempt_id, evaluation_id = seed_valid_evaluation(settings)
-    stub_mastery_evaluation(monkeypatch, json.dumps(VALID_QUESTIONS, ensure_ascii=False))
-
-    with mastery_service(settings) as (database_session, service):
-        session, question, attempt = load_entities(
-            database_session, session_id, question_id, attempt_id
-        )
-        result = service.generate_questions(
-            question=question,
-            session=session,
-            attempt=attempt,
-            evaluation_id=evaluation_id + 999,
-        )
-
-    assert result is None
-    session = read_session(settings, session_id)
-    assert session.need_human_reason is None
-    assert session.version == 1
-    assert read_mastery_calls(settings, session_id) == []
-
-
 def test_valid_questions_are_recorded_as_validated_output(settings, monkeypatch) -> None:
     prepare_client(settings, monkeypatch)
     session_id, question_id, attempt_id, evaluation_id = seed_valid_evaluation(settings)
     stub_mastery_evaluation(monkeypatch, json.dumps(VALID_QUESTIONS, ensure_ascii=False))
 
     with mastery_service(settings) as (database_session, service):
-        session, question, attempt = load_entities(
+        session, question, _ = load_entities(
             database_session, session_id, question_id, attempt_id
         )
-        result = service.generate_questions(
-            question=question, session=session, attempt=attempt, evaluation_id=evaluation_id
-        )
+        result = service.generate_questions(question=question, session=session)
 
     assert result is not None
     assert [item.id for item in result.questions] == ["mc1"]

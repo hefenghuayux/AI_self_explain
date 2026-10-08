@@ -17,12 +17,10 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session as DatabaseSession
 
 from app.core.config import Settings
-from app.models.explanation_attempt import ExplanationAttempt
 from app.models.external_call_record import ExternalCallRecord
 from app.models.question import Question as QuestionRecord
 from app.models.session import Session
 from app.repositories.sessions import SessionRepository
-from app.schemas.ai_evaluation import AIEvaluationOutput
 from app.schemas.mastery_check import (
     MasteryCheckAnswer,
     MasteryCheckAssessmentOutput,
@@ -41,7 +39,6 @@ from app.services.ai_evaluation import (
     AIModelClient,
     AIModelResponse,
     AITransportError,
-    _student_steps_from_attempt,
 )
 from app.services.ai_reasoning import resolve_reasoning_params
 from app.services.session_event_log import SessionEventLog
@@ -66,21 +63,6 @@ def mastery_check_run_id(session: Session, purpose: str) -> str:
 
 
 @dataclass(frozen=True)
-class MasteryCheckEvidence:
-    """核验问题生成的证据集合。
-
-    `main_reason` 只提供问题方向，问题正文必须落在 `judge_reason`、
-    `student_text` 或历史事件的具体内容上。
-    """
-
-    evaluation_id: int
-    main_reason: str
-    judge_reason: str
-    student_text: str
-    student_steps: list[dict[str, object]] | None = None
-
-
-@dataclass(frozen=True)
 class MasteryCheckQuestionInput:
     """回答评价需要的问题正文与证据引用。"""
 
@@ -102,21 +84,18 @@ class AIMasteryCheckService:
         *,
         question: QuestionRecord,
         session: Session,
-        attempt: ExplanationAttempt,
-        evaluation_id: int,
     ) -> MasteryCheckQuestionsOutput | None:
-        evidence = self._build_evidence(
-            session=session, attempt=attempt, evaluation_id=evaluation_id
-        )
-        if evidence is None:
-            return None
+        """生成核验问题。
+
+        薄弱点证据全部来自题目上下文和共享历史，因此不接收评价结论与提交数据；
+        调用方仍负责把核验记录关联到对应的自讲尝试。
+        """
         progress_context = self._build_progress_context(session)
         return self._generate(
             session=session,
             request_builder=lambda validation_errors: _render_generation_prompt(
                 question=question,
                 session=session,
-                evidence=evidence,
                 validation_errors=validation_errors,
                 model=self.settings.ai_model,
                 prompt_version=self.settings.prompt_version,
@@ -159,64 +138,6 @@ class AIMasteryCheckService:
             validator=lambda output: validate_mastery_check_assessment(output, question_ids),
             purpose="MASTERY_CHECK_ASSESSMENT",
         )
-
-    def _build_evidence(
-        self,
-        *,
-        session: Session,
-        attempt: ExplanationAttempt,
-        evaluation_id: int,
-    ) -> MasteryCheckEvidence | None:
-        """读取最近一次非终态评价的结构化输出作为问题生成证据。
-
-        终态评价（正确且完整）没有 mainReason 和 judgeReason；核验问题只围绕
-        学生仍然暴露的薄弱点，因此证据取最近一次未解决问题的评价。评价的
-        mainReason、otherReasons 和 judgeReason 保存在模型响应事件中，这里集中
-        解析一次，避免调用点各自解析原始事件 JSON。
-        """
-        evaluation = self.repository.get_latest_non_terminal_evaluation(session.id)
-        if evaluation is None or evaluation.id != evaluation_id:
-            return None
-        if evaluation.attempt_id != attempt.id:
-            return None
-        output = self._latest_evaluation_output(session, attempt.id)
-        if output is None:
-            return None
-        if output.main_reason is None or output.judge_reason is None:
-            return None
-        return MasteryCheckEvidence(
-            evaluation_id=evaluation.id,
-            main_reason=output.main_reason,
-            judge_reason=output.judge_reason,
-            student_text=attempt.confirmed_text or "",
-            student_steps=_student_steps_from_attempt(attempt),
-        )
-
-    def _latest_evaluation_output(
-        self, session: Session, attempt_id: int
-    ) -> AIEvaluationOutput | None:
-        """读取该次尝试最近一次结构合法的评价输出。
-
-        同一次尝试里还可能有教学、支持等其他模型响应，它们与评价共用 run_id，
-        所以这里按输出结构筛选，遇到不属于评价的响应继续往前找。
-        """
-        events = SessionEventLog(self.repository.database_session).event_store.list_events(
-            session.id
-        )
-        run_id = f"run_session_{session.id}_attempt_{attempt_id}"
-        for event in reversed(events):
-            if event.run_id != run_id or event.event_type != "model.responded":
-                continue
-            if event.data.get("validation") != "valid":
-                continue
-            output = event.data.get("output")
-            if not isinstance(output, dict):
-                continue
-            try:
-                return AIEvaluationOutput.model_validate(output)
-            except ValidationError:
-                continue
-        return None
 
     def _build_progress_context(self, session: Session) -> dict[str, object]:
         from app.services.context_history import build_shared_history
@@ -440,29 +361,24 @@ def _render_generation_prompt(
     *,
     question: QuestionRecord,
     session: Session,
-    evidence: MasteryCheckEvidence,
     validation_errors: list[str],
     model: str,
     prompt_version: str,
     reasoning_effort: str | None = None,
     progress_context: dict[str, object] | None = None,
 ) -> ModelRequestSnapshot:
+    """核验问题生成请求：任务指令接在共享前缀之后，不提供本轮数据层。
+
+    学生薄弱点的证据来自题目上下文与共享历史，评价结论不进入提示词。
+    """
     template = GENERATION_PROMPT_PATH.read_text(encoding="utf-8")
-    user_input: dict[str, object] = {
-        "mainReason": evidence.main_reason,
-        "judgeReason": evidence.judge_reason,
-    }
-    if evidence.student_steps is not None:
-        user_input["studentSteps"] = evidence.student_steps
-    else:
-        user_input["studentText"] = evidence.student_text
     return _model_request(
         purpose="AI_MASTERY_CHECK",
         prompt_version=prompt_version,
         task_instructions=template,
         question=question,
         session=session,
-        user_input=user_input,
+        user_input=None,
         validation_errors=validation_errors,
         model=model,
         reasoning_effort=reasoning_effort,
@@ -528,7 +444,7 @@ def _model_request(
     task_instructions: str,
     question: QuestionRecord,
     session: Session,
-    user_input: dict[str, object],
+    user_input: dict[str, object] | None,
     validation_errors: list[str],
     model: str,
     reasoning_effort: str | None = None,
@@ -540,9 +456,38 @@ def _model_request(
     # 模型既不需要也不允许据此改变流程。
     session_context: dict[str, object] = {"taskType": "MASTERY_CHECK"}
     shared_history = progress_context or {"events": []}
-    current_data = dict(user_input)
-    if validation_errors:
-        current_data["validationErrors"] = validation_errors
+    messages = [
+        ModelRequestMessage(role="system", content=shared_system),
+        ModelRequestMessage(
+            role="user",
+            content=json.dumps(question_context, ensure_ascii=False),
+        ),
+        ModelRequestMessage(
+            role="user", content=json.dumps(shared_history, ensure_ascii=False)
+        ),
+        ModelRequestMessage(role="user", content=task_instructions),
+    ]
+    if user_input is None:
+        # 核验问题生成没有本轮数据层；结构重试时只补一条校验错误，
+        # 让任务指令之前的三层保持不变。
+        if validation_errors:
+            messages.append(
+                ModelRequestMessage(
+                    role="user",
+                    content=json.dumps(
+                        {"validationErrors": validation_errors}, ensure_ascii=False
+                    ),
+                )
+            )
+    else:
+        current_data = dict(user_input)
+        if validation_errors:
+            current_data["validationErrors"] = validation_errors
+        messages.append(
+            ModelRequestMessage(
+                role="user", content=json.dumps(current_data, ensure_ascii=False)
+            )
+        )
     extra_body = resolve_reasoning_params(model, reasoning_effort)
     return ModelRequestSnapshot(
         schema_version="1.1",
@@ -553,25 +498,12 @@ def _model_request(
             task_instructions=task_instructions,
             question_context=question_context,
             session_context=session_context,
-            user_input=user_input,
+            user_input=user_input or {},
             retry_context={"validationErrors": validation_errors},
         ),
         transport=ModelTransportSnapshot(
             model=model,
-            messages=[
-                ModelRequestMessage(role="system", content=shared_system),
-                ModelRequestMessage(
-                    role="user",
-                    content=json.dumps(question_context, ensure_ascii=False),
-                ),
-                ModelRequestMessage(
-                    role="user", content=json.dumps(shared_history, ensure_ascii=False)
-                ),
-                ModelRequestMessage(role="user", content=task_instructions),
-                ModelRequestMessage(
-                    role="user", content=json.dumps(current_data, ensure_ascii=False)
-                ),
-            ],
+            messages=messages,
             response_format={"type": "json_object"},
             reasoning_effort=reasoning_effort,
             extra_body=extra_body,

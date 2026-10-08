@@ -4,7 +4,6 @@ from app.models.question import Question
 from app.models.session import Session
 from app.schemas.mastery_check import MasteryCheckAnswer
 from app.services.ai_mastery_check import (
-    MasteryCheckEvidence,
     MasteryCheckQuestionInput,
     _render_assessment_prompt,
     _render_generation_prompt,
@@ -24,20 +23,10 @@ def question() -> Question:
     )
 
 
-def evidence() -> MasteryCheckEvidence:
-    return MasteryCheckEvidence(
-        evaluation_id=12,
-        main_reason="知识应用问题",
-        judge_reason="学生写出了计算方向，但没有说明依据。",
-        student_text="我把两个数合起来。",
-    )
-
-
-def test_generation_prompt_has_five_layer_structure() -> None:
+def test_generation_prompt_has_four_layer_structure() -> None:
     request = _render_generation_prompt(
         question=question(),
         session=Session(round=1, support_count_round=4),
-        evidence=evidence(),
         validation_errors=[],
         model="test-model",
         prompt_version="mastery-v1",
@@ -46,7 +35,7 @@ def test_generation_prompt_has_five_layer_structure() -> None:
     assert request.schema_version == "1.1"
     assert request.purpose == "AI_MASTERY_CHECK"
     messages = request.transport.messages
-    assert len(messages) == 5
+    assert len(messages) == 4
 
     # [0] system：全局共享前缀
     assert messages[0].role == "system"
@@ -61,26 +50,14 @@ def test_generation_prompt_has_five_layer_structure() -> None:
     assert messages[2].role == "user"
     assert json.loads(messages[2].content) == {"events": []}
 
-    # [3] user：任务指令来自 generate_mastery_check.md
+    # [3] user：核验任务指令来自 generate_mastery_check.md，也是最后一层
     assert messages[3].role == "user"
     assert "掌握度核验问题生成器" in messages[3].content
     assert "evidenceRefs" in messages[3].content
 
-    # [4] user：本轮任务数据只含证据，不含业务计数
-    assert messages[4].role == "user"
-    msg4 = json.loads(messages[4].content)
-    assert msg4["mainReason"] == "知识应用问题"
-    assert msg4["judgeReason"] == "学生写出了计算方向，但没有说明依据。"
-    assert msg4["studentText"] == "我把两个数合起来。"
-    assert "round" not in msg4
-    assert "supportCountRound" not in msg4
-
-    # blocks：证据进入 userInput，session_context 不携带轮次与计数
-    assert request.blocks.user_input == {
-        "mainReason": "知识应用问题",
-        "judgeReason": "学生写出了计算方向，但没有说明依据。",
-        "studentText": "我把两个数合起来。",
-    }
+    # blocks：不提供本轮数据层，session_context 不携带轮次与计数
+    assert request.blocks.task_instructions == messages[3].content
+    assert request.blocks.user_input == {}
     assert request.blocks.session_context == {"taskType": "MASTERY_CHECK"}
     assert request.blocks.retry_context == {"validationErrors": []}
     assert request.privacy.contains_student_content is True
@@ -92,7 +69,6 @@ def test_generation_prompt_omits_session_counts_from_transport() -> None:
     request = _render_generation_prompt(
         question=question(),
         session=Session(round=2, support_count_round=3),
-        evidence=evidence(),
         validation_errors=["核验问题数量必须在 1 到 2 之间"],
         model="test-model",
         prompt_version="mastery-v1",
@@ -101,8 +77,16 @@ def test_generation_prompt_omits_session_counts_from_transport() -> None:
     for message in request.transport.messages:
         assert '"round"' not in message.content
         assert '"supportCountRound"' not in message.content
-    current_data = json.loads(request.transport.messages[4].content)
-    assert current_data["validationErrors"] == ["核验问题数量必须在 1 到 2 之间"]
+    # 结构重试只追加一条校验错误，任务指令之前的三层不变
+    messages = request.transport.messages
+    assert len(messages) == 5
+    assert messages[3].content == request.blocks.task_instructions
+    assert json.loads(messages[4].content) == {
+        "validationErrors": ["核验问题数量必须在 1 到 2 之间"]
+    }
+    assert request.blocks.retry_context == {
+        "validationErrors": ["核验问题数量必须在 1 到 2 之间"]
+    }
 
 
 def test_assessment_prompt_carries_questions_answers_and_evidence() -> None:
@@ -112,8 +96,8 @@ def test_assessment_prompt_carries_questions_answers_and_evidence() -> None:
             question="你在配方这一步依据的是什么？",
             evidence_refs=[
                 {
-                    "source": "EVALUATION",
-                    "sourceId": "12",
+                    "source": "STUDENT_TEXT",
+                    "sourceId": "attempt:12",
                     "quote": "学生写出了配方步骤，但未说明依据。",
                 }
             ],
@@ -142,8 +126,8 @@ def test_assessment_prompt_carries_questions_answers_and_evidence() -> None:
             "question": "你在配方这一步依据的是什么？",
             "evidenceRefs": [
                 {
-                    "source": "EVALUATION",
-                    "sourceId": "12",
+                    "source": "STUDENT_TEXT",
+                    "sourceId": "attempt:12",
                     "quote": "学生写出了配方步骤，但未说明依据。",
                 }
             ],

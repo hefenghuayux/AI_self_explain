@@ -184,29 +184,26 @@ def start_mastery_check(
 ) -> Session:
     """生成并保存核验问题。
 
-    核验问题以最近一次非终态评价为证据。缺少证据或生成失败时不进入核验，
-    走现有人工复核路径，学生仍可继续自讲；会话不会停在 `WAIT_MASTERY_CHECK`。
+    核验问题只依据题目上下文与共享历史，评价结论不进入提示词；最近一次非终态
+    评价仅用于把核验记录关联到对应的自讲尝试。缺少可关联的尝试或生成失败时
+    不进入核验，走现有人工复核路径，学生仍可继续自讲；会话不会停在
+    `WAIT_MASTERY_CHECK`。
     """
-    evidence_evaluation = repository.get_latest_non_terminal_evaluation(session.id)
-    evidence_attempt = (
+    linked_evaluation = repository.get_latest_non_terminal_evaluation(session.id)
+    linked_attempt = (
         None
-        if evidence_evaluation is None
-        else repository.get_attempt(session.id, evidence_evaluation.attempt_id)
+        if linked_evaluation is None
+        else repository.get_attempt(session.id, linked_evaluation.attempt_id)
     )
-    if evidence_evaluation is not None and evidence_attempt is not None:
+    if linked_evaluation is not None and linked_attempt is not None:
         output = AIMasteryCheckService(
             repository.database_session, settings, http_client
-        ).generate_questions(
-            question=question,
-            session=session,
-            attempt=evidence_attempt,
-            evaluation_id=evidence_evaluation.id,
-        )
+        ).generate_questions(question=question, session=session)
         if output is not None:
             repository.record_mastery_questions(
                 session=session,
-                attempt_id=evidence_attempt.id,
-                evaluation_id=evidence_evaluation.id,
+                attempt_id=linked_attempt.id,
+                evaluation_id=linked_evaluation.id,
                 questions=output.questions,
             )
             return session

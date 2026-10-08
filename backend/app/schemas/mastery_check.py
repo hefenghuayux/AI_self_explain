@@ -12,7 +12,8 @@ from app.schemas.ai_evaluation import Reason
 from app.schemas.question import QuestionSchema, RequiredText, to_camel_case
 
 MasteryCheckReason = Reason
-# 核验问题可以引用的证据来源，覆盖方案第 3 节列出的证据类型。
+# 核验问题可以引用的证据来源。`EVALUATION` 已不再由生成提示词提供，保留它只为
+# 让本次改动前已经发送的问题仍可读取。
 MasteryCheckEvidenceSource = Literal[
     "EVALUATION",
     "STUDENT_TEXT",
