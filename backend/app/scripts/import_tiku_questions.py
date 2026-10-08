@@ -1,11 +1,12 @@
 import argparse
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
+from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, select, text
+from sqlalchemy import Engine, bindparam, create_engine, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -26,6 +27,15 @@ SOURCE_QUERY = text(
     LIMIT :batch_size
     """
 )
+SOURCE_QUERY_BY_IDS = text(
+    """
+    SELECT id, content, display_answer, analysis, grade_period, subject, q_type,
+           difficulty_level, review, topics, method
+    FROM tiku_question
+    WHERE del_status = 0 AND id IN :ids
+    ORDER BY id ASC
+    """
+).bindparams(bindparam("ids", expanding=True))
 
 
 @dataclass(frozen=True)
@@ -55,6 +65,7 @@ def import_tiku_questions(
     target_engine: Engine,
     *,
     batch_size: int = 500,
+    question_ids: Sequence[int] | None = None,
 ) -> ImportResult:
     if batch_size <= 0:
         raise ValueError("batch_size 必须为正整数")
@@ -64,30 +75,31 @@ def import_tiku_questions(
     inserted_count = 0
     skipped_count = 0
     failures: list[ImportFailure] = []
-    last_id = 0
+
+    if question_ids is None:
+        source_filter = SOURCE_FILTER
+        batches = _iter_batches_by_cursor(source_engine, batch_size)
+    else:
+        ordered_ids = sorted({int(value) for value in question_ids})
+        if not ordered_ids:
+            raise ValueError("question_ids 不能为空")
+        source_filter = f"{SOURCE_FILTER} AND id IN ({len(ordered_ids)} 个指定题目)"
+        batches = _iter_batches_by_ids(source_engine, batch_size, ordered_ids)
 
     logger.info(
         "开始导入题库题目",
-        extra={"eventName": "tiku_import.started", "sourceFilter": SOURCE_FILTER},
+        extra={"eventName": "tiku_import.started", "sourceFilter": source_filter},
     )
-    with source_engine.connect() as source_connection:
-        while True:
-            source_rows = source_connection.execute(
-                SOURCE_QUERY, {"last_id": last_id, "batch_size": batch_size}
-            ).mappings().all()
-            if not source_rows:
-                break
-
-            last_id = source_rows[-1]["id"]
-            read_count += len(source_rows)
-            inserted, skipped, batch_failures = _import_batch(target_engine, source_rows)
-            inserted_count += inserted
-            skipped_count += skipped
-            failures.extend(batch_failures)
+    for source_rows in batches:
+        read_count += len(source_rows)
+        inserted, skipped, batch_failures = _import_batch(target_engine, source_rows)
+        inserted_count += inserted
+        skipped_count += skipped
+        failures.extend(batch_failures)
 
     result = ImportResult(
         started_at=started_at,
-        source_filter=SOURCE_FILTER,
+        source_filter=source_filter,
         read_count=read_count,
         inserted_count=inserted_count,
         skipped_count=skipped_count,
@@ -104,6 +116,40 @@ def import_tiku_questions(
         },
     )
     return result
+
+
+def _iter_batches_by_cursor(
+    source_engine: Engine, batch_size: int
+) -> Iterator[Sequence[dict[str, object]]]:
+    """按 id 游标分批扫全表。"""
+    last_id = 0
+    with source_engine.connect() as source_connection:
+        while True:
+            source_rows = (
+                source_connection.execute(
+                    SOURCE_QUERY, {"last_id": last_id, "batch_size": batch_size}
+                )
+                .mappings()
+                .all()
+            )
+            if not source_rows:
+                return
+            last_id = source_rows[-1]["id"]
+            yield source_rows
+
+
+def _iter_batches_by_ids(
+    source_engine: Engine, batch_size: int, ordered_ids: Sequence[int]
+) -> Iterator[Sequence[dict[str, object]]]:
+    """只在给定的题目 id 里分批取数，源库里不存在或已删除的 id 不会出现在结果里。"""
+    with source_engine.connect() as source_connection:
+        for start in range(0, len(ordered_ids), batch_size):
+            chunk = list(ordered_ids[start : start + batch_size])
+            source_rows = (
+                source_connection.execute(SOURCE_QUERY_BY_IDS, {"ids": chunk}).mappings().all()
+            )
+            if source_rows:
+                yield source_rows
 
 
 def _import_batch(
@@ -179,14 +225,36 @@ def _nullable_text(value: object) -> str | None:
     return value if value.strip() else None
 
 
+def load_question_ids(path: Path) -> list[int]:
+    if not path.exists():
+        raise SystemExit(f"找不到题目 id 文件：{path}")
+    question_ids: list[int] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        value = line.strip()
+        if not value or value.startswith("#"):
+            continue
+        try:
+            question_ids.append(int(value))
+        except ValueError as error:
+            raise SystemExit(f"{path} 第 {line_number} 行不是整数：{value}") from error
+    if not question_ids:
+        raise SystemExit(f"{path} 里没有题目 id")
+    return question_ids
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="一次性只读导入 tbox_test.tiku_question")
+    parser = argparse.ArgumentParser(description="一次性只读导入 tiku_question 题目")
     parser.add_argument(
         "--source-database-url",
         required=True,
         help="源数据库 SQLAlchemy URL；命令只对源库执行 SELECT",
     )
     parser.add_argument("--batch-size", type=int, default=500, help="每批读取数量，默认 500")
+    parser.add_argument(
+        "--question-ids-file",
+        type=Path,
+        help="只导入文件里列出的题目 id（每行一个）；不传则按 del_status = 0 全量导入",
+    )
     return parser.parse_args()
 
 
@@ -196,11 +264,15 @@ def main() -> None:
     configure_logging(settings.log_dir, settings.log_max_size_mib, settings.log_backup_count)
     source_engine = create_engine(arguments.source_database_url)
     target_engine = create_database_engine(settings)
+    question_ids = (
+        load_question_ids(arguments.question_ids_file) if arguments.question_ids_file else None
+    )
     try:
         result = import_tiku_questions(
             source_engine,
             target_engine,
             batch_size=arguments.batch_size,
+            question_ids=question_ids,
         )
         print(json.dumps(result.as_dict(), ensure_ascii=False))
     finally:

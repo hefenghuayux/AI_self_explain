@@ -1,3 +1,4 @@
+import pytest
 from sqlalchemy import (
     Column,
     Engine,
@@ -104,6 +105,82 @@ def test_import_maps_fields_preserves_html_and_only_reads_source() -> None:
     assert question.method == "列式计算"
     assert question.rubric_points is None
     assert all(statement.lstrip().upper().startswith("SELECT") for statement in source_statements)
+
+
+def test_import_by_question_ids_only_imports_listed_questions() -> None:
+    source_engine = create_engine("sqlite:///:memory:")
+    target_engine = create_engine("sqlite:///:memory:")
+    source_table = _create_source_table(source_engine)
+    Question.__table__.create(target_engine)
+    with source_engine.begin() as connection:
+        connection.execute(
+            insert(source_table),
+            [
+                {"id": 2, "content": "清单里的第二题", "del_status": 0},
+                {"id": 3, "content": "清单里已删除的题", "del_status": 1},
+                {"id": 4, "content": "不在清单里", "del_status": 0},
+                {"id": 7, "content": "清单里的第七题", "del_status": 0},
+            ],
+        )
+
+    source_statements: list[str] = []
+
+    @event.listens_for(source_engine, "before_cursor_execute")
+    def capture_source_statement(*args: object) -> None:
+        source_statements.append(str(args[2]))
+
+    result = import_tiku_questions(
+        source_engine, target_engine, batch_size=1, question_ids=[7, 2, 3, 2]
+    )
+
+    with Session(target_engine) as session:
+        questions = session.scalars(select(Question).order_by(Question.tiku_question_id)).all()
+    assert result.source_filter == "del_status = 0 AND id IN (3 个指定题目)"
+    assert result.read_count == 2
+    assert result.inserted_count == 2
+    assert result.skipped_count == 0
+    assert result.failures == []
+    assert [question.tiku_question_id for question in questions] == [2, 7]
+    assert all(statement.lstrip().upper().startswith("SELECT") for statement in source_statements)
+
+
+def test_import_by_question_ids_skips_existing_questions() -> None:
+    source_engine = create_engine("sqlite:///:memory:")
+    target_engine = create_engine("sqlite:///:memory:")
+    source_table = _create_source_table(source_engine)
+    Question.__table__.create(target_engine)
+    with source_engine.begin() as connection:
+        connection.execute(
+            insert(source_table),
+            [
+                {"id": 1, "content": "已导入题目", "del_status": 0},
+                {"id": 2, "content": "新题目", "del_status": 0},
+            ],
+        )
+    with target_engine.begin() as connection:
+        connection.execute(insert(Question).values(tiku_question_id=1, question_content="人工题目"))
+
+    result = import_tiku_questions(source_engine, target_engine, question_ids=[1, 2])
+
+    assert result.read_count == 2
+    assert result.inserted_count == 1
+    assert result.skipped_count == 1
+    with Session(target_engine) as session:
+        questions = session.scalars(select(Question).order_by(Question.tiku_question_id)).all()
+    assert [(question.tiku_question_id, question.question_content) for question in questions] == [
+        (1, "人工题目"),
+        (2, "新题目"),
+    ]
+
+
+def test_import_by_question_ids_rejects_empty_list() -> None:
+    source_engine = create_engine("sqlite:///:memory:")
+    target_engine = create_engine("sqlite:///:memory:")
+    _create_source_table(source_engine)
+    Question.__table__.create(target_engine)
+
+    with pytest.raises(ValueError, match="question_ids 不能为空"):
+        import_tiku_questions(source_engine, target_engine, question_ids=[])
 
 
 def test_import_skips_existing_questions_and_records_invalid_source_content() -> None:
