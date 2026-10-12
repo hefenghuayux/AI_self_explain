@@ -74,7 +74,6 @@ def test_teaching_action_is_selected_by_deterministic_priority(
     ("support_count_round", "expected_completion_type"),
     [
         (0, "INDEPENDENT"),
-        (1, "WITH_SUPPORT"),
     ],
 )
 def test_low_support_first_round_end_completes_without_mastery_check(
@@ -95,7 +94,7 @@ def test_low_support_first_round_end_completes_without_mastery_check(
     assert decision.completion_type == expected_completion_type
 
 
-@pytest.mark.parametrize("support_count_round", [2, 3, 4])
+@pytest.mark.parametrize("support_count_round", [1, 2, 3, 4])
 def test_high_support_first_round_end_enters_mastery_check(
     settings, support_count_round: int
 ) -> None:
@@ -182,6 +181,21 @@ def test_last_allowed_support_still_generates_teaching(settings) -> None:
     assert decision.should_generate is True
     assert decision.expose_solution is False
     assert decision.allowed_action == "GIVE_CORRECTION"
+
+
+def test_focused_question_hits_support_limit_before_generation(settings) -> None:
+    limit = settings.first_round_support_limit
+    decision = decide_teaching(
+        evaluation=evaluation("CORRECT", "INCOMPLETE"),
+        session=session(support_count_round=limit),
+        settings=settings,
+    )
+
+    assert decision.should_generate is False
+    assert decision.expose_solution is True
+    assert decision.next_status == "IN_PROGRESS"
+    assert decision.next_flow_stage == "SHOWING_FULL_SOLUTION"
+    assert decision.support_count_round_override == limit
 
 
 @pytest.mark.parametrize(

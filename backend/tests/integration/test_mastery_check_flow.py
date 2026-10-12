@@ -151,7 +151,7 @@ def _reach_mastery_check(
     settings: Settings,
     monkeypatch,
     *,
-    support_count: int = 3,
+    support_count: int = 1,
     solution_exposed: bool = False,
 ) -> dict[str, object]:
     """走到第一轮结束：先留下一条非终态评价，再以正确且完整结束第一轮。"""
@@ -176,7 +176,7 @@ def _reach_mastery_check(
     return response.json()
 
 
-def test_high_support_first_round_end_enters_mastery_check(settings, monkeypatch) -> None:
+def test_supported_first_round_end_enters_mastery_check(settings, monkeypatch) -> None:
     with _client(settings, monkeypatch) as client:
         saved = _reach_mastery_check(client, settings, monkeypatch)
 
@@ -186,7 +186,7 @@ def test_high_support_first_round_end_enters_mastery_check(settings, monkeypatch
     assert saved["completionType"] is None
     # 新流程不再开启第二轮，轮次与支持计数都保持不变。
     assert saved["round"] == 1
-    assert saved["supportCountRound"] == 3
+    assert saved["supportCountRound"] == 1
     assert [item["id"] for item in saved["masteryCheck"]["questions"]] == [MASTERY_QUESTION_ID]
     assert saved["masteryCheck"]["answers"] is None
     assert saved["masteryCheck"]["outcome"] is None
@@ -213,7 +213,7 @@ def test_all_passed_mastery_check_completes_the_session(settings, monkeypatch) -
     assert saved["completionType"] == "AFTER_MASTERY_CHECK"
     assert saved["masteryCheck"]["outcome"] == "COMPLETED"
     assert saved["masteryCheck"]["results"][0]["passed"] is True
-    assert saved["supportCountRound"] == 3
+    assert saved["supportCountRound"] == 1
     assert [item["eventType"] for item in timeline[-3:]] == [
         "MASTERY_QUESTIONS",
         "SUBMISSION",
@@ -284,26 +284,26 @@ def test_low_support_first_round_end_completes_without_mastery_check(
     settings, monkeypatch
 ) -> None:
     with _client(settings, monkeypatch) as client:
-        saved = _reach_mastery_check(client, settings, monkeypatch, support_count=1)
+        saved = _reach_mastery_check(client, settings, monkeypatch, support_count=0)
 
     assert saved["status"] == "COMPLETED"
-    assert saved["completionType"] == "WITH_SUPPORT"
+    assert saved["completionType"] == "INDEPENDENT"
     assert saved["masteryCheck"] is None
 
 
-def test_two_supports_without_solution_enters_mastery_check(settings, monkeypatch) -> None:
+def test_one_support_without_solution_enters_mastery_check(settings, monkeypatch) -> None:
     with _client(settings, monkeypatch) as client:
-        saved = _reach_mastery_check(client, settings, monkeypatch, support_count=2)
+        saved = _reach_mastery_check(client, settings, monkeypatch, support_count=1)
 
     assert saved["status"] == "IN_PROGRESS"
     assert saved["flowStage"] == "WAIT_MASTERY_CHECK"
     assert saved["masteryCheck"] is not None
 
 
-def test_solution_exposed_with_two_supports_enters_mastery_check(settings, monkeypatch) -> None:
+def test_solution_exposed_with_one_support_enters_mastery_check(settings, monkeypatch) -> None:
     with _client(settings, monkeypatch) as client:
         saved = _reach_mastery_check(
-            client, settings, monkeypatch, support_count=2, solution_exposed=True
+            client, settings, monkeypatch, support_count=1, solution_exposed=True
         )
 
     assert saved["flowStage"] == "WAIT_MASTERY_CHECK"

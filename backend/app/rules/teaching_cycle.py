@@ -1,8 +1,10 @@
 from app.core.config import Settings
 
-COUNTED_SUPPORT_TYPES = frozenset({"GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"})
+COUNTED_SUPPORT_TYPES = frozenset(
+    {"ASK_FOCUSED_QUESTION", "GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"}
+)
 # 第一轮自讲结束后，已发送的有效支持数达到该下限才进入掌握度核验。
-MASTERY_CHECK_MIN_SUPPORT_COUNT = 2
+MASTERY_CHECK_MIN_SUPPORT_COUNT = 1
 
 
 def support_limit_reached(*, support_count_round: int, settings: Settings) -> bool:
@@ -22,7 +24,7 @@ def support_limit_for(*, settings: Settings) -> int:
 def needs_mastery_check(*, support_count_round: int) -> bool:
     """按已发送的有效支持数确定性地判断是否需要核验。
 
-    支持数 <= 1 时直接结束本题，不进入核验。
+    支持数为 0 时直接结束本题，不进入核验。
     """
     return support_count_round >= MASTERY_CHECK_MIN_SUPPORT_COUNT
 

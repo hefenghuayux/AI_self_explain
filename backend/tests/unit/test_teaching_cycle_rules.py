@@ -23,7 +23,7 @@ def test_support_limit_allows_the_configured_number_of_supports(settings) -> Non
     ("support_count_round", "expected"),
     [
         (0, False),
-        (1, False),
+        (1, True),
         (2, True),
         (3, True),
         (6, True),

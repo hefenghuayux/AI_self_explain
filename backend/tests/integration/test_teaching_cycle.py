@@ -266,7 +266,7 @@ def test_not_understanding_first_solution_requests_review_and_allows_continuing(
     assert continued.json()["flowStage"] == "CAPTURING_INPUT"
 
 
-def test_focused_question_after_explanation_is_a_non_counting_guided_question(
+def test_focused_question_after_explanation_counts_as_support(
     settings, monkeypatch
 ) -> None:
     evaluation = {
@@ -289,7 +289,8 @@ def test_focused_question_after_explanation_is_a_non_counting_guided_question(
 
     assert response.status_code == 200
     assert response.json()["flowStage"] == "WAIT_GUIDED_ANSWERS"
-    assert response.json()["supportCountRound"] == 0
+    assert response.json()["supportCountRound"] == 1
+    assert response.json()["supportCountTotal"] == 1
     assert response.json()["latestSupport"]["supportType"] == "ASK_FOCUSED_QUESTION"
     assert response.json()["latestSupport"]["guidedQuestions"] == [
         {"id": "evaluation-q1", "question": "结果是多少？"}

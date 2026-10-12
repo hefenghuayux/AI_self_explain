@@ -17,7 +17,9 @@ from app.rules.teaching_cycle import (
 from app.schemas.ai_evaluation import AIEvaluationOutput
 from app.schemas.teaching import GeneratedTeachingAction
 
-COUNTED_SUPPORT_TYPES = frozenset({"GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"})
+COUNTED_SUPPORT_TYPES = frozenset(
+    {"ASK_FOCUSED_QUESTION", "GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"}
+)
 
 
 @dataclass(frozen=True)
