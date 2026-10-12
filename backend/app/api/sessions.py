@@ -54,6 +54,7 @@ from app.schemas.session import (
     LearningTimelineItemResponse,
     MasteryCheckAnswersInput,
     MasteryCheckResponse,
+    SessionHistoryItemResponse,
     SessionResponse,
     SolutionUnderstandingInput,
     StudentActionInput,
@@ -246,6 +247,24 @@ def get_voice_attempt_for_submission(
     if attempt.voice_target != target or attempt.voice_target_id != target_id:
         reject_operation("语音转写目标与当前提交不一致")
     return attempt
+
+
+@router.get("/history", response_model=list[SessionHistoryItemResponse])
+def list_session_history(
+    database_session: DatabaseSession,
+    current_user: CurrentUser,
+    limit: int = Query(default=50, ge=1, le=50),
+) -> list[SessionHistoryItemResponse]:
+    sessions = SessionRepository(database_session).list_history(current_user.id, limit)
+    return [
+        SessionHistoryItemResponse(
+            id=session.id,
+            name=f"自讲{index}",
+            status=session.status,
+            created_at=session.created_at,
+        )
+        for index, session in enumerate(sessions, start=1)
+    ]
 
 
 @router.get("/{session_id}", response_model=SessionResponse)

@@ -182,3 +182,10 @@ class SessionResponse(QuestionSchema):
     latest_support: SupportEventResponse | None = None
     teaching_generation: TeachingGenerationResponse | None = None
     mastery_check: MasteryCheckResponse | None = None
+
+
+class SessionHistoryItemResponse(QuestionSchema):
+    id: int
+    name: str
+    status: SessionStatus
+    created_at: datetime

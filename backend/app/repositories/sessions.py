@@ -165,6 +165,19 @@ class SessionRepository:
     def get(self, session_id: int) -> Session | None:
         return self.database_session.get(Session, session_id)
 
+    def list_history(self, user_id: int, limit: int = 50) -> list[Session]:
+        statement = (
+            select(Session)
+            .where(
+                Session.user_id == user_id,
+                Session.lifecycle_status != "restarted",
+                Session.version > 0,
+            )
+            .order_by(Session.updated_at.desc(), Session.id.desc())
+            .limit(limit)
+        )
+        return list(self.database_session.scalars(statement))
+
     def pause(self, session: Session) -> Session:
         before_snapshot = session_snapshot(session)
         session.paused_from_stage = session.flow_stage

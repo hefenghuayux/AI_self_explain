@@ -7,6 +7,7 @@ import {
   continueExplaining,
   createSession,
   fetchLearningTimeline,
+  fetchSessionHistory,
   fetchSession,
   SessionApiError,
   submitAppeal,
@@ -28,6 +29,7 @@ import type {
   InitialChoice,
   LearningTimelineItem,
   Session,
+  SessionHistoryItem,
   VoiceInputTarget,
 } from "../types/session"
 import type { StepsResponse } from "../types/session-step"
@@ -72,6 +74,10 @@ const stepVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 const explainVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 const guidedVoiceRecorderRefs = ref<InstanceType<typeof VoiceRecorder>[]>([])
 const appealVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
+const historyDrawerVisible = ref(false)
+const historyItems = ref<SessionHistoryItem[]>([])
+const historyLoading = ref(false)
+const historyError = ref("")
 
 const sessionId = String(route.params.sessionId)
 const dialogDraftStorageKey = `ai-self-explain:session:${sessionId}:dialog-drafts`
@@ -136,6 +142,24 @@ const masteryOutcomeLabels: Record<"COMPLETED" | "NEEDS_REVIEW", string> = {
   NEEDS_REVIEW: "核验仍有未解决问题，本题结束并记录待复核",
 }
 
+const historyStatusLabels: Record<SessionHistoryItem["status"], string> = {
+  IN_PROGRESS: "进行中",
+  COMPLETED: "已完成",
+  STOPPED_LIMIT: "已停止",
+  PAUSED: "已暂停",
+  NEEDS_REVIEW: "待复核",
+}
+
+function historyStatusType(status: SessionHistoryItem["status"]): "success" | "warning" | "info" {
+  if (status === "COMPLETED") return "success"
+  if (status === "IN_PROGRESS" || status === "PAUSED") return "warning"
+  return "info"
+}
+
+function formatHistoryCreatedAt(createdAt: string) {
+  return new Date(createdAt).toLocaleString("zh-CN", { hour12: false })
+}
+
 function emptyDialogDrafts(): DialogDrafts {
   return {
     guidedAnswers: {},
@@ -143,6 +167,26 @@ function emptyDialogDrafts(): DialogDrafts {
     doubt: "",
     appeal: "",
     lastSubmittedSelfExplanation: "",
+  }
+}
+
+async function openHistoryDrawer() {
+  historyDrawerVisible.value = true
+  historyLoading.value = true
+  historyError.value = ""
+  try {
+    historyItems.value = await fetchSessionHistory()
+  } catch (error) {
+    historyError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+async function selectHistoryItem(item: SessionHistoryItem) {
+  historyDrawerVisible.value = false
+  if (item.id !== Number(sessionId)) {
+    await router.push(`/sessions/${item.id}`)
   }
 }
 
@@ -759,10 +803,30 @@ async function respondToSolution(understood: boolean) {
     <div class="session-shell">
       <Teleport to="#app-header-actions">
         <div v-if="session" class="page-actions">
+          <el-button data-testid="session-history" @click="openHistoryDrawer">自讲历史</el-button>
           <el-button data-testid="restart-self-explanation" :loading="submitting" @click="restartSelfExplanation">重新自讲</el-button>
           <RouterLink v-if="authUser?.role === 'TEACHER'" :to="`/sessions/${session.id}/logs`"><el-button>查看运行日志</el-button></RouterLink>
         </div>
       </Teleport>
+      <el-drawer v-model="historyDrawerVisible" title="自讲历史" direction="rtl" size="360px">
+        <el-skeleton v-if="historyLoading" :rows="5" animated />
+        <el-alert v-else-if="historyError" :title="historyError" type="error" :closable="false" show-icon />
+        <el-empty v-else-if="historyItems.length === 0" description="暂无自讲历史" />
+        <div v-else class="history-list">
+          <button
+            v-for="item in historyItems"
+            :key="item.id"
+            type="button"
+            class="history-item"
+            :class="{ 'is-current': item.id === Number(sessionId) }"
+            @click="selectHistoryItem(item)"
+          >
+            <span class="history-item-name">{{ item.name }}</span>
+            <el-tag size="small" :type="historyStatusType(item.status)">{{ historyStatusLabels[item.status] }}</el-tag>
+            <time :datetime="item.createdAt">{{ formatHistoryCreatedAt(item.createdAt) }}</time>
+          </button>
+        </div>
+      </el-drawer>
       <div v-if="errorMessage" class="error-state" role="alert">
         <el-alert :title="errorMessage" type="error" :closable="false" show-icon />
         <el-button data-testid="continue-session" type="primary" @click="continueAfterError">继续自讲</el-button>
@@ -1056,6 +1120,11 @@ async function respondToSolution(understood: boolean) {
 .session-shell { min-width: 0; }
 .page-actions, .actions { display: flex; align-items: center; gap: var(--space-2); }
 .actions { flex-wrap: wrap; margin-top: var(--space-4); }
+.history-list { display: flex; flex-direction: column; gap: var(--space-2); }
+.history-item { display: grid; grid-template-columns: 1fr auto; gap: var(--space-2); width: 100%; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text-primary); background: var(--color-surface); text-align: left; cursor: pointer; }
+.history-item:hover, .history-item.is-current { border-color: var(--color-brand-600); background: var(--color-brand-50); }
+.history-item-name { font-weight: 700; }
+.history-item time { grid-column: 1 / -1; color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .error-state { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
 .error-state .el-alert { flex: 1; }
 h2, h3 { margin: 0; line-height: 1.4; }

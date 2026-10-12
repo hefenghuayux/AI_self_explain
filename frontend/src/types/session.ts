@@ -126,3 +126,10 @@ export interface Session {
     | null
   masteryCheck: MasteryCheck | null
 }
+
+export interface SessionHistoryItem {
+  id: number
+  name: string
+  status: SessionStatus
+  createdAt: string
+}

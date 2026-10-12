@@ -1,4 +1,10 @@
-import type { GuidedAnswer, InitialChoice, LearningTimelineItem, Session } from "../types/session"
+import type {
+  GuidedAnswer,
+  InitialChoice,
+  LearningTimelineItem,
+  Session,
+  SessionHistoryItem,
+} from "../types/session"
 import { getAuthToken } from "../stores/auth"
 
 interface SessionApiErrorDetail {
@@ -64,6 +70,10 @@ export function createSession(questionId: string, restart = false): Promise<Sess
 
 export function fetchSession(sessionId: string): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}`)
+}
+
+export function fetchSessionHistory(): Promise<SessionHistoryItem[]> {
+  return requestSessionApi<SessionHistoryItem[]>("/api/sessions/history")
 }
 
 export function fetchLearningTimeline(sessionId: string): Promise<LearningTimelineItem[]> {
