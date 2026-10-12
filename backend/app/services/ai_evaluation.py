@@ -484,7 +484,7 @@ def build_progress_context(
     # (created_at, id, 记录类型, 记录, seq 锚点)
     raw: list[tuple[object, int, str, object, int | None]] = []
     for item in previous_attempts:
-        if item.structured_steps is not None or item.confirmed_text:
+        if item.student_explanation is not None or item.confirmed_text:
             anchor = None if attempt_seqs is None else attempt_seqs.get(item.id)
             raw.append((item.created_at, item.id, "attempt", item, anchor))
     for item in previous_support:
@@ -509,15 +509,15 @@ def build_progress_context(
     next_seq = 0
     for _, _, rec_type, record, _ in raw:
         if rec_type == "attempt":
-            student_steps = _student_steps_from_attempt(record)
+            student_explanation = _student_explanation_from_attempt(record)
             events.append(
                 {
                     "seq": next_seq,
                     "actor": "student",
                     "kind": "explanation",
                     "content": (
-                        student_steps
-                        if student_steps is not None
+                        student_explanation
+                        if student_explanation is not None
                         else record.confirmed_text
                     ),
                     "interactionId": f"attempt:{record.id}",
@@ -531,25 +531,16 @@ def build_progress_context(
     return {"events": events}
 
 
-def _student_steps_from_attempt(
+def _student_explanation_from_attempt(
     attempt: ExplanationAttempt,
-) -> list[dict[str, object]] | None:
-    if attempt.structured_steps is None:
-        return None
-    return [
-        {
-            "seq": step["seq"],
-            "stepContent": step.get("stepContent", ""),
-            "explainTranscript": step.get("explainTranscript", ""),
-        }
-        for step in attempt.structured_steps
-    ]
+) -> dict[str, str] | None:
+    return attempt.student_explanation
 
 
-def _latest_student_steps_from_history(
+def _latest_student_explanation_from_history(
     progress_context: Mapping[str, object] | None,
-) -> list[dict[str, object]] | None:
-    """从共享历史中取最近一次结构化自讲，去掉审计字段后供 AI 使用。"""
+) -> dict[str, str] | None:
+    """从共享历史中取最近一次单步自讲，供 AI 使用。"""
     if not progress_context:
         return None
     events = progress_context.get("events")
@@ -559,7 +550,7 @@ def _latest_student_steps_from_history(
         if not isinstance(event, dict) or event.get("kind") != "explanation":
             continue
         content = event.get("content")
-        if not isinstance(content, list):
+        if not isinstance(content, dict):
             return None
         return content
     return None
@@ -635,10 +626,10 @@ def _render_prompt(
         "guidedQuestions": question.guided_questions,
         "fullSolution": question.full_solution,
     }
-    student_steps = _student_steps_from_attempt(attempt)
+    student_explanation = _student_explanation_from_attempt(attempt)
     user_input: dict[str, object] = (
-        {"studentSteps": student_steps}
-        if student_steps is not None
+        {"studentExplanation": student_explanation}
+        if student_explanation is not None
         else {"confirmedText": attempt.confirmed_text}
     )
     # 五层消息

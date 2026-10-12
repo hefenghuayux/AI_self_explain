@@ -1,4 +1,5 @@
 import asyncio
+import asyncio
 import json
 from pathlib import Path
 
@@ -86,7 +87,8 @@ def test_step_and_explain_voice_targets_preserve_editable_and_readonly_evidence(
             )
         assert request.purpose == "AI_EVALUATION"
         assert (
-            '"confirmedText": "步骤 1：学生修改后的最终文本"'
+            '"studentExplanation": {"stepContent": "学生修改后的最终文本", '
+            '"explainTranscript": "这里先根据题意列式。"}'
             in request.transport.messages[4].content
         )
         return AIModelResponse(
@@ -110,11 +112,9 @@ def test_step_and_explain_voice_targets_preserve_editable_and_readonly_evidence(
             f"/api/sessions/{session['id']}/initial-choice",
             json={"choice": "KNOW", "version": session["version"]},
         ).json()
-        step_id = session["currentStepId"]
-
         with client.websocket_connect(
             f"/api/sessions/{session['id']}/voice-stream"
-            f"?version={session['version']}&target=SELF_EXPLANATION_STEP&targetId={step_id}"
+            f"?version={session['version']}&target=SELF_EXPLANATION_STEP"
         ) as websocket:
             assert websocket.receive_json()["type"] == "ready"
             websocket.send_bytes(b"\x00\x00" * 1600)
@@ -133,7 +133,7 @@ def test_step_and_explain_voice_targets_preserve_editable_and_readonly_evidence(
         with client.websocket_connect(
             f"/api/sessions/{session['id']}/voice-stream"
             f"?version={after_first_transcript['version']}"
-            f"&target=SELF_EXPLANATION_EXPLAIN&targetId={step_id}"
+            f"&target=SELF_EXPLANATION_EXPLAIN"
         ) as websocket:
             assert websocket.receive_json()["type"] == "ready"
             websocket.send_bytes(b"\x00\x00" * 1600)
@@ -145,12 +145,11 @@ def test_step_and_explain_voice_targets_preserve_editable_and_readonly_evidence(
         assert rerecorded["type"] == "completed"
         assert rerecorded["attemptId"] != completed["attemptId"]
         steps = client.get(f"/api/sessions/{session['id']}/steps").json()
-        assert steps["steps"][0]["stepContent"] is None
-        assert steps["steps"][0]["explainTranscript"] == "这里先根据题意列式。"
+        assert steps["step"]["stepContent"] is None
+        assert steps["step"]["explainTranscript"] == "这里先根据题意列式。"
         submitted = client.post(
             f"/api/sessions/{session['id']}/step-attempts",
             json={
-                "currentStepId": step_id,
                 "currentStepContent": "学生修改后的最终文本",
                 "version": rerecorded["version"],
             },
@@ -181,18 +180,14 @@ def test_step_and_explain_voice_targets_preserve_editable_and_readonly_evidence(
         ]
         assert attempts[0].asr_transcript == "1 加 1 等于 2。"
         assert attempts[0].confirmed_text is None
-        assert attempts[0].step_id == step_id
+        assert attempts[0].voice_target_id is None
         assert attempts[1].asr_transcript == "这里先根据题意列式。"
         assert attempts[1].confirmed_text is None
-        assert attempts[1].step_id == step_id
-        assert attempts[2].structured_steps == [
-            {
-                "id": step_id,
-                "seq": 1,
-                "stepContent": "学生修改后的最终文本",
-                "explainTranscript": "这里先根据题意列式。",
-            }
-        ]
+        assert attempts[1].voice_target_id is None
+        assert attempts[2].student_explanation == {
+            "stepContent": "学生修改后的最终文本",
+            "explainTranscript": "这里先根据题意列式。",
+        }
         assert len(asr_calls) == 2
         assert all(call.transport_status == "SUCCESS" for call in asr_calls)
         assert all(call.validation_status == "NOT_RUN" for call in asr_calls)

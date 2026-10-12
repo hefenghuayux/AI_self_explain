@@ -186,8 +186,8 @@ defineExpose({ open })
 
 <template>
   <div ref="editorRef" class="step-content-input" :contenteditable="!disabled"
-    :aria-disabled="disabled" data-testid="current-step-content" data-placeholder="输入当前步骤"
-    aria-label="当前步骤输入" role="textbox" aria-multiline="true"
+    :aria-disabled="disabled" data-testid="current-step-content" data-placeholder="输入关键步骤或解题过程"
+    aria-label="关键步骤或解题过程输入" role="textbox" aria-multiline="true"
     @input="updateValue" @click="handleClick" @paste="handlePaste"
     @keyup="rememberSelection" @mouseup="rememberSelection" />
 </template>

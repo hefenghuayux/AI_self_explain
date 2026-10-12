@@ -6,9 +6,7 @@ import {
   submitMasteryCheckAnswers,
 } from "../src/api/sessions"
 import {
-  activateStep,
   fetchSessionSteps,
-  saveStepAndGoNext,
   submitStepAttempt,
 } from "../src/api/session-steps"
 
@@ -43,7 +41,7 @@ describe("session API errors", () => {
   })
 
   it("fetches the current session steps by default", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ steps: [] }), {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ step: null }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     }))
@@ -57,66 +55,22 @@ describe("session API errors", () => {
     )
   })
 
-  it("saves a step and advances with the current version", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ steps: [] }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }))
-    vi.stubGlobal("fetch", fetchMock)
-
-    await saveStepAndGoNext("12", 101, "先列出已知条件", 13)
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sessions/12/steps/101/next",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          stepContent: "先列出已知条件",
-          version: 13,
-        }),
-      }),
-    )
-  })
-
-  it("activates a target step after saving the current step", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ steps: [] }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }))
-    vi.stubGlobal("fetch", fetchMock)
-
-    await activateStep("12", 101, 103, "修改后的当前步骤", 15)
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sessions/12/steps/101/activate",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          currentStepId: 103,
-          currentStepContent: "修改后的当前步骤",
-          version: 15,
-        }),
-      }),
-    )
-  })
-
-  it("submits the current step draft as a step attempt", async () => {
+  it("submits the single explanation draft with the current version", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 12 }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     }))
     vi.stubGlobal("fetch", fetchMock)
 
-    await submitStepAttempt("12", 104, "完成最后一步", 16)
+    await submitStepAttempt("12", "关键步骤", 13)
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/sessions/12/step-attempts",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          currentStepId: 104,
-          currentStepContent: "完成最后一步",
-          version: 16,
+          currentStepContent: "关键步骤",
+          version: 13,
         }),
       }),
     )

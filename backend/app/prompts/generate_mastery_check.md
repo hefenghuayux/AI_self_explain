@@ -6,7 +6,7 @@
 
 - 题目材料：题目条件、评分点、常见错误、预设子问题和完整解析。
 - 共享历史 `events`：按时间排序的交互事件。
-  - `actor=student` 是学生原始产出。`kind=explanation` 是学生自讲，`content` 是结构化步骤，每步含 `stepContent`（提交文字或公式）和 `explainTranscript`（语音转写，公式按学生原文理解）；`kind=guided_answer` 是学生对支持中问题的回答。
+  - `actor=student` 是学生原始产出。`kind=explanation` 是学生自讲，`content` 是单步结构化证据，含 `stepContent`（提交文字或公式）和 `explainTranscript`（语音转写，公式按学生原文理解）；`kind=guided_answer` 是学生对支持中问题的回答。
   - `actor=teacher` 是系统已发送的支持正文。`kind=teaching` 是教学提示，`kind=follow_up` 是跟进正文。
   - `replyTo` 标明事件回复的目标，可用于配对教学与回答；`interactionId` 是事件的引用标识；`seq` 是事件顺序。
   - `summary` 存在时是较早交互的压缩摘要，只用于了解此前进展；具体证据仍以 `events` 中的原文为准。

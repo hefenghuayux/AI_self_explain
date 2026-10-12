@@ -47,8 +47,8 @@ class TeachingContext(TeachingSchema):
     task_type: Literal["EXPLANATION_TEACHING"] = "EXPLANATION_TEACHING"
     question: dict[str, object]
     current_student_text: str | None = None
-    student_steps: list[dict[str, object]] | None = Field(
-        default=None, alias="studentSteps"
+    student_explanation: dict[str, str] | None = Field(
+        default=None, alias="studentExplanation"
     )
     latest_evaluation: AIEvaluationOutput
     teaching_history: list[dict[str, object]]

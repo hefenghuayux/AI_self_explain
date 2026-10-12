@@ -1,5 +1,4 @@
 from datetime import UTC, datetime
-from uuid import uuid4
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session as DatabaseSession
@@ -590,111 +589,21 @@ class SessionRepository:
             if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT:
                 return {
                     "round": session.round,
-                    "draftId": "",
                     "currentStepId": None,
                     "version": session.version,
-                    "steps": [],
+                    "step": None,
                 }
             session = self._create_initial_explanation_draft(session)
 
         current_step = self.database_session.get(ExplanationStep, session.current_step_id)
         if current_step is None:
             raise ValueError(f"会话 {session.id} 的当前步骤不存在：{session.current_step_id}")
-        steps = list(
-            self.database_session.scalars(
-                select(ExplanationStep)
-                .where(
-                    ExplanationStep.session_id == session.id,
-                    ExplanationStep.round == current_step.round,
-                    ExplanationStep.draft_id == current_step.draft_id,
-                )
-                .order_by(ExplanationStep.seq)
-            )
-        )
         return {
             "round": current_step.round,
-            "draftId": current_step.draft_id,
             "currentStepId": session.current_step_id,
             "version": session.version,
-            "steps": steps,
+            "step": current_step,
         }
-
-    def save_step_and_advance(
-        self,
-        *,
-        session: Session,
-        step_id: int,
-        step_content: str,
-        expected_version: int,
-    ) -> dict[str, object]:
-        if session.current_step_id != step_id:
-            raise ValueError("只能保存当前步骤")
-        step = self.get_editable_step(session, step_id)
-        if not self._has_step_evidence(step_content, step.explain_transcript):
-            raise ValueError("当前步骤和讲解不能同时为空")
-        before_snapshot = session_snapshot(session)
-        step.step_content = step_content
-        step.status = "SAVED"
-        next_step = self._get_step_in_draft(session, step.draft_id, step.seq + 1)
-        if next_step is None:
-            next_step = ExplanationStep(
-                session_id=session.id,
-                round=session.round,
-                draft_id=step.draft_id,
-                seq=step.seq + 1,
-                status="DRAFT",
-            )
-            self.database_session.add(next_step)
-            self.database_session.flush()
-        session.current_step_id = next_step.id
-        session.current_draft = self._step_projection(session, step.draft_id, session.round)
-        self._update_session_version(session, expected_version)
-        self._record_transition(
-            session=session,
-            trigger_type="SAVE_EXPLANATION_STEP_AND_ADVANCE",
-            before_snapshot=before_snapshot,
-        )
-        self.database_session.commit()
-        self.database_session.refresh(session)
-        return self.get_current_steps(session)
-
-    def activate_step(
-        self,
-        *,
-        session: Session,
-        target_step_id: int,
-        current_step_id: int,
-        current_step_content: str,
-        expected_version: int,
-    ) -> dict[str, object]:
-        if session.current_step_id != current_step_id:
-            raise ValueError("当前步骤位置已变化，请刷新后重试")
-        current_step = self.get_editable_step(session, current_step_id)
-        target_step = self.get_editable_step(session, target_step_id)
-        if current_step.draft_id != target_step.draft_id:
-            raise ValueError("只能在同一组自讲步骤之间切换")
-        has_evidence = self._has_step_evidence(
-            current_step_content, current_step.explain_transcript
-        )
-        if not has_evidence and (
-            current_step_id == target_step_id or current_step.status != "DRAFT"
-        ):
-            raise ValueError("当前步骤和讲解不能同时为空")
-        before_snapshot = session_snapshot(session)
-        current_step.step_content = current_step_content
-        if current_step.status == "DRAFT" and has_evidence:
-            current_step.status = "SAVED"
-        session.current_step_id = target_step.id
-        session.current_draft = self._step_projection(session, current_step.draft_id, session.round)
-        self._update_session_version(session, expected_version)
-        self._record_transition(
-            session=session,
-            trigger_type="ACTIVATE_EXPLANATION_STEP",
-            before_snapshot=before_snapshot,
-        )
-        self.database_session.commit()
-        self.database_session.refresh(session)
-        return self.get_current_steps(session)
 
     def build_step_snapshot(
         self,
@@ -702,41 +611,18 @@ class SessionRepository:
         session: Session,
         current_step_id: int,
         current_step_content: str,
-    ) -> tuple[str, list[dict[str, object]], str]:
+    ) -> tuple[dict[str, str], str]:
         if session.current_step_id != current_step_id:
             raise ValueError("当前步骤位置已变化，请刷新后重试")
         current_step = self.get_editable_step(session, current_step_id)
         current_step.step_content = current_step_content
-        steps = list(
-            self.database_session.scalars(
-                select(ExplanationStep)
-                .where(
-                    ExplanationStep.session_id == session.id,
-                    ExplanationStep.round == current_step.round,
-                    ExplanationStep.draft_id == current_step.draft_id,
-                )
-                .order_by(ExplanationStep.seq)
-            )
-        )
-        if not steps or any(
-            not self._has_step_evidence(step.step_content, step.explain_transcript)
-            for step in steps
-        ):
-            raise ValueError("提交前每个步骤至少需要步骤文字或讲解转写")
-        snapshot = [
-            {
-                "id": step.id,
-                "seq": step.seq,
-                "stepContent": step.step_content or "",
-                "explainTranscript": step.explain_transcript or "",
-            }
-            for step in steps
-        ]
-        return (
-            current_step.draft_id,
-            snapshot,
-            self._step_projection(session, current_step.draft_id, current_step.round),
-        )
+        if not self._has_step_evidence(current_step.step_content, current_step.explain_transcript):
+            raise ValueError("提交前关键步骤和讲解不能同时为空")
+        explanation = {
+            "stepContent": current_step.step_content or "",
+            "explainTranscript": current_step.explain_transcript or "",
+        }
+        return explanation, self._step_projection(current_step)
 
     def submit_step_attempt(
         self,
@@ -746,7 +632,7 @@ class SessionRepository:
         current_step_content: str,
         expected_version: int,
     ) -> tuple[Session, ExplanationAttempt]:
-        draft_id, snapshot, projection = self.build_step_snapshot(
+        explanation, projection = self.build_step_snapshot(
             session=session,
             current_step_id=current_step_id,
             current_step_content=current_step_content,
@@ -771,21 +657,12 @@ class SessionRepository:
         if result.rowcount != 1:
             self.database_session.rollback()
             raise SessionVersionConflict(f"会话 {session.id} 版本已变化")
-        for step in self.database_session.scalars(
-            select(ExplanationStep).where(
-                ExplanationStep.session_id == session.id,
-                ExplanationStep.draft_id == draft_id,
-                ExplanationStep.round == session.round,
-            )
-        ):
-            step.status = "SUBMITTED"
         attempt = ExplanationAttempt(
             session_id=session.id,
             round=session.round,
             input_mode="TEXT",
             confirmed_text=projection,
-            structured_steps=snapshot,
-            step_id=None,
+            student_explanation=explanation,
             confirmed_at=datetime.now(UTC),
         )
         self.database_session.add(attempt)
@@ -797,11 +674,9 @@ class SessionRepository:
             event_type="user.message",
             run_id=run_id,
             data={
-                "draftId": draft_id,
                 "attemptId": attempt.id,
-                "stepIds": [step["id"] for step in snapshot],
                 "text": projection,
-                "steps": snapshot,
+                "studentExplanation": explanation,
                 "inputType": "text",
             },
         )
@@ -812,13 +687,11 @@ class SessionRepository:
             context={
                 "attemptId": attempt.id,
                 "round": session.round,
-                "draftId": draft_id,
-                "stepIds": [step["id"] for step in snapshot],
             },
         )
         self._record_transition(
             session=session,
-            trigger_type="SUBMIT_EXPLANATION_STEPS",
+            trigger_type="SUBMIT_EXPLANATION",
             before_snapshot=before_snapshot,
             related_attempt_id=attempt.id,
             run_id=run_id,
@@ -949,9 +822,10 @@ class SessionRepository:
             raise SessionVersionConflict(f"会话 {session.id} 版本已变化")
         target_step = None
         if voice_target in {"SELF_EXPLANATION_STEP", "SELF_EXPLANATION_EXPLAIN"}:
-            if voice_target_id is None:
-                raise ValueError("步骤语音输入必须携带步骤 ID")
-            target_step = self.get_editable_step(session, int(voice_target_id))
+            if session.current_step_id is None:
+                raise ValueError("当前自讲草稿不存在")
+            target_step = self.get_editable_step(session, session.current_step_id)
+            voice_target_id = None
         before_snapshot = session_snapshot(session)
         audio_file = AudioFile(
             session_id=session.id,
@@ -969,12 +843,6 @@ class SessionRepository:
             voice_target=voice_target,
             voice_target_id=voice_target_id,
             audio_file_id=audio_file.id,
-            step_id=(
-                int(voice_target_id)
-                if voice_target in {"SELF_EXPLANATION_STEP", "SELF_EXPLANATION_EXPLAIN"}
-                and voice_target_id is not None
-                else None
-            ),
             asr_transcript=asr_transcript,
             confirmed_text=None,
             confirmed_at=None,
@@ -1516,7 +1384,12 @@ class SessionRepository:
     def continue_explaining(self, session: Session) -> Session:
         before_snapshot = session_snapshot(session)
         session.flow_stage = FLOW_STAGE_CAPTURING_INPUT
-        self._create_explanation_draft(session)
+        if session.current_step_id is None:
+            self._create_explanation_draft(session)
+        else:
+            current_step = self.get_editable_step(session, session.current_step_id)
+            current_step.step_content = None
+            current_step.explain_transcript = None
         session.current_draft = ""
         session.version += 1
         self._record_transition(
@@ -1691,9 +1564,6 @@ class SessionRepository:
         draft_step = ExplanationStep(
             session_id=session.id,
             round=session.round,
-            draft_id=str(uuid4()),
-            seq=1,
-            status="DRAFT",
         )
         self.database_session.add(draft_step)
         self.database_session.flush()
@@ -1738,21 +1608,7 @@ class SessionRepository:
         )
         if step is None:
             raise ValueError(f"步骤不存在或不属于当前会话：{step_id}")
-        if step.status == "SUBMITTED":
-            raise ValueError(f"步骤已经提交，不能继续修改：{step_id}")
         return step
-
-    def _get_step_in_draft(
-        self, session: Session, draft_id: str, seq: int
-    ) -> ExplanationStep | None:
-        return self.database_session.scalar(
-            select(ExplanationStep).where(
-                ExplanationStep.session_id == session.id,
-                ExplanationStep.round == session.round,
-                ExplanationStep.draft_id == draft_id,
-                ExplanationStep.seq == seq,
-            )
-        )
 
     def _update_session_version(self, session: Session, expected_version: int) -> None:
         with self.database_session.no_autoflush:
@@ -1774,21 +1630,9 @@ class SessionRepository:
     def _has_step_evidence(step_content: str | None, explain_transcript: str | None) -> bool:
         return bool((step_content or "").strip() or (explain_transcript or "").strip())
 
-    def _step_projection(self, session: Session, draft_id: str, round_number: int) -> str:
-        steps = self.database_session.scalars(
-            select(ExplanationStep)
-            .where(
-                ExplanationStep.session_id == session.id,
-                ExplanationStep.round == round_number,
-                ExplanationStep.draft_id == draft_id,
-            )
-            .order_by(ExplanationStep.seq)
-        )
-        return "\n".join(
-            f"步骤 {step.seq}：{step.step_content.strip()}"
-            for step in steps
-            if step.step_content and step.step_content.strip()
-        )
+    @staticmethod
+    def _step_projection(step: ExplanationStep) -> str:
+        return step.step_content.strip() if step.step_content else ""
 
     def _record_student_submission(
         self,

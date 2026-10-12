@@ -34,7 +34,7 @@ from app.services.ai_evaluation import (
     AIModelClient,
     AIModelResponse,
     AITransportError,
-    _student_steps_from_attempt,
+    _student_explanation_from_attempt,
 )
 from app.services.ai_reasoning import resolve_reasoning_params
 from app.services.session_event_log import SessionEventLog
@@ -273,7 +273,7 @@ def _build_context(
         }
         for item in reversed(supports)
     ]
-    student_steps = _student_steps_from_attempt(attempt)
+    student_explanation = _student_explanation_from_attempt(attempt)
     return TeachingContext(
         question={
             "questionContent": question.question_content,
@@ -285,8 +285,8 @@ def _build_context(
             "guidedQuestions": question.guided_questions or [],
             "fullSolution": question.full_solution,
         },
-        current_student_text=None if student_steps is not None else attempt.confirmed_text,
-        student_steps=student_steps,
+        current_student_text=None if student_explanation is not None else attempt.confirmed_text,
+        student_explanation=student_explanation,
         latest_evaluation=evaluation,
         teaching_history=history,
         instruction_from_rules=InstructionFromRules(
@@ -359,8 +359,8 @@ def _render_prompt(
             mode="json", by_alias=True
         ),
     }
-    if context.student_steps is not None:
-        current_data["studentSteps"] = context.student_steps
+    if context.student_explanation is not None:
+        current_data["studentExplanation"] = context.student_explanation
     else:
         current_data["currentStudentText"] = context.current_student_text
     if context.reason_guidance_examples:
@@ -376,8 +376,8 @@ def _render_prompt(
         current_data["validationErrors"] = []
     extra_body = resolve_reasoning_params(model, reasoning_effort)
     student_input = (
-        {"studentSteps": context.student_steps}
-        if context.student_steps is not None
+        {"studentExplanation": context.student_explanation}
+        if context.student_explanation is not None
         else {"currentStudentText": context.current_student_text}
     )
     return ModelRequestSnapshot(

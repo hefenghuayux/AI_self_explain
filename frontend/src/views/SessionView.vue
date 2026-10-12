@@ -16,9 +16,7 @@ import {
   submitSolutionUnderstanding,
 } from "../api/sessions"
 import {
-  activateStep as activateSessionStep,
   fetchSessionSteps,
-  saveStepAndGoNext,
   submitStepAttempt,
 } from "../api/session-steps"
 import FormulaEditor from "../components/FormulaEditor.vue"
@@ -32,7 +30,7 @@ import type {
   Session,
   VoiceInputTarget,
 } from "../types/session"
-import type { StepResponse, StepsResponse } from "../types/session-step"
+import type { StepsResponse } from "../types/session-step"
 import type { Question } from "../types/question"
 import { sanitizeQuestionHtml } from "../utils/questionHtml"
 import { renderStudentTextHtml } from "../utils/studentTextHtml"
@@ -53,15 +51,11 @@ const session = ref<Session>()
 const question = ref<Question>()
 const timeline = ref<LearningTimelineItem[]>([])
 const activeSegment = ref<SegmentKey>("selfExplain")
-const steps = ref<StepResponse[]>([])
-const visibleSteps = computed(() => steps.value.filter((step) =>
-  !(step.id === currentStepId.value && step.status === "DRAFT" && !hasStepEvidence(step)),
-))
 const currentStepId = ref<number | null>(null)
 const currentStepContent = ref("")
+const currentStepTranscript = ref("")
 // 上次成功提交时自讲框里的内容，用于在当前会话内回填，方便学生直接修改后重讲。
 const lastSubmittedSelfExplanation = ref("")
-const expandedExplainStepIds = ref<number[]>([])
 const formulaEditorRef = ref<InstanceType<typeof FormulaEditor>>()
 const guidedAnswerText = ref<Record<string, string>>({})
 const masteryAnswerText = ref<Record<string, string>>({})
@@ -213,18 +207,14 @@ watch(
 )
 
 function clearStepState() {
-  steps.value = []
   currentStepId.value = null
-  expandedExplainStepIds.value = []
+  currentStepTranscript.value = ""
 }
 
 function applyStepsResponse(response: StepsResponse) {
-  steps.value = [...response.steps].sort((left, right) => left.seq - right.seq)
   currentStepId.value = response.currentStepId
-  currentStepContent.value = steps.value.find((step) => step.id === response.currentStepId)?.stepContent ?? ""
-  expandedExplainStepIds.value = expandedExplainStepIds.value.filter((stepId) =>
-    steps.value.some((step) => step.id === stepId),
-  )
+  currentStepContent.value = response.step?.stepContent ?? ""
+  currentStepTranscript.value = response.step?.explainTranscript ?? ""
   if (session.value) {
     session.value = {
       ...session.value,
@@ -240,11 +230,9 @@ async function loadCurrentSteps() {
   applyStepsResponse(response)
 }
 
-// 新一轮自讲的第一个步骤是后端新建的空步骤（seq 为 1），此时用上次提交的内容回填输入框。
 // 服务端已有步骤内容时以服务端为准，避免旧内容覆盖学生已保存的步骤。
 function restoreLastSubmittedExplanation() {
-  const step = currentStep()
-  if (step?.seq === 1 && !step.stepContent?.trim()) {
+  if (!currentStepContent.value.trim()) {
     currentStepContent.value = lastSubmittedSelfExplanation.value
   }
 }
@@ -284,18 +272,11 @@ async function loadSessionData() {
 }
 
 async function reloadAfterVersionConflict(
-  draftStepId: number | null,
   draftContent: string,
 ) {
   try {
     await loadSessionData()
-    const refreshedStep = steps.value.find((step) => step.id === draftStepId)
-    if (
-      draftStepId !== null
-      && session.value?.flowStage === "CAPTURING_INPUT"
-      && currentStepId.value === draftStepId
-      && refreshedStep?.status !== "SUBMITTED"
-    ) {
+    if (session.value?.flowStage === "CAPTURING_INPUT") {
       currentStepContent.value = draftContent
     }
     errorMessage.value = "会话版本已变化，已刷新当前步骤，请确认后重试"
@@ -421,7 +402,6 @@ async function chooseInitialChoice(choice: InitialChoice) {
   if (!session.value) return
   submitting.value = true
   errorMessage.value = ""
-  const draftStepId = currentStepId.value
   const draftContent = currentStepContent.value
   try {
     session.value = await submitInitialChoice(sessionId, choice, session.value.version)
@@ -430,7 +410,7 @@ async function chooseInitialChoice(choice: InitialChoice) {
     }
   } catch (error) {
     if (isVersionConflict(error)) {
-      await reloadAfterVersionConflict(draftStepId, draftContent)
+      await reloadAfterVersionConflict(draftContent)
     } else {
       errorMessage.value = error instanceof Error ? error.message : String(error)
     }
@@ -439,22 +419,8 @@ async function chooseInitialChoice(choice: InitialChoice) {
   }
 }
 
-function currentStep() {
-  return steps.value.find((step) => step.id === currentStepId.value)
-}
-
-function hasStepEvidence(step: StepResponse | undefined, stepContent = step?.stepContent) {
-  return Boolean(stepContent?.trim() || step?.explainTranscript?.trim())
-}
-
-function toggleExplain(stepId: number) {
-  expandedExplainStepIds.value = expandedExplainStepIds.value.includes(stepId)
-    ? expandedExplainStepIds.value.filter((item) => item !== stepId)
-    : [...expandedExplainStepIds.value, stepId]
-}
-
-function isExplainExpanded(stepId: number) {
-  return expandedExplainStepIds.value.includes(stepId)
+function hasStepEvidence() {
+  return Boolean(currentStepContent.value.trim() || currentStepTranscript.value.trim())
 }
 
 function openFormulaEditor() {
@@ -489,19 +455,16 @@ async function submitExplanation() {
   }
   submitting.value = true
   errorMessage.value = ""
-  let draftStepId: number | null = null
   let draftContent = ""
   try {
     await ensureStepInputReady()
-    draftStepId = currentStepId.value
     draftContent = currentStepContent.value
-    if (currentStepId.value === null || !hasStepEvidence(currentStep(), currentStepContent.value)) {
-      errorMessage.value = "当前步骤和讲解不能同时为空"
+    if (currentStepId.value === null || !hasStepEvidence()) {
+      errorMessage.value = "关键步骤和讲解不能同时为空"
       return
     }
     session.value = await submitStepAttempt(
       sessionId,
-      currentStepId.value,
       currentStepContent.value,
       session.value.version,
     )
@@ -511,7 +474,7 @@ async function submitExplanation() {
     await refreshTimeline()
   } catch (error) {
     if (isVersionConflict(error)) {
-      await reloadAfterVersionConflict(draftStepId, draftContent)
+      await reloadAfterVersionConflict(draftContent)
     } else {
       errorMessage.value = error instanceof Error ? error.message : String(error)
     }
@@ -527,46 +490,6 @@ async function submitExplanation() {
   }
 }
 
-async function saveCurrentStepAndAdvance() {
-  if (!session.value || submitting.value) return
-  if (voiceRecording.value) {
-    stopVoiceRecorder(activeVoiceKey.value ?? "")
-    return
-  }
-  submitting.value = true
-  errorMessage.value = ""
-  let draftStepId: number | null = null
-  let draftContent = ""
-  try {
-    await ensureStepInputReady()
-    draftStepId = currentStepId.value
-    draftContent = currentStepContent.value
-    if (currentStepId.value === null) {
-      errorMessage.value = "当前步骤尚未创建，请刷新后重试"
-      return
-    }
-    if (!hasStepEvidence(currentStep(), currentStepContent.value)) {
-      errorMessage.value = "当前步骤和讲解不能同时为空"
-      return
-    }
-    const response = await saveStepAndGoNext(
-      sessionId,
-      currentStepId.value,
-      currentStepContent.value,
-      session.value.version,
-    )
-    applyStepsResponse(response)
-  } catch (error) {
-    if (isVersionConflict(error)) {
-      await reloadAfterVersionConflict(draftStepId, draftContent)
-    } else {
-      errorMessage.value = error instanceof Error ? error.message : String(error)
-    }
-  } finally {
-    submitting.value = false
-  }
-}
-
 async function prepareStepVoice() {
   if (!session.value) return false
   submitting.value = true
@@ -576,7 +499,7 @@ async function prepareStepVoice() {
     return session.value.flowStage === "CAPTURING_INPUT" && currentStepId.value !== null
   } catch (error) {
     if (isVersionConflict(error)) {
-      await reloadAfterVersionConflict(currentStepId.value, currentStepContent.value)
+      await reloadAfterVersionConflict(currentStepContent.value)
     } else {
       errorMessage.value = error instanceof Error ? error.message : String(error)
     }
@@ -601,44 +524,6 @@ function stopVoiceRecorder(voiceKey: string) {
     appealVoiceRecorderRef.value?.stop()
   } else if (voiceKey.startsWith("guided-")) {
     guidedVoiceRecorderRefs.value.forEach((recorder) => recorder.stop())
-  }
-}
-
-async function activateStep(targetStepId: number) {
-  if (!session.value || submitting.value) return
-  if (targetStepId === currentStepId.value) {
-    toggleExplain(targetStepId)
-    return
-  }
-  if (voiceRecording.value) {
-    stopVoiceRecorder(activeVoiceKey.value ?? "")
-    return
-  }
-  if (currentStepId.value === null) {
-    errorMessage.value = "当前步骤尚未创建，请刷新后重试"
-    return
-  }
-  submitting.value = true
-  errorMessage.value = ""
-  const draftStepId = currentStepId.value
-  const draftContent = currentStepContent.value
-  try {
-    const response = await activateSessionStep(
-      sessionId,
-      targetStepId,
-      currentStepId.value,
-      currentStepContent.value,
-      session.value.version,
-    )
-    applyStepsResponse(response)
-  } catch (error) {
-    if (isVersionConflict(error)) {
-      await reloadAfterVersionConflict(draftStepId, draftContent)
-    } else {
-      errorMessage.value = error instanceof Error ? error.message : String(error)
-    }
-  } finally {
-    submitting.value = false
   }
 }
 
@@ -691,22 +576,18 @@ async function handleVoiceCompleted(
   targetId: string | undefined,
   payload: { attemptId: number; version: number },
 ) {
-  voiceAttemptIds.value[voiceAttemptKey(target, targetId)] = payload.attemptId
+  if (target !== "SELF_EXPLANATION_STEP" && target !== "SELF_EXPLANATION_EXPLAIN") {
+    voiceAttemptIds.value[voiceAttemptKey(target, targetId)] = payload.attemptId
+  }
   try {
     const currentDraftBeforeRefresh = currentStepContent.value
-    const currentStepBeforeRefresh = currentStepId.value
     session.value = await fetchSession(sessionId)
     if (session.value.version < payload.version) {
       session.value = { ...session.value, version: payload.version }
     }
     if (session.value.flowStage === "CAPTURING_INPUT") {
       await loadCurrentSteps()
-      const refreshedStep = steps.value.find((step) => step.id === currentStepBeforeRefresh)
-      if (
-        currentStepBeforeRefresh !== null
-        && currentStepId.value === currentStepBeforeRefresh
-        && refreshedStep?.status !== "SUBMITTED"
-      ) {
+      if (currentStepId.value !== null) {
         currentStepContent.value = currentDraftBeforeRefresh
       }
     }
@@ -936,7 +817,6 @@ async function respondToSolution(understood: boolean) {
                       :session-id="sessionId"
                       :version="session.version"
                       target="SELF_EXPLANATION_EXPLAIN"
-                      :target-id="currentStepId === null ? undefined : String(currentStepId)"
                       start-test-id="record-explain"
                       stop-test-id="stop-record-explain"
                       label="讲解录音"
@@ -944,7 +824,7 @@ async function respondToSolution(understood: boolean) {
                       :disabled="submitting
                         || (voiceRecording && activeVoiceKey !== 'explain')"
                       :prepare-start="prepareExplainVoice"
-                      @completed="handleVoiceCompleted('SELF_EXPLANATION_EXPLAIN', currentStepId === null ? undefined : String(currentStepId), $event)"
+                      @completed="handleVoiceCompleted('SELF_EXPLANATION_EXPLAIN', undefined, $event)"
                       @recording-change="handleRecordingChange('explain', $event)"
                       @error="errorMessage = $event"
                     />
@@ -953,7 +833,6 @@ async function respondToSolution(understood: boolean) {
                       :session-id="sessionId"
                       :version="session.version"
                       target="SELF_EXPLANATION_STEP"
-                      :target-id="currentStepId === null ? undefined : String(currentStepId)"
                       start-test-id="record-step"
                       stop-test-id="stop-record-step"
                       label="步骤录音"
@@ -962,38 +841,13 @@ async function respondToSolution(understood: boolean) {
                         || (voiceRecording && activeVoiceKey !== 'step')"
                       :prepare-start="prepareStepVoice"
                       @final-transcript="currentStepContent = appendTranscript(currentStepContent, $event)"
-                      @completed="handleVoiceCompleted('SELF_EXPLANATION_STEP', currentStepId === null ? undefined : String(currentStepId), $event)"
+                      @completed="handleVoiceCompleted('SELF_EXPLANATION_STEP', undefined, $event)"
                       @recording-change="handleRecordingChange('step', $event)"
                       @error="errorMessage = $event"
                     />
-                    <el-button
-                      data-testid="next-step"
-                      :disabled="submitting || voiceRecording"
-                      :loading="submitting"
-                      @click="saveCurrentStepAndAdvance"
-                    >下一步</el-button>
-                  </div>
-                  <div v-if="!submitting && visibleSteps.length" class="step-list" aria-label="自讲步骤列表">
-                    <button
-                      v-for="step in visibleSteps"
-                      :key="step.id"
-                      type="button"
-                      class="step-item"
-                      :class="{ 'is-current': step.id === currentStepId }"
-                      :data-testid="`step-item-${step.id}`"
-                      @click="activateStep(step.id)"
-                    >
-                      <span class="step-item-label">步骤 {{ step.seq }}</span>
-                      <span class="step-item-content" v-html="renderStudentTextHtml(step.stepContent || '（暂无步骤文字）')" />
-                      <span
-                        v-if="isExplainExpanded(step.id)"
-                        class="step-explain"
-                        v-html="renderStudentTextHtml(step.explainTranscript || '暂无讲解转写')"
-                      />
-                    </button>
                   </div>
                 </template>
-                <el-empty v-else description="当前阶段暂无自讲步骤输入" />
+                <el-empty v-else description="当前阶段暂无自讲输入" />
               </div>
               <div v-show="activeSegment === 'guidedAnswers'" class="dialog-pane">
                 <template v-if="session.latestSupport?.guidedQuestions?.length">
@@ -1254,23 +1108,6 @@ h2 { font-size: var(--font-size-lg); }
   outline-offset: 2px;
 }
 .step-content-input:disabled { cursor: not-allowed; opacity: 0.65; }
-.step-list { display: grid; gap: var(--space-2); margin-top: var(--space-5); }
-.step-item {
-  display: grid;
-  gap: var(--space-1);
-  width: 100%;
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-muted);
-  color: var(--color-text-primary);
-  text-align: left;
-  cursor: pointer;
-}
-.step-item.is-current { border-color: var(--color-brand-600); background: var(--color-brand-50); }
-.step-item-label { color: var(--color-text-secondary); font-size: var(--font-size-sm); font-weight: 700; }
-.step-item-content, .step-explain { white-space: pre-wrap; overflow-wrap: anywhere; }
-.step-explain { color: var(--color-text-secondary); }
 :deep(.student-math-error) { color: var(--color-error-700); background: var(--color-error-100); text-decoration: underline wavy; }
 .feedback-card { margin-top: var(--space-4); padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
 .feedback-next-step { margin: var(--space-4) 0 0; padding: var(--space-3); border-left: 3px solid var(--color-brand-600); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--color-brand-50); overflow-wrap: anywhere; }
