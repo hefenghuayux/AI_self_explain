@@ -446,10 +446,6 @@ const hasFollowUpContent = computed(
   () => Boolean(session.value?.latestSupport?.followUpContent),
 )
 
-const feedbackHeading = computed(
-  () => (hasFollowUpContent.value && !session.value?.latestEvaluation ? "整合引导" : "最新反馈"),
-)
-
 function syncActiveSegmentWithStage() {
   if (session.value?.flowStage === "WAIT_GUIDED_ANSWERS") {
     activeSegment.value = "guidedAnswers"
@@ -907,12 +903,10 @@ async function respondToSolution(understood: boolean) {
             @click="teacherSpeechRef?.playSolution()"
           >播放完整解析</el-button>
         </div>
-        <section v-if="question" class="question-content" aria-labelledby="question-title">
-          <h2 id="question-title">题目</h2>
+        <section v-if="question" class="question-content" aria-label="题目">
           <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </section>
-        <section v-if="session.latestEvaluation || hasFollowUpContent" class="session-section feedback-section" aria-labelledby="feedback-title" aria-live="polite">
-          <div class="section-heading feedback-heading"><div><h2 id="feedback-title">{{ feedbackHeading }}</h2></div></div>
+        <section v-if="session.latestEvaluation || hasFollowUpContent" class="session-section feedback-section" aria-label="学习反馈" aria-live="polite">
           <div class="feedback-card">
             <p v-if="session.latestSupport?.content || hasFollowUpContent" class="feedback-next-step"><strong>下一步：</strong>{{ hasFollowUpContent ? session.latestSupport?.followUpContent : session.latestSupport?.content }}</p>
           </div>
@@ -1213,7 +1207,6 @@ h2 { font-size: var(--font-size-lg); }
 .question-rich-text :deep(img) { display: block; max-width: 100%; height: auto; }
 .session-section { margin-top: var(--space-8); }
 .session-section p { color: var(--color-text-secondary); }
-.section-heading { display: flex; justify-content: space-between; gap: var(--space-4); }
 .dialog-segmented { width: 100%; margin-top: var(--space-4); }
 .dialog-segmented :deep(.el-segmented__item) { min-height: 44px; }
 .dialog-panel {

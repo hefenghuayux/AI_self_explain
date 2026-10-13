@@ -654,14 +654,13 @@ describe("SessionView", () => {
     }))
     const wrapper = await mountSessionView()
 
-    expect(wrapper.text()).toContain("最新反馈")
     expect(wrapper.text()).toContain("下一步：请重新检查两个数相加的结果。")
     expect(wrapper.find('[data-testid="request-support"]').exists()).toBe(false)
     expect(wrapper.get(".self-explain-actions").get('[data-testid="submit-explanation"]')).toBeTruthy()
     expect(wrapper.get(".self-explain-actions").find('[data-testid="record-explain"]').exists()).toBe(true)
     expect(wrapper.get(".self-explain-actions").find('[data-testid="record-step"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="dialog-segmented"]').text()).not.toContain("AI说错了")
-    expect(wrapper.html().indexOf("最新反馈")).toBeLessThan(
+    expect(wrapper.html().indexOf("下一步：请重新检查两个数相加的结果。")).toBeLessThan(
       wrapper.html().indexOf('data-testid="dialog-segmented"'),
     )
     // 评价响应已不再返回 errorEvidence，反馈区不提供评价依据展开入口。
@@ -673,7 +672,7 @@ describe("SessionView", () => {
     expect(wrapper.text()).not.toContain("完整性")
   })
 
-  it("shows the integrated guidance heading without a description line", async () => {
+  it("shows the integrated guidance content without any heading", async () => {
     fetchSession.mockResolvedValue(createSession({
       flowStage: "WAIT_STUDENT_ACTION",
       latestSupport: {
@@ -693,7 +692,8 @@ describe("SessionView", () => {
     }))
     const wrapper = await mountSessionView()
 
-    expect(wrapper.text()).toContain("整合引导")
+    expect(wrapper.text()).not.toContain("整合引导")
+    expect(wrapper.text()).not.toContain("最新反馈")
     expect(wrapper.text()).not.toContain("结合子问题答案，继续完成整道题的推理。")
     expect(wrapper.text()).toContain("下一步：结合两个子问题的答案继续完成推理。")
   })
