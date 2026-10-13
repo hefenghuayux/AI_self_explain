@@ -14,6 +14,7 @@ from app.api.health import router as health_router
 from app.api.questions import router as questions_router
 from app.api.session_events import router as session_events_router
 from app.api.sessions import router as sessions_router
+from app.api.teacher_speech import router as teacher_speech_router
 from app.core.config import Settings
 from app.core.database import create_database_engine, prepare_runtime_directories
 from app.core.logging import (
@@ -25,6 +26,7 @@ from app.core.logging import (
 from app.services.context_compaction import CompactionError
 from app.services.context_runtime import ContextMiddleware, ContextRuntime
 from app.services.realtime_asr import configure_dashscope
+from app.services.teacher_speech import TeacherSpeechService
 
 SESSION_PATH_PATTERN = re.compile(r"^/api/sessions/(?P<session_id>\d+)(?:/|$)")
 configure_logging()
@@ -39,9 +41,11 @@ def create_app(settings: Settings) -> FastAPI:
         configure_dashscope(settings)
         database_engine = create_database_engine(settings)
         ai_http_client = httpx.Client(timeout=settings.ai_request_timeout_seconds)
+        tts_http_client = httpx.Client(timeout=settings.tts_request_timeout_seconds)
         application.state.database_engine = database_engine
         application.state.database_session_factory = sessionmaker(bind=database_engine)
         application.state.ai_http_client = ai_http_client
+        application.state.teacher_speech_service = TeacherSpeechService(settings, tts_http_client)
         application.state.context_runtime = ContextRuntime(
             settings, ai_http_client, application.state.database_session_factory
         )
@@ -53,6 +57,7 @@ def create_app(settings: Settings) -> FastAPI:
             yield
         finally:
             ai_http_client.close()
+            tts_http_client.close()
             database_engine.dispose()
             logger.info(
                 "应用已停止",
@@ -68,10 +73,12 @@ def create_app(settings: Settings) -> FastAPI:
         return JSONResponse(
             status_code=503, content={"detail": {"code": error.code, "message": str(error)}}
         )
+
     application.include_router(health_router, prefix="/api")
     application.include_router(auth_router, prefix="/api")
     application.include_router(questions_router, prefix="/api")
     application.include_router(sessions_router, prefix="/api")
+    application.include_router(teacher_speech_router, prefix="/api")
     application.include_router(session_events_router, prefix="/api")
 
     @application.middleware("http")

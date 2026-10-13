@@ -67,10 +67,23 @@ class Settings(BaseSettings):
     asr_api_key: SecretStr
     asr_model: NonEmptyString
 
+    tts_provider: str = ""
+    tts_base_url: AnyHttpUrl | None = None
+    tts_api_key: SecretStr = SecretStr("")
+    tts_model: str = ""
+    tts_voice_id: str = ""
+    tts_instruction: str = ""
+    tts_request_timeout_seconds: PositiveFloat = 60
+
     prompt_version: NonEmptyString
     database_url: NonEmptyString
     audio_storage_dir: Path
     log_dir: Path
+
+    @field_validator("tts_base_url", mode="before")
+    @classmethod
+    def normalize_empty_tts_url(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
     @field_validator("ai_retry_backoff_seconds", "asr_retry_backoff_seconds", mode="before")
     @classmethod

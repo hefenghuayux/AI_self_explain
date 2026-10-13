@@ -22,6 +22,7 @@ import {
 } from "../api/session-steps"
 import FormulaEditor from "../components/FormulaEditor.vue"
 import VoiceRecorder from "../components/VoiceRecorder.vue"
+import TeacherSpeechPlayer from "../components/TeacherSpeechPlayer.vue"
 import { fetchQuestion } from "../api/questions"
 import { authUser } from "../stores/auth"
 import type {
@@ -78,6 +79,52 @@ const historyDrawerVisible = ref(false)
 const historyItems = ref<SessionHistoryItem[]>([])
 const historyLoading = ref(false)
 const historyError = ref("")
+const teacherSpeechRef = ref<InstanceType<typeof TeacherSpeechPlayer>>()
+let pendingSpeechIds: string[] = []
+let speechGeneration = 0
+
+function isSpokenReply(item: LearningTimelineItem) {
+  if (item.speaker !== "AI" || !item.content.trim()) return false
+  if (item.eventType === "EVALUATION") return Boolean(item.action && item.action !== "COMPLETE")
+  return ["SUPPORT", "GUIDED_QUESTIONS", "FOLLOW_UP", "MASTERY_QUESTIONS"].includes(item.eventType)
+}
+
+// 手动播放定位最近一轮老师回复；初次加载历史只设置目标，不触发播放。
+const teacherReplyIds = computed(() => {
+  let lastReply = timeline.value.length - 1
+  while (lastReply >= 0 && !isSpokenReply(timeline.value[lastReply])) lastReply -= 1
+  if (lastReply < 0) return []
+  let start = lastReply
+  while (start > 0 && timeline.value[start - 1].speaker !== "STUDENT") start -= 1
+  return timeline.value.slice(start, lastReply + 1).filter(isSpokenReply).map((item) => item.id)
+})
+
+function stopTeacherSpeech() {
+  speechGeneration += 1
+  pendingSpeechIds = []
+  teacherSpeechRef.value?.stop()
+}
+
+function prepareReplyRecording() {
+  stopTeacherSpeech()
+  return true
+}
+
+watch(submitting, (busy) => {
+  if (busy) stopTeacherSpeech()
+}, { flush: "sync" })
+
+watch(submitting, async (busy) => {
+  if (busy) return
+  const ids = pendingSpeechIds
+  const generation = speechGeneration
+  pendingSpeechIds = []
+  if (!ids.length) return
+  await nextTick()
+  if (generation === speechGeneration && !submitting.value && !voiceRecording.value) {
+    void teacherSpeechRef.value?.playReply(ids)
+  }
+}, { flush: "post" })
 
 const sessionId = String(route.params.sessionId)
 const dialogDraftStorageKey = `ai-self-explain:session:${sessionId}:dialog-drafts`
@@ -282,6 +329,7 @@ function restoreLastSubmittedExplanation() {
 }
 
 async function loadSessionData() {
+  stopTeacherSpeech()
   const loadedSession = await fetchSession(sessionId)
   session.value = loadedSession
   if (!dialogDraftsReady) applyStoredDialogDrafts()
@@ -346,7 +394,17 @@ onMounted(async () => {
 })
 
 async function refreshTimeline() {
-  timeline.value = await fetchLearningTimeline(sessionId)
+  const knownIds = new Set(timeline.value.map((item) => item.id))
+  const refreshedTimeline = await fetchLearningTimeline(sessionId)
+  timeline.value = refreshedTimeline
+  const ids = refreshedTimeline.filter((item) => !knownIds.has(item.id) && isSpokenReply(item))
+    .map((item) => item.id)
+  if (submitting.value) {
+    pendingSpeechIds = ids
+  } else if (ids.length && !voiceRecording.value) {
+    await nextTick()
+    void teacherSpeechRef.value?.playReply(ids)
+  }
 }
 
 function timelineTitle(item: LearningTimelineItem) {
@@ -535,6 +593,7 @@ async function submitExplanation() {
 }
 
 async function prepareStepVoice() {
+  stopTeacherSpeech()
   if (!session.value) return false
   submitting.value = true
   errorMessage.value = ""
@@ -594,6 +653,7 @@ function appendGuidedTranscript(questionId: string, text: string) {
 }
 
 function handleRecordingChange(voiceKey: string, recording: boolean) {
+  if (recording) stopTeacherSpeech()
   if (recording && activeVoiceKey.value && activeVoiceKey.value !== voiceKey) {
     stopVoiceRecorder(activeVoiceKey.value)
   }
@@ -642,6 +702,7 @@ async function handleVoiceCompleted(
 }
 
 onBeforeUnmount(() => {
+  stopTeacherSpeech()
   stepVoiceRecorderRef.value?.stop()
   explainVoiceRecorderRef.value?.stop()
   doubtVoiceRecorderRef.value?.stop()
@@ -833,6 +894,19 @@ async function respondToSolution(understood: boolean) {
       </div>
       <el-skeleton v-if="loading" :rows="5" animated aria-label="正在加载会话" />
       <template v-else-if="session">
+        <TeacherSpeechPlayer
+          ref="teacherSpeechRef"
+          :session-id="sessionId"
+          :item-ids="teacherReplyIds"
+          :disabled="submitting || voiceRecording"
+        />
+        <div v-if="session.solutionExposed && question?.fullSolution" class="actions">
+          <el-button
+            data-testid="play-full-solution"
+            :disabled="submitting || voiceRecording"
+            @click="teacherSpeechRef?.playSolution()"
+          >播放完整解析</el-button>
+        </div>
         <section v-if="question" class="question-content" aria-labelledby="question-title">
           <h2 id="question-title">题目</h2>
           <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
@@ -940,6 +1014,7 @@ async function respondToSolution(understood: boolean) {
                         :session-id="sessionId"
                         :version="session.version"
                         target="GUIDED_ANSWER"
+                        :prepare-start="prepareReplyRecording"
                         :target-id="item.id"
                         :start-test-id="`start-voice-guided-${item.id}`"
                         :stop-test-id="`stop-voice-guided-${item.id}`"
@@ -1005,6 +1080,7 @@ async function respondToSolution(understood: boolean) {
                     :session-id="sessionId"
                     :version="session.version"
                     target="DOUBT"
+                    :prepare-start="prepareReplyRecording"
                     start-test-id="start-voice-doubt"
                     stop-test-id="stop-voice-doubt"
                     inline
@@ -1045,6 +1121,7 @@ async function respondToSolution(understood: boolean) {
                     :session-id="sessionId"
                     :version="session.version"
                     target="APPEAL"
+                    :prepare-start="prepareReplyRecording"
                     start-test-id="start-voice-appeal"
                     stop-test-id="stop-voice-appeal"
                     inline
