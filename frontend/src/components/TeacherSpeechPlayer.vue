@@ -2,19 +2,21 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue"
 
 import { fetchTeacherSpeech, type TeacherSpeechRequest } from "../api/teacher-speech"
+import { teacherSpeechAutoPlay as autoPlay } from "../stores/teacherSpeech"
 
 const props = withDefaults(defineProps<{
   sessionId: string
   itemIds: string[]
   disabled?: boolean
+  controlsTarget?: string
+  fullSolution?: boolean
 }>(), { disabled: false })
 
 type SpeechState = "idle" | "preparing" | "playing" | "paused" | "ended" | "blocked" | "failed"
-const preferenceKey = "ai-self-explain:teacher-speech:auto-play"
-const autoPlay = ref(localStorage.getItem(preferenceKey) !== "false")
 const state = ref<SpeechState>("idle")
 const errorMessage = ref("")
-const selectedRequest = ref<TeacherSpeechRequest>({ itemIds: [...props.itemIds] })
+const selectedRequest = ref<TeacherSpeechRequest>(props.fullSolution
+  ? { fullSolution: true } : { itemIds: [...props.itemIds] })
 const hasTarget = computed(() => "fullSolution" in selectedRequest.value || selectedRequest.value.itemIds.length > 0)
 let requestController: AbortController | undefined
 let generation = 0
@@ -36,9 +38,8 @@ const statusText = computed(() => {
   return labels[state.value]
 })
 const playLabel = computed(() => {
-  if (state.value === "paused") return "继续播放"
-  if (state.value === "ended") return "重播"
-  if (state.value === "failed") return "重试"
+  if (state.value === "playing") return "暂停语音"
+  if (state.value === "preparing") return "正在准备语音"
   return "播放语音"
 })
 
@@ -150,14 +151,17 @@ function pause() {
 }
 
 watch(autoPlay, (enabled) => {
-  localStorage.setItem(preferenceKey, String(enabled))
   if (!enabled) stop()
 })
 watch(() => props.itemIds, (ids, previousIds) => {
   if (ids.length === previousIds.length && ids.every((id, index) => id === previousIds[index])) return
   stop()
-  selectedRequest.value = { itemIds: [...ids] }
+  selectedRequest.value = props.fullSolution ? { fullSolution: true } : { itemIds: [...ids] }
 }, { deep: true })
+watch(() => props.fullSolution, (fullSolution) => {
+  stop()
+  selectedRequest.value = fullSolution ? { fullSolution: true } : { itemIds: [...props.itemIds] }
+})
 watch(() => props.disabled, (disabled) => {
   if (disabled) stop()
 })
@@ -171,50 +175,39 @@ defineExpose({ playReply, playSolution, stop })
 </script>
 
 <template>
-  <section class="teacher-speech" aria-label="老师语音">
-    <div class="speech-heading">
-      <strong>老师语音</strong>
-      <label class="auto-play-label">
-        <input v-model="autoPlay" data-testid="teacher-speech-auto-play" type="checkbox" />
-        自动播放老师回复
-      </label>
-    </div>
-    <div class="speech-controls">
-      <p data-testid="teacher-speech-status" role="status" aria-live="polite">{{ statusText }}</p>
-      <el-button
-        v-if="state === 'playing'"
-        data-testid="teacher-speech-pause"
-        :disabled="disabled"
-        @click="pause"
-      >暂停</el-button>
-      <el-button
-        v-else
-        data-testid="teacher-speech-play"
+  <Teleport :to="controlsTarget || 'body'" :disabled="!controlsTarget">
+    <span v-show="hasTarget" class="teacher-speech" aria-label="老师语音">
+      <button
+        type="button"
+        :data-testid="state === 'playing' ? 'teacher-speech-pause' : 'teacher-speech-play'"
+        class="speech-toggle"
+        :class="{ 'is-playing': state === 'playing', 'is-loading': state === 'preparing' }"
+        :aria-label="playLabel"
+        :title="state === 'failed' ? errorMessage : state === 'blocked' ? statusText : playLabel"
+        :aria-busy="state === 'preparing'"
         :disabled="disabled || !hasTarget || state === 'preparing'"
-        :loading="state === 'preparing'"
-        @click="play"
-      >{{ playLabel }}</el-button>
-      <el-button
-        v-if="state === 'preparing' || state === 'playing' || state === 'paused'"
-        data-testid="teacher-speech-stop"
-        @click="stop"
-      >停止</el-button>
-    </div>
-    <p v-if="errorMessage" class="speech-error" role="alert">{{ errorMessage }}</p>
-  </section>
+        @click="state === 'playing' ? pause() : play()"
+      >
+        <svg v-if="state === 'preparing'" class="speech-spinner" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /></svg>
+        <svg v-else-if="state === 'playing'" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM14 5h4v14h-4z" /></svg>
+        <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4.5v15L20 12z" /></svg>
+      </button>
+      <span data-testid="teacher-speech-status" class="speech-status" role="status" aria-live="polite">{{ statusText }}</span>
+      <span v-if="state === 'blocked' || state === 'failed'" class="speech-message" role="alert">{{ errorMessage || statusText }}</span>
+    </span>
+  </Teleport>
 </template>
 
 <style scoped>
-.teacher-speech { margin-top: var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
-.speech-heading, .speech-controls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
-.speech-heading { justify-content: space-between; }
-.auto-play-label { display: inline-flex; align-items: center; min-height: 44px; gap: var(--space-2); cursor: pointer; color: var(--color-text-secondary); }
-.auto-play-label input { width: 18px; height: 18px; accent-color: var(--color-brand-600); }
-.speech-controls p { margin: 0; flex: 1 1 200px; color: var(--color-text-secondary); }
-.speech-controls .el-button { min-height: 44px; margin-left: 0; }
-.speech-error { margin: var(--space-2) 0 0; color: var(--color-error-700); overflow-wrap: anywhere; }
-@media (max-width: 560px) {
-  .speech-heading { align-items: flex-start; flex-direction: column; }
-  .speech-controls p { flex-basis: 100%; }
-}
+.teacher-speech { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); vertical-align: middle; }
+.speech-toggle { display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 10px; border: 1px solid var(--color-border-strong); border-radius: 50%; color: var(--color-brand-700); background: var(--color-surface); cursor: pointer; flex-shrink: 0; }
+.speech-toggle svg { width: 22px; height: 22px; fill: currentColor; }
+.speech-toggle:hover:not(:disabled), .speech-toggle.is-playing { background: var(--color-brand-100); }
+.speech-toggle:focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
+.speech-toggle:disabled { cursor: default; opacity: .55; }
+.speech-spinner { animation: speech-spin 1s linear infinite; fill: none !important; stroke: currentColor; stroke-width: 2; stroke-dasharray: 42 16; }
+.speech-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.speech-message { max-width: 240px; color: var(--color-error-700); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
+@keyframes speech-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .speech-spinner { animation: none; } }
 </style>

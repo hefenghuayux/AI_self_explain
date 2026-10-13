@@ -99,6 +99,19 @@ const teacherReplyIds = computed(() => {
   return timeline.value.slice(start, lastReply + 1).filter(isSpokenReply).map((item) => item.id)
 })
 
+const speechIsSolution = computed(() => Boolean(session.value?.solutionExposed && question.value?.fullSolution
+  && (session.value.flowStage === "SHOWING_FULL_SOLUTION"
+    || ["NEEDS_REVIEW", "STOPPED_LIMIT"].includes(session.value.status))))
+const nextStepText = computed(() => speechIsSolution.value ? ""
+  : session.value?.latestSupport?.followUpContent || session.value?.latestSupport?.content || "")
+const speechControlsTarget = computed(() => {
+  if (nextStepText.value) return "#next-step-speech"
+  if (speechIsSolution.value) return "#solution-speech"
+  if (session.value?.masteryCheck?.questions?.length && !isTerminalSession()) return "#mastery-speech"
+  if (session.value?.latestSupport?.guidedQuestions?.length && !isTerminalSession()) return "#guided-speech"
+  return teacherReplyIds.value.length ? "#latest-reply-speech" : undefined
+})
+
 function stopTeacherSpeech() {
   speechGeneration += 1
   pendingSpeechIds = []
@@ -441,10 +454,6 @@ const segmentOptions = computed(() => segmentEntries
     ...segment,
     disabled: !canUseSegment(segment.value),
   })))
-
-const hasFollowUpContent = computed(
-  () => Boolean(session.value?.latestSupport?.followUpContent),
-)
 
 function syncActiveSegmentWithStage() {
   if (session.value?.flowStage === "WAIT_GUIDED_ANSWERS") {
@@ -859,10 +868,10 @@ async function respondToSolution(understood: boolean) {
   <main class="session-page" :aria-busy="loading || submitting">
     <div class="session-shell">
       <Teleport to="#app-header-actions">
-        <div v-if="session" class="page-actions">
-          <el-button data-testid="session-history" @click="openHistoryDrawer">自讲历史</el-button>
-          <el-button data-testid="restart-self-explanation" :loading="submitting" @click="restartSelfExplanation">重新自讲</el-button>
-          <RouterLink v-if="authUser?.role === 'TEACHER'" :to="`/sessions/${session.id}/logs`"><el-button>查看运行日志</el-button></RouterLink>
+        <div v-if="session" class="page-actions" role="none">
+          <button type="button" role="menuitem" data-testid="restart-self-explanation" :disabled="submitting" @click="restartSelfExplanation">重新自讲</button>
+          <button type="button" role="menuitem" data-testid="session-history" @click="openHistoryDrawer">自讲历史</button>
+          <RouterLink v-if="authUser?.role === 'TEACHER'" role="menuitem" :to="`/sessions/${session.id}/logs`">查看运行日志</RouterLink>
         </div>
       </Teleport>
       <el-drawer v-model="historyDrawerVisible" title="自讲历史" direction="rtl" size="360px">
@@ -890,27 +899,15 @@ async function respondToSolution(understood: boolean) {
       </div>
       <el-skeleton v-if="loading" :rows="5" animated aria-label="正在加载会话" />
       <template v-else-if="session">
-        <TeacherSpeechPlayer
-          ref="teacherSpeechRef"
-          :session-id="sessionId"
-          :item-ids="teacherReplyIds"
-          :disabled="submitting || voiceRecording"
-        />
-        <div v-if="session.solutionExposed && question?.fullSolution" class="actions">
-          <el-button
-            data-testid="play-full-solution"
-            :disabled="submitting || voiceRecording"
-            @click="teacherSpeechRef?.playSolution()"
-          >播放完整解析</el-button>
-        </div>
         <section v-if="question" class="question-content" aria-label="题目">
           <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </section>
-        <section v-if="session.latestEvaluation || hasFollowUpContent" class="session-section feedback-section" aria-label="学习反馈" aria-live="polite">
+        <section v-if="nextStepText" class="session-section feedback-section" aria-label="学习反馈" aria-live="polite">
           <div class="feedback-card">
-            <p v-if="session.latestSupport?.content || hasFollowUpContent" class="feedback-next-step"><strong>下一步：</strong>{{ hasFollowUpContent ? session.latestSupport?.followUpContent : session.latestSupport?.content }}</p>
+            <div class="feedback-next-step"><span id="next-step-speech" class="speech-anchor" /><p><strong>下一步：</strong>{{ nextStepText }}</p></div>
           </div>
         </section>
+        <div v-if="speechControlsTarget === '#latest-reply-speech'" class="speech-content-heading"><span id="latest-reply-speech" class="speech-anchor" /><span>老师回复</span></div>
         <template v-if="!isTerminalSession()">
           <section class="session-section input-section" aria-label="当前输入与主操作">
             <el-segmented
@@ -983,6 +980,7 @@ async function respondToSolution(understood: boolean) {
               </div>
               <div v-show="activeSegment === 'guidedAnswers'" class="dialog-pane">
                 <template v-if="session.latestSupport?.guidedQuestions?.length">
+                  <div v-if="speechControlsTarget === '#guided-speech'" class="speech-content-heading"><span id="guided-speech" class="speech-anchor" /><span>子问题</span></div>
                   <div v-for="item in session.latestSupport.guidedQuestions" :key="item.id" class="guided-question">
                     <p>{{ item.question }}</p>
                     <el-input
@@ -1028,6 +1026,7 @@ async function respondToSolution(understood: boolean) {
               </div>
               <div v-show="activeSegment === 'masteryCheck'" class="dialog-pane">
                 <template v-if="session.masteryCheck?.questions?.length">
+                  <div v-if="speechControlsTarget === '#mastery-speech'" class="speech-content-heading"><span id="mastery-speech" class="speech-anchor" /><span>掌握度核验</span></div>
                   <p class="mastery-check-hint">本题不支持重新完整自讲。请回答下面的核验问题，确认你是否真的掌握。</p>
                   <div v-for="item in session.masteryCheck.questions" :key="item.id" class="guided-question">
                     <p>{{ item.question }}</p>
@@ -1130,7 +1129,7 @@ async function respondToSolution(understood: boolean) {
             </div>
           </section>
           <section v-if="session.flowStage === 'AI_EVALUATING'" class="session-section"><h2>AI 正在评价</h2><p>请等待评价结果返回。</p></section>
-          <section v-else-if="session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2>完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析。本题不会再要求完整重讲，确认后直接进入掌握度核验。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，进入掌握度核验</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
+          <section v-else-if="session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2 class="speech-content-heading"><span id="solution-speech" class="speech-anchor" />完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析。本题不会再要求完整重讲，确认后直接进入掌握度核验。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，进入掌握度核验</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
           <section v-else-if="session.flowStage === 'WAIT_MASTERY_CHECK'" class="session-section mastery-check-state">
             <h2>掌握度核验</h2>
             <p class="mastery-check-note">请到上方「掌握度核验」中回答下面的问题；全部通过即完成本题。</p>
@@ -1138,8 +1137,8 @@ async function respondToSolution(understood: boolean) {
         </template>
         <section v-if="session.needHumanReason && session.status === 'IN_PROGRESS'" class="session-section"><el-alert title="已申请人工复核，你可以继续自讲。" type="warning" :closable="false" show-icon /></section>
         <section v-if="session.status === 'COMPLETED'" class="session-section completion-state"><h2>本轮自讲已完成</h2><p>{{ session.masteryCheck?.outcome === 'COMPLETED' ? masteryOutcomeLabels.COMPLETED : '你已经正确、完整地讲清了这道题。' }}</p></section>
-        <section v-else-if="session.status === 'NEEDS_REVIEW'" class="session-section solution-state"><h2>本题已结束，仍有未解决问题</h2><p>{{ masteryOutcomeLabels.NEEDS_REVIEW }}</p><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
-        <section v-else-if="session.status === 'STOPPED_LIMIT'" class="session-section solution-state"><h2>已达到本轮支持上限</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
+        <section v-else-if="session.status === 'NEEDS_REVIEW'" class="session-section solution-state"><h2 class="speech-content-heading"><span v-if="speechIsSolution" id="solution-speech" class="speech-anchor" />本题已结束，仍有未解决问题</h2><p>{{ masteryOutcomeLabels.NEEDS_REVIEW }}</p><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
+        <section v-else-if="session.status === 'STOPPED_LIMIT'" class="session-section solution-state"><h2 class="speech-content-heading"><span v-if="speechIsSolution" id="solution-speech" class="speech-anchor" />已达到本轮支持上限</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
         <section v-if="session.masteryCheck?.results?.length" class="session-section mastery-check-state">
           <h2>掌握度核验结论</h2>
           <div v-for="item in session.masteryCheck.questions" :key="item.id" class="guided-question">
@@ -1153,6 +1152,14 @@ async function respondToSolution(understood: boolean) {
             </p>
           </div>
         </section>
+        <TeacherSpeechPlayer
+          ref="teacherSpeechRef"
+          :session-id="sessionId"
+          :item-ids="teacherReplyIds"
+          :controls-target="speechControlsTarget"
+          :full-solution="speechIsSolution"
+          :disabled="submitting || voiceRecording"
+        />
         <section class="session-section timeline-section" aria-labelledby="timeline-title">
           <h2 id="timeline-title">历史记录</h2>
           <el-empty v-if="!timeline.length" description="提交自讲后，学习记录会显示在这里" :image-size="72" />
@@ -1189,7 +1196,12 @@ async function respondToSolution(understood: boolean) {
 <style scoped>
 .session-page { max-width: 1040px; margin: 0 auto; padding: var(--space-8) var(--space-6) var(--space-12); }
 .session-shell { min-width: 0; }
-.page-actions, .actions { display: flex; align-items: center; gap: var(--space-2); }
+.page-actions { display: flex; flex-direction: column; }
+.page-actions button, .page-actions a { display: flex; align-items: center; min-height: 44px; padding: var(--space-2) var(--space-4); border: 0; background: transparent; color: var(--color-text-primary); font: inherit; font-size: var(--font-size-sm); text-decoration: none; cursor: pointer; text-align: left; }
+.page-actions button:hover:not(:disabled), .page-actions a:hover { background: var(--color-surface-muted); }
+.page-actions button:disabled { opacity: .5; cursor: default; }
+.page-actions button:focus-visible, .page-actions a:focus-visible { outline: 2px solid var(--color-brand-600); outline-offset: -2px; }
+.actions { display: flex; align-items: center; gap: var(--space-2); }
 .actions { flex-wrap: wrap; margin-top: var(--space-4); }
 .history-list { display: flex; flex-direction: column; gap: var(--space-2); }
 .history-item { display: grid; grid-template-columns: 1fr auto; gap: var(--space-2); width: 100%; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text-primary); background: var(--color-surface); text-align: left; cursor: pointer; }
@@ -1250,6 +1262,10 @@ h2 { font-size: var(--font-size-lg); }
 :deep(.student-math-error) { color: var(--color-error-700); background: var(--color-error-100); text-decoration: underline wavy; }
 .feedback-card { margin-top: var(--space-4); padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
 .feedback-next-step { margin: var(--space-4) 0 0; padding: var(--space-3); border-left: 3px solid var(--color-brand-600); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--color-brand-50); overflow-wrap: anywhere; }
+.feedback-next-step, .speech-content-heading { display: flex; align-items: flex-start; gap: var(--space-2); }
+.feedback-next-step p { margin: 8px 0 0; min-width: 0; }
+.speech-anchor { display: inline-flex; flex-shrink: 0; }
+.speech-content-heading { align-items: center; margin-bottom: var(--space-3); font-weight: 600; }
 .conversation-scroll {
   height: 480px;
   margin-top: var(--space-3);
