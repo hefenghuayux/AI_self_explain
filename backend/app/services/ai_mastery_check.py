@@ -38,6 +38,7 @@ from app.schemas.model_request_snapshot import (
 from app.services.ai_evaluation import (
     AIModelClient,
     AIModelResponse,
+    AIServiceUnavailableError,
     AITransportError,
 )
 from app.services.ai_reasoning import resolve_reasoning_params
@@ -84,6 +85,7 @@ class AIMasteryCheckService:
         *,
         question: QuestionRecord,
         session: Session,
+        failure_flow_stage: str = "CAPTURING_INPUT",
     ) -> MasteryCheckQuestionsOutput | None:
         """生成核验问题。
 
@@ -105,6 +107,7 @@ class AIMasteryCheckService:
             output_type=MasteryCheckQuestionsOutput,
             validator=validate_mastery_check_questions,
             purpose="AI_MASTERY_CHECK",
+            failure_flow_stage=failure_flow_stage,
         )
 
     def evaluate_answers(
@@ -153,6 +156,7 @@ class AIMasteryCheckService:
         validator: Callable[[OutputType], list[str]],
         purpose: str,
         run_id: str | None = None,
+        failure_flow_stage: str | None = None,
     ) -> OutputType | None:
         validation_errors: list[str] = []
         external_attempt_number = 0
@@ -181,13 +185,13 @@ class AIMasteryCheckService:
                 )
             )
             if model_response is None:
-                self.repository.request_human_review(
+                self.repository.record_ai_service_failure(
                     session=session,
-                    need_human_reason="AI 核验服务在配置的重试次数内未成功响应",
-                    trigger_type="AI_MASTERY_CHECK_TRANSPORT_RETRY_EXHAUSTED",
+                    flow_stage=failure_flow_stage or session.flow_stage,
+                    trigger_type="AI_MASTERY_CHECK_TRANSPORT_FAILED",
                     run_id=run_id,
                 )
-                return None
+                raise AIServiceUnavailableError
             if external_call is None:
                 raise RuntimeError("AI 核验传输成功后缺少外部调用记录")
             try:

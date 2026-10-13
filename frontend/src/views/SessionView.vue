@@ -396,6 +396,29 @@ function isVersionConflict(error: unknown): boolean {
   return error instanceof SessionApiError && error.status === 409
 }
 
+async function handleAIServiceUnavailable(error: unknown, draftContent = "") {
+  if (!(error instanceof SessionApiError) || error.code !== "AI_SERVICE_UNAVAILABLE") {
+    return false
+  }
+  if (draftContent.trim()) {
+    lastSubmittedSelfExplanation.value = draftContent
+  }
+  const draftStepId = currentStepId.value
+  const localStepContent = currentStepContent.value
+  const localStepTranscript = currentStepTranscript.value
+  try {
+    await loadSessionData()
+    if (session.value?.flowStage === "CAPTURING_INPUT" && currentStepId.value === draftStepId) {
+      currentStepContent.value = localStepContent
+      currentStepTranscript.value = localStepTranscript
+    }
+  } catch (refreshError) {
+    console.error("AI 服务调用失败后刷新会话失败", refreshError)
+  }
+  errorMessage.value = "AI服务调用失败，请稍后再试"
+  return true
+}
+
 onMounted(async () => {
   try {
     await loadSessionData()
@@ -582,7 +605,7 @@ async function submitExplanation() {
   } catch (error) {
     if (isVersionConflict(error)) {
       await reloadAfterVersionConflict(draftContent)
-    } else {
+    } else if (!(await handleAIServiceUnavailable(error, draftContent))) {
       errorMessage.value = error instanceof Error ? error.message : String(error)
     }
     if (error instanceof SessionApiError && error.code === "TEACHING_GENERATION_FAILED") {
@@ -739,7 +762,11 @@ async function submitDoubt() {
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
+    if (await handleAIServiceUnavailable(error)) {
+      clearVoiceAttemptId("DOUBT")
+    } else {
+      errorMessage.value = error instanceof Error ? error.message : String(error)
+    }
   } finally {
     submitting.value = false
   }
@@ -786,7 +813,9 @@ async function submitMasteryAnswers() {
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
+    if (!(await handleAIServiceUnavailable(error))) {
+      errorMessage.value = error instanceof Error ? error.message : String(error)
+    }
   } finally {
     submitting.value = false
   }
@@ -813,7 +842,11 @@ async function submitGuidedQuestionAnswer(questionId: string) {
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
+    if (await handleAIServiceUnavailable(error)) {
+      clearVoiceAttemptId("GUIDED_ANSWER", questionId)
+    } else {
+      errorMessage.value = error instanceof Error ? error.message : String(error)
+    }
   } finally {
     submitting.value = false
   }
@@ -857,7 +890,9 @@ async function respondToSolution(understood: boolean) {
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
+    if (!(await handleAIServiceUnavailable(error))) {
+      errorMessage.value = error instanceof Error ? error.message : String(error)
+    }
   } finally {
     submitting.value = false
   }

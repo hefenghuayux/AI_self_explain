@@ -177,13 +177,13 @@ def start_mastery_check(
     question: Question,
     settings,
     http_client,
+    failure_flow_stage: str = FLOW_STAGE_CAPTURING_INPUT,
 ) -> Session:
     """生成并保存核验问题。
 
     核验问题只依据题目上下文与共享历史，评价结论不进入提示词；最近一次非终态
-    评价仅用于把核验记录关联到对应的自讲尝试。缺少可关联的尝试或生成失败时
-    不进入核验，走现有人工复核路径，学生仍可继续自讲；会话不会停在
-    `WAIT_MASTERY_CHECK`。
+    评价仅用于把核验记录关联到对应的自讲尝试。缺少可关联的尝试时走现有
+    人工复核路径；AI 传输失败则恢复到调用前的可重试阶段。
     """
     linked_evaluation = repository.get_latest_non_terminal_evaluation(session.id)
     linked_attempt = (
@@ -194,7 +194,11 @@ def start_mastery_check(
     if linked_evaluation is not None and linked_attempt is not None:
         output = AIMasteryCheckService(
             repository.database_session, settings, http_client
-        ).generate_questions(question=question, session=session)
+        ).generate_questions(
+            question=question,
+            session=session,
+            failure_flow_stage=failure_flow_stage,
+        )
         if output is not None:
             repository.record_mastery_questions(
                 session=session,
@@ -204,7 +208,7 @@ def start_mastery_check(
             )
             return session
         if session.flow_stage != FLOW_STAGE_WAIT_MASTERY_CHECK:
-            # AI 结构或传输失败时，核验服务已经申请过人工复核。
+            # AI 结构失败时，核验服务已经申请过人工复核。
             return session
     return repository.request_human_review(
         session=session,
@@ -479,6 +483,8 @@ def evaluate_explanation_attempt(
             attempt=attempt,
         )
     except CompactionError as error:
+        if error.is_service_failure:
+            raise
         repository.request_human_review(
             session=session,
             need_human_reason=f"AI 评价上下文恢复失败：{error.code}",
@@ -529,7 +535,9 @@ def evaluate_explanation_attempt(
             evaluation=evaluation_output,
             decision=decision,
         )
-    except CompactionError:
+    except CompactionError as error:
+        if error.is_service_failure:
+            raise
         repository.record_teaching_generation_failure(
             session=session,
             evaluation_id=evaluation_result.evaluation_record.id,
@@ -901,6 +909,7 @@ def respond_to_first_solution(
             question=question,
             settings=request.app.state.settings,
             http_client=request.app.state.ai_http_client,
+            failure_flow_stage=FLOW_STAGE_SHOWING_FULL_SOLUTION,
         )
     return to_session_response(repository, responded_session)
 
@@ -965,6 +974,8 @@ def submit_mastery_check_answers(
             run_id=run_id,
         )
     except CompactionError as error:
+        if error.is_service_failure:
+            raise
         repository.request_human_review(
             session=session,
             need_human_reason=f"AI 核验上下文恢复失败：{error.code}",

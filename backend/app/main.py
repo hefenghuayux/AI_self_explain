@@ -24,6 +24,9 @@ from app.core.logging import (
     new_correlation_id,
     reset_trace_context,
 )
+from app.models.session import Session
+from app.repositories.sessions import SessionRepository
+from app.services.ai_evaluation import AIServiceUnavailableError
 from app.services.context_compaction import CompactionError
 from app.services.context_runtime import ContextMiddleware, ContextRuntime
 from app.services.realtime_asr import configure_dashscope
@@ -71,8 +74,45 @@ def create_app(settings: Settings) -> FastAPI:
 
     @application.exception_handler(CompactionError)
     async def compaction_error_handler(request: Request, error: CompactionError):
+        if error.is_service_failure:
+            match = SESSION_PATH_PATTERN.match(request.url.path)
+            if match is not None:
+                with request.app.state.database_session_factory() as database_session:
+                    session = database_session.get(Session, int(match.group("session_id")))
+                    if session is not None:
+                        repository = SessionRepository(database_session)
+                        flow_stage = session.flow_stage
+                        if flow_stage == "AI_EVALUATING":
+                            flow_stage = "CAPTURING_INPUT"
+                        elif (
+                            flow_stage == "WAIT_MASTERY_CHECK"
+                            and repository.get_latest_mastery_check(session.id) is None
+                        ):
+                            flow_stage = (
+                                "SHOWING_FULL_SOLUTION"
+                                if request.url.path.endswith("/full-solution-understanding")
+                                else "CAPTURING_INPUT"
+                            )
+                        repository.record_ai_service_failure(
+                            session=session,
+                            flow_stage=flow_stage,
+                            trigger_type="AI_CONTEXT_TRANSPORT_FAILED",
+                        )
+            return await ai_service_unavailable_handler(request, AIServiceUnavailableError())
         return JSONResponse(
             status_code=503, content={"detail": {"code": error.code, "message": str(error)}}
+        )
+
+    @application.exception_handler(AIServiceUnavailableError)
+    async def ai_service_unavailable_handler(request: Request, error: AIServiceUnavailableError):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": {
+                    "code": "AI_SERVICE_UNAVAILABLE",
+                    "message": str(error),
+                }
+            },
         )
 
     application.include_router(health_router, prefix="/api")

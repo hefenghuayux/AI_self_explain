@@ -1394,6 +1394,34 @@ class SessionRepository:
         self.database_session.refresh(session)
         return session
 
+    def record_ai_service_failure(
+        self,
+        *,
+        session: Session,
+        flow_stage: str,
+        trigger_type: str,
+        related_attempt_id: int | None = None,
+        related_evaluation_id: int | None = None,
+        run_id: str | None = None,
+    ) -> Session:
+        """记录上游 AI 传输失败，并恢复到可重试的业务阶段。"""
+        before_snapshot = session_snapshot(session)
+        session.status = STATUS_IN_PROGRESS
+        session.flow_stage = flow_stage
+        session.finished_at = None
+        session.version += 1
+        self._record_transition(
+            session=session,
+            trigger_type=trigger_type,
+            before_snapshot=before_snapshot,
+            related_attempt_id=related_attempt_id,
+            related_evaluation_id=related_evaluation_id,
+            run_id=run_id,
+        )
+        self.database_session.commit()
+        self.database_session.refresh(session)
+        return session
+
     def continue_explaining(self, session: Session) -> Session:
         before_snapshot = session_snapshot(session)
         session.flow_stage = FLOW_STAGE_CAPTURING_INPUT

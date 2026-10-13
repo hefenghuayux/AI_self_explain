@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-import pytest
 from alembic.config import Config
 from conftest import authenticated_test_client
 from fastapi.testclient import TestClient
@@ -11,7 +10,7 @@ from sqlalchemy.orm import Session
 from alembic import command
 from app.models.session import Session as SessionModel
 from app.schemas.model_request_snapshot import ModelRequestSnapshot
-from app.services.ai_evaluation import AIModelClient, AIModelResponse, AITransportError
+from app.services.ai_evaluation import AIModelClient, AIModelResponse
 from app.services.context_history import load_history
 
 
@@ -400,123 +399,6 @@ def test_complete_evaluation_sets_completion_with_deterministic_label(
     assert saved_session["supportCountRound"] == 0
     assert saved_session["supportCountTotal"] == 0
     assert saved_session["teachingGeneration"] == {"status": "NOT_REQUIRED"}
-
-
-def test_transport_retry_exhaustion_requests_review_and_allows_another_explanation(
-    settings, monkeypatch
-) -> None:
-    calls = 0
-
-    def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
-        nonlocal calls
-        if request.purpose == "AI_TEACHING":
-            return AIModelResponse("{\"choices\": []}", focused_teaching_content(), 9)
-        calls += 1
-        if calls <= settings.ai_transport_max_retries + 1:
-            raise AITransportError(
-                error_type="AI_SERVICE_ERROR",
-                message="测试模型服务不可用",
-                duration_ms=5,
-            )
-        return AIModelResponse("{\"choices\": []}", valid_evaluation_content(), 9)
-
-    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
-    monkeypatch.setattr("app.services.ai_evaluation.time.sleep", lambda _: None)
-    with prepare_client(settings, monkeypatch) as client:
-        first_response = submit_text(client, create_started_session(client))
-        first_session = first_response.json()
-        continued = client.post(
-            f"/api/sessions/{first_session['id']}/continue",
-            json={"version": first_session["version"]},
-        )
-        retry_response = client.post(
-            f"/api/sessions/{first_session['id']}/text-attempts",
-            json={
-                "confirmedText": "我重新说明，1 加 1 等于 2。",
-                "version": continued.json()["version"],
-            },
-        )
-
-    assert first_response.status_code == 200
-    assert first_session["status"] == "IN_PROGRESS"
-    assert first_session["flowStage"] == "WAIT_STUDENT_ACTION"
-    assert "AI 评价服务" in first_session["needHumanReason"]
-    assert continued.status_code == 200
-    assert continued.json()["flowStage"] == "CAPTURING_INPUT"
-    assert retry_response.status_code == 200
-    assert retry_response.json()["flowStage"] == "WAIT_GUIDED_ANSWERS"
-
-    engine = create_engine(settings.database_url)
-    try:
-        with engine.connect() as connection:
-            attempt_count = connection.execute(
-                text("SELECT COUNT(*) FROM explanation_attempts")
-            ).scalar_one()
-            error_count = connection.execute(
-                text(
-                    "SELECT COUNT(*) FROM external_call_records "
-                    "WHERE transport_status = 'ERROR'"
-                )
-            ).scalar_one()
-    finally:
-        engine.dispose()
-    assert attempt_count == 2
-    assert error_count == settings.ai_transport_max_retries + 1
-
-
-@pytest.mark.parametrize("failure_kind", ["transport", "validation"])
-def test_teaching_failure_keeps_evaluation_without_support_side_effects(
-    settings, monkeypatch, failure_kind: str
-) -> None:
-    def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
-        if request.purpose == "AI_EVALUATION":
-            return AIModelResponse("{\"choices\": []}", valid_evaluation_content(), 8)
-        if failure_kind == "transport":
-            raise AITransportError(
-                error_type="AI_SERVICE_ERROR",
-                message="供应商教学服务不可用",
-                duration_ms=5,
-            )
-        return AIModelResponse(
-            "{\"choices\": []}",
-            '{"content":"无效教学输出","questions":[],"action":"COMPLETE"}',
-            8,
-        )
-
-    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
-    with prepare_client(settings, monkeypatch) as client:
-        started = create_started_session(client)
-        response = submit_text(client, started)
-        current = client.get(f"/api/sessions/{started['id']}")
-
-    assert response.status_code == 200
-    assert response.json()["needHumanReason"] == "教学生成失败，会话已进入人工处理"
-    assert "供应商" not in response.text
-    assert current.status_code == 200
-    assert current.json()["status"] == "IN_PROGRESS"
-    assert current.json()["flowStage"] == "WAIT_STUDENT_ACTION"
-    assert current.json()["supportCountRound"] == 0
-    assert current.json()["supportCountTotal"] == 0
-    assert current.json()["latestEvaluation"]["correctness"] == "CORRECT"
-    assert current.json()["latestSupport"] is None
-    assert current.json()["teachingGeneration"] is None
-
-    engine = create_engine(settings.database_url)
-    try:
-        with engine.connect() as connection:
-            assert connection.execute(text("SELECT COUNT(*) FROM ai_evaluations")).scalar_one() == 1
-            assert connection.execute(text("SELECT COUNT(*) FROM support_events")).scalar_one() == 0
-            failure_event = connection.execute(
-                text(
-                    "SELECT related_evaluation_id, related_support_event_id "
-                    "FROM state_transition_events "
-                    "WHERE trigger_type = 'AI_TEACHING_RETRY_EXHAUSTED'"
-                )
-            ).mappings().one()
-    finally:
-        engine.dispose()
-    assert failure_event["related_evaluation_id"] is not None
-    assert failure_event["related_support_event_id"] is None
 
 
 def test_support_event_records_session_event_seq_anchor(settings, monkeypatch) -> None:

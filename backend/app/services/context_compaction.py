@@ -45,6 +45,14 @@ class CompactionError(RuntimeError):
         self.code = code
         super().__init__(message or code)
 
+    @property
+    def is_service_failure(self) -> bool:
+        return self.code in {
+            "CONTEXT_COMPACTION_TIMEOUT",
+            "CONTEXT_COMPACTION_MODEL_ERROR",
+            "CONTEXT_COMPACTION_RETRY_FAILED",
+        }
+
 
 class ContextCompactor:
     def __init__(

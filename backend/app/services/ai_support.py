@@ -30,6 +30,7 @@ from app.schemas.support import (
 from app.services.ai_evaluation import (
     AIModelClient,
     AIModelResponse,
+    AIServiceUnavailableError,
     AITransportError,
     _latest_student_explanation_from_history,
 )
@@ -169,13 +170,13 @@ class AISupportService:
                 )
             )
             if model_response is None:
-                self.repository.request_human_review(
+                self.repository.record_ai_service_failure(
                     session=session,
-                    need_human_reason="AI 教学支持服务在配置的重试次数内未成功响应",
-                    trigger_type="AI_SUPPORT_TRANSPORT_RETRY_EXHAUSTED",
+                    flow_stage=session.flow_stage,
+                    trigger_type="AI_SUPPORT_TRANSPORT_FAILED",
                     run_id=run_id,
                 )
-                return None
+                raise AIServiceUnavailableError
             if external_call is None:
                 raise RuntimeError("AI 教学支持传输成功后缺少外部调用记录")
             try:

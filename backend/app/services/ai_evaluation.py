@@ -64,6 +64,13 @@ class AITransportError(RuntimeError):
         self.raw_response = raw_response
 
 
+class AIServiceUnavailableError(RuntimeError):
+    """上游 AI 服务不可用，调用方可在当前会话上重试。"""
+
+    def __init__(self) -> None:
+        super().__init__("AI服务调用失败，请稍后再试")
+
+
 class AIModelClient:
     def __init__(self, settings: Settings, http_client: httpx.Client) -> None:
         self.settings = settings
@@ -198,13 +205,14 @@ class AIEvaluationService:
                 )
             )
             if model_response is None:
-                return self.repository.request_human_review(
+                self.repository.record_ai_service_failure(
                     session=session,
-                    need_human_reason="AI 评价服务在配置的重试次数内未成功响应",
-                    trigger_type="AI_EVALUATION_TRANSPORT_RETRY_EXHAUSTED",
+                    flow_stage="CAPTURING_INPUT",
+                    trigger_type="AI_EVALUATION_TRANSPORT_FAILED",
                     related_attempt_id=attempt.id,
                     run_id=run_id,
                 )
+                raise AIServiceUnavailableError
 
             if external_call is None:
                 raise RuntimeError("AI 评价传输成功后缺少外部调用记录")

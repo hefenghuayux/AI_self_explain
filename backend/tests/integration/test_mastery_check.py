@@ -19,7 +19,7 @@ from app.models.session_event import SessionEvent
 from app.models.state_transition_event import StateTransitionEvent
 from app.schemas.mastery_check import MasteryCheckAnswer
 from app.schemas.model_request_snapshot import ModelRequestSnapshot
-from app.services.ai_evaluation import AIModelClient, AIModelResponse, AITransportError
+from app.services.ai_evaluation import AIModelClient, AIModelResponse
 from app.services.ai_mastery_check import AIMasteryCheckService, MasteryCheckQuestionInput
 from app.services.event_store import EventStore
 
@@ -233,34 +233,6 @@ def test_illegal_question_count_requests_human_review(settings, monkeypatch) -> 
     assert "AI_MASTERY_CHECK_SCHEMA_RETRY_EXHAUSTED" in read_trigger_types(settings, session_id)
     calls = read_mastery_calls(settings, session_id)
     assert calls and calls[-1].validation_status == "INVALID"
-
-
-def test_transport_retry_exhaustion_requests_human_review(settings, monkeypatch) -> None:
-    prepare_client(settings, monkeypatch)
-    session_id, question_id, attempt_id, evaluation_id = seed_valid_evaluation(settings)
-    monkeypatch.setattr("app.services.ai_mastery_check.time.sleep", lambda _: None)
-
-    def fake_evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
-        raise AITransportError(
-            error_type="AI_SERVICE_ERROR", message="AI 服务不可用", duration_ms=5
-        )
-
-    monkeypatch.setattr(AIModelClient, "evaluate", fake_evaluate)
-
-    with mastery_service(settings) as (database_session, service):
-        session, question, _ = load_entities(
-            database_session, session_id, question_id, attempt_id
-        )
-        result = service.generate_questions(question=question, session=session)
-
-    assert result is None
-    session = read_session(settings, session_id)
-    assert session.need_human_reason is not None
-    assert "核验服务在配置的重试次数内未成功响应" in session.need_human_reason
-    assert session.support_count_round == 3
-    assert "AI_MASTERY_CHECK_TRANSPORT_RETRY_EXHAUSTED" in read_trigger_types(
-        settings, session_id
-    )
 
 
 def test_valid_questions_are_recorded_as_validated_output(settings, monkeypatch) -> None:

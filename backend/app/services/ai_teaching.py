@@ -33,6 +33,7 @@ from app.schemas.teaching import (
 from app.services.ai_evaluation import (
     AIModelClient,
     AIModelResponse,
+    AIServiceUnavailableError,
     AITransportError,
     _student_explanation_from_attempt,
 )
@@ -120,7 +121,13 @@ class AITeachingService:
                 )
             )
             if model_response is None:
-                return None
+                self.repository.record_ai_service_failure(
+                    session=session,
+                    flow_stage="CAPTURING_INPUT",
+                    trigger_type="AI_TEACHING_TRANSPORT_FAILED",
+                    run_id=run_id,
+                )
+                raise AIServiceUnavailableError
             if external_call is None:
                 raise RuntimeError("AI 教学传输成功后缺少外部调用记录")
 
