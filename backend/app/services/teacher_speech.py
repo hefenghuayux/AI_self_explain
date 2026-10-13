@@ -11,6 +11,7 @@ from uuid import uuid4
 import httpx
 
 from app.core.config import Settings
+from app.models.tts_voice import TTSVoice
 
 # 应用保护限额，不代表供应商协议上限；超限明确失败，不截断教学内容。
 MAX_SPEECH_CHARACTERS = 20000
@@ -47,14 +48,12 @@ class TeacherSpeechService:
                 else:
                     self._locks[key] = (lock, users - 1)
 
-    def synthesize(self, text: str) -> Path:
+    def synthesize(self, text: str, voice: TTSVoice) -> Path:
         settings = self.settings
         if not (
             settings.tts_provider.strip()
             and settings.tts_base_url
             and settings.tts_api_key.get_secret_value().strip()
-            and settings.tts_model.strip()
-            and settings.tts_voice_id.strip()
         ):
             raise TeacherSpeechError("TTS_NOT_CONFIGURED", "教师语音尚未配置", 503)
         if not text.strip():
@@ -64,13 +63,13 @@ class TeacherSpeechService:
                 "TTS_TEXT_TOO_LONG", "朗读文本超过应用的 20000 字符限额，请分段后重试", 422
             )
         body = {
-            "model": settings.tts_model,
+            "model": voice.model,
             "input": {
                 "text": text,
-                "voice": settings.tts_voice_id,
+                "voice": voice.voice_id,
                 "format": "wav",
                 "sample_rate": 24000,
-                "instruction": settings.tts_instruction,
+                "instruction": voice.instruction,
             },
         }
         key = hashlib.sha256(

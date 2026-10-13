@@ -70,9 +70,6 @@ class Settings(BaseSettings):
     tts_provider: str = ""
     tts_base_url: AnyHttpUrl | None = None
     tts_api_key: SecretStr = SecretStr("")
-    tts_model: str = ""
-    tts_voice_id: str = ""
-    tts_instruction: str = ""
     tts_request_timeout_seconds: PositiveFloat = 60
 
     prompt_version: NonEmptyString

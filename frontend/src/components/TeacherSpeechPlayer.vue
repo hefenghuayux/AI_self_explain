@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue"
 
 import { fetchTeacherSpeech, type TeacherSpeechRequest } from "../api/teacher-speech"
-import { teacherSpeechAutoPlay as autoPlay } from "../stores/teacherSpeech"
+import { teacherSpeechAutoPlay as autoPlay, teacherSpeechVoiceVersion } from "../stores/teacherSpeech"
 
 const props = withDefaults(defineProps<{
   sessionId: string
@@ -22,7 +22,6 @@ let requestController: AbortController | undefined
 let generation = 0
 let audio: HTMLAudioElement | undefined
 let audioUrl: string | undefined
-let cachedAudio: { key: string; blob: Blob } | undefined
 
 const statusText = computed(() => {
   if (props.disabled) return "当前操作期间已停止语音"
@@ -90,16 +89,12 @@ async function synthesizeAndPlay() {
   stop()
   const requestGeneration = generation
   const request = selectedRequest.value
-  const key = `${props.sessionId}:${JSON.stringify(request)}`
   const controller = new AbortController()
   requestController = controller
   state.value = "preparing"
   try {
-    const blob = cachedAudio?.key === key
-      ? cachedAudio.blob
-      : await fetchTeacherSpeech(props.sessionId, request, controller.signal)
+    const blob = await fetchTeacherSpeech(props.sessionId, request, controller.signal)
     if (requestGeneration !== generation) return
-    cachedAudio = { key, blob }
     requestController = undefined
     audioUrl = URL.createObjectURL(blob)
     const activeAudio = new Audio(audioUrl)
@@ -111,7 +106,6 @@ async function synthesizeAndPlay() {
       if (requestGeneration !== generation) return
       state.value = "failed"
       errorMessage.value = "音频加载或解码失败，请重试"
-      cachedAudio = undefined
       releaseAudio()
     }
     await startPlayback(activeAudio, requestGeneration)
@@ -165,10 +159,8 @@ watch(() => props.fullSolution, (fullSolution) => {
 watch(() => props.disabled, (disabled) => {
   if (disabled) stop()
 })
-watch(() => props.sessionId, () => {
-  stop()
-  cachedAudio = undefined
-})
+watch(() => props.sessionId, stop)
+watch(teacherSpeechVoiceVersion, stop, { flush: "sync" })
 onBeforeUnmount(stop)
 
 defineExpose({ playReply, playSolution, stop })

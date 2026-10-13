@@ -15,6 +15,7 @@ from app.api.questions import router as questions_router
 from app.api.session_events import router as session_events_router
 from app.api.sessions import router as sessions_router
 from app.api.teacher_speech import router as teacher_speech_router
+from app.api.tts_voices import router as tts_voices_router
 from app.core.config import Settings
 from app.core.database import create_database_engine, prepare_runtime_directories
 from app.core.logging import (
@@ -79,6 +80,7 @@ def create_app(settings: Settings) -> FastAPI:
     application.include_router(questions_router, prefix="/api")
     application.include_router(sessions_router, prefix="/api")
     application.include_router(teacher_speech_router, prefix="/api")
+    application.include_router(tts_voices_router, prefix="/api")
     application.include_router(session_events_router, prefix="/api")
 
     @application.middleware("http")

@@ -1,14 +1,25 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue"
+import { onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRouter } from "vue-router"
 
 import { authUser, isAuthenticated, logout } from "./stores/auth"
-import { setTeacherSpeechAutoPlay, teacherSpeechAutoPlay } from "./stores/teacherSpeech"
+import { fetchTtsVoiceSettings, saveTtsVoiceSelection, type TtsVoice } from "./api/tts-voices"
+import { notifyTeacherSpeechVoiceChanged, setTeacherSpeechAutoPlay, teacherSpeechAutoPlay } from "./stores/teacherSpeech"
 
 const router = useRouter()
 const menuRef = ref<HTMLDetailsElement>()
 const menuOpen = ref(false)
 const settingsVisible = ref(false)
+const voices = ref<TtsVoice[]>([])
+const selectedVoiceId = ref<number | null>(null)
+const savedVoiceId = ref<number | null>(null)
+const voicesLoading = ref(false)
+const voicesLoaded = ref(false)
+const voiceSaving = ref(false)
+const voiceError = ref("")
+const voiceSuccess = ref("")
+let settingsGeneration = 0
+let voicesController: AbortController | undefined
 
 function closeMenu() {
   if (menuRef.value) menuRef.value.open = false
@@ -33,7 +44,67 @@ function handleMenuClick(event: MouseEvent) {
 function openSettings() {
   closeMenu()
   settingsVisible.value = true
+  void loadVoices()
 }
+
+async function loadVoices() {
+  voicesController?.abort()
+  const controller = new AbortController()
+  voicesController = controller
+  const generation = ++settingsGeneration
+  voicesLoading.value = true
+  voicesLoaded.value = false
+  voiceError.value = ""
+  voiceSuccess.value = ""
+  try {
+    const settings = await fetchTtsVoiceSettings(controller.signal)
+    if (generation !== settingsGeneration) return
+    voices.value = settings.voices
+    selectedVoiceId.value = settings.selectedVoiceId
+    savedVoiceId.value = settings.selectedVoiceId
+    voicesLoaded.value = true
+  } catch (error) {
+    if (generation !== settingsGeneration) return
+    voiceError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    if (generation === settingsGeneration) voicesLoading.value = false
+  }
+}
+
+async function saveVoice() {
+  if (voiceSaving.value || !voicesLoaded.value) return
+  const generation = settingsGeneration
+  const userId = authUser.value?.id
+  voiceSaving.value = true
+  voiceError.value = ""
+  voiceSuccess.value = ""
+  try {
+    const settings = await saveTtsVoiceSelection(selectedVoiceId.value)
+    if (userId !== authUser.value?.id) return
+    notifyTeacherSpeechVoiceChanged()
+    if (generation !== settingsGeneration) return
+    voices.value = settings.voices
+    selectedVoiceId.value = settings.selectedVoiceId
+    savedVoiceId.value = settings.selectedVoiceId
+    voiceSuccess.value = "个人音色已保存"
+  } catch (error) {
+    if (generation !== settingsGeneration) return
+    voiceError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    if (generation === settingsGeneration) voiceSaving.value = false
+  }
+}
+
+watch(settingsVisible, (visible) => {
+  if (visible) return
+  settingsGeneration += 1
+  voicesController?.abort()
+  voiceSaving.value = false
+})
+watch(() => authUser.value?.id, () => {
+  settingsVisible.value = false
+  notifyTeacherSpeechVoiceChanged()
+})
 
 function updateAutoPlay(event: Event) {
   setTeacherSpeechAutoPlay((event.target as HTMLInputElement).checked)
@@ -44,6 +115,8 @@ onMounted(() => {
   document.addEventListener("keydown", handleEscape)
 })
 onBeforeUnmount(() => {
+  settingsGeneration += 1
+  voicesController?.abort()
   document.removeEventListener("pointerdown", handleOutsideClick)
   document.removeEventListener("keydown", handleEscape)
 })
@@ -90,11 +163,24 @@ async function signOut() {
       </div>
     </div>
   </header>
-  <el-dialog v-model="settingsVisible" title="设置" width="min(420px, calc(100vw - 32px))" :close-on-click-modal="true">
+  <el-dialog v-model="settingsVisible" title="设置" width="min(420px, calc(100vw - 32px))" :close-on-click-modal="!voiceSaving" :close-on-press-escape="!voiceSaving" :show-close="!voiceSaving">
     <label class="auto-play-setting">
       <input :checked="teacherSpeechAutoPlay" type="checkbox" data-testid="teacher-speech-auto-play" @change="updateAutoPlay" />
       自动播放老师回复
     </label>
+    <div class="voice-setting">
+      <label for="personal-tts-voice">我的老师音色</label>
+      <p id="voice-setting-help">仅对当前账号生效。选择并保存后，再播放老师回复。</p>
+      <select id="personal-tts-voice" v-model="selectedVoiceId" data-testid="personal-tts-voice" aria-describedby="voice-setting-help" :disabled="voicesLoading || voiceSaving || !voicesLoaded" @change="voiceSuccess = ''">
+        <option :value="null">未选择音色（无法生成语音）</option>
+        <option v-for="voice in voices" :key="voice.id" :value="voice.id">{{ voice.displayName }}</option>
+      </select>
+      <p v-if="voicesLoading" role="status">正在加载音色…</p>
+      <p v-if="voiceError" class="voice-error" role="alert">{{ voiceError }}</p>
+      <p v-if="voiceSuccess" role="status">{{ voiceSuccess }}</p>
+      <el-button v-if="!voicesLoaded && !voicesLoading" data-testid="reload-tts-voices" @click="loadVoices">重新加载音色</el-button>
+      <el-button v-else type="primary" data-testid="save-tts-voice" :loading="voiceSaving" :disabled="voicesLoading || !voicesLoaded || selectedVoiceId === savedVoiceId" @click="saveVoice">保存个人音色</el-button>
+    </div>
   </el-dialog>
   <RouterView :key="$route.fullPath" />
 </template>
@@ -284,6 +370,13 @@ nav {
   height: 18px;
   accent-color: var(--color-brand-600);
 }
+
+.voice-setting { margin-top: var(--space-4); color: var(--color-text-primary); }
+.voice-setting label { font-weight: 600; }
+.voice-setting p { margin: var(--space-2) 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.voice-setting select { width: 100%; min-height: 44px; margin-bottom: var(--space-3); padding: var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-primary); background: var(--color-surface); }
+.voice-setting select:focus-visible { outline: 2px solid var(--color-brand-600); outline-offset: 2px; }
+.voice-setting .voice-error { color: var(--color-error-700); overflow-wrap: anywhere; }
 
 @media (max-width: 640px) {
   .header-inner {

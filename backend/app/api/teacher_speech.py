@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.core.auth import CurrentUser, DatabaseSession
 from app.models.question import Question
 from app.models.session import Session
+from app.models.tts_voice import TTSSpeechSettings, TTSVoice
 from app.repositories.sessions import SessionRepository
 from app.services.teacher_speech import TeacherSpeechError
 
@@ -112,7 +113,15 @@ def synthesize_teacher_speech(
                 raise HTTPException(422, "请求的记录不属于可朗读的教师回复")
         text = "\n".join(str(item["content"]) for item in items)
     try:
-        path = request.app.state.teacher_speech_service.synthesize(text)
+        selection = database_session.get(TTSSpeechSettings, current_user.id)
+        if selection is None or selection.voice_id is None:
+            raise TeacherSpeechError(
+                "TTS_VOICE_NOT_SELECTED", "尚未选择教师音色，请在设置中选择", 503
+            )
+        voice = database_session.get(TTSVoice, selection.voice_id)
+        if voice is None:
+            raise TeacherSpeechError("TTS_VOICE_MISSING", "当前教师音色记录不存在", 503)
+        path = request.app.state.teacher_speech_service.synthesize(text, voice)
     except TeacherSpeechError as error:
         raise HTTPException(
             error.status_code, {"code": error.code, "message": str(error)}
