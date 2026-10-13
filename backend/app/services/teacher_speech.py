@@ -63,7 +63,7 @@ class TeacherSpeechService:
                 "TTS_TEXT_TOO_LONG", "朗读文本超过应用的 20000 字符限额，请分段后重试", 422
             )
         body = {
-            "model": voice.model,
+            "model": settings.tts_model.strip() or voice.model,
             "input": {
                 "text": text,
                 "voice": voice.voice_id,
