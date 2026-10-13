@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import sessionmaker
 
 from app.api.auth import router as auth_router
+from app.api.first_explanation_grading import router as first_explanation_grading_router
 from app.api.health import router as health_router
 from app.api.questions import router as questions_router
 from app.api.session_events import router as session_events_router
@@ -116,6 +117,7 @@ def create_app(settings: Settings) -> FastAPI:
         )
 
     application.include_router(health_router, prefix="/api")
+    application.include_router(first_explanation_grading_router, prefix="/api")
     application.include_router(auth_router, prefix="/api")
     application.include_router(questions_router, prefix="/api")
     application.include_router(sessions_router, prefix="/api")

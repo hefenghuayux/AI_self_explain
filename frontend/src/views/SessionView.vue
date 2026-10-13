@@ -16,6 +16,7 @@ import {
   submitMasteryCheckAnswers,
   submitSolutionUnderstanding,
 } from "../api/sessions"
+import { acknowledgeGrading, fetchGrading, retryGrading, submitGradedStepAttempt } from "../api/grading"
 import {
   fetchSessionSteps,
   submitStepAttempt,
@@ -35,6 +36,8 @@ import type {
 } from "../types/session"
 import type { StepsResponse } from "../types/session-step"
 import type { Question } from "../types/question"
+import type { Grading } from "../types/grading"
+import FirstExplanationGrading from "../components/FirstExplanationGrading.vue"
 import { sanitizeQuestionHtml } from "../utils/questionHtml"
 import { renderStudentTextHtml } from "../utils/studentTextHtml"
 
@@ -53,6 +56,11 @@ const router = useRouter()
 const session = ref<Session>()
 const question = ref<Question>()
 const timeline = ref<LearningTimelineItem[]>([])
+const grading = ref<Grading | null>(null)
+const gradingRetrying = ref(false)
+let gradingPollTimer: ReturnType<typeof setInterval> | undefined
+let gradingPollInFlight = false
+const gradingPollError = ref("")
 const activeSegment = ref<SegmentKey>("selfExplain")
 const currentStepId = ref<number | null>(null)
 const currentStepContent = ref("")
@@ -91,24 +99,28 @@ function isSpokenReply(item: LearningTimelineItem) {
 
 // 手动播放定位最近一轮老师回复；初次加载历史只设置目标，不触发播放。
 const teacherReplyIds = computed(() => {
-  let lastReply = timeline.value.length - 1
-  while (lastReply >= 0 && !isSpokenReply(timeline.value[lastReply])) lastReply -= 1
+  const items = visibleTimeline.value
+  let lastReply = items.length - 1
+  while (lastReply >= 0 && !isSpokenReply(items[lastReply])) lastReply -= 1
   if (lastReply < 0) return []
   let start = lastReply
-  while (start > 0 && timeline.value[start - 1].speaker !== "STUDENT") start -= 1
-  return timeline.value.slice(start, lastReply + 1).filter(isSpokenReply).map((item) => item.id)
+  while (start > 0 && items[start - 1].speaker !== "STUDENT") start -= 1
+  return items.slice(start, lastReply + 1).filter(isSpokenReply).map((item) => item.id)
 })
 
+const canShowTeachingContent = computed(() => !grading.value || (Boolean(grading.value.acknowledgedAt) && ["SUCCEEDED", "FAILED"].includes(grading.value.evaluationStatus)))
+const visibleTimeline = computed(() => canShowTeachingContent.value ? timeline.value : timeline.value.filter((item) => item.speaker === "STUDENT"))
 const speechIsSolution = computed(() => Boolean(session.value?.solutionExposed && question.value?.fullSolution
+  && canShowTeachingContent.value
   && (session.value.flowStage === "SHOWING_FULL_SOLUTION"
     || ["NEEDS_REVIEW", "STOPPED_LIMIT"].includes(session.value.status))))
 const nextStepText = computed(() => speechIsSolution.value ? ""
-  : session.value?.latestSupport?.followUpContent || session.value?.latestSupport?.content || "")
+  : canShowTeachingContent.value ? session.value?.latestSupport?.followUpContent || session.value?.latestSupport?.content || "" : "")
 const speechControlsTarget = computed(() => {
   if (nextStepText.value) return "#next-step-speech"
   if (speechIsSolution.value) return "#solution-speech"
-  if (session.value?.masteryCheck?.questions?.length && !isTerminalSession()) return "#mastery-speech"
-  if (session.value?.latestSupport?.guidedQuestions?.length && !isTerminalSession()) return "#guided-speech"
+  if (canShowTeachingContent.value && session.value?.masteryCheck?.questions?.length && !isTerminalSession()) return "#mastery-speech"
+  if (canShowTeachingContent.value && session.value?.latestSupport?.guidedQuestions?.length && !isTerminalSession()) return "#guided-speech"
   return teacherReplyIds.value.length ? "#latest-reply-speech" : undefined
 })
 
@@ -369,11 +381,13 @@ async function loadSessionData() {
   }
   syncActiveSegmentWithStage()
   const [loadedQuestion, loadedTimeline] = await Promise.all([
-    fetchQuestion(String(loadedSession.questionId)),
-    fetchLearningTimeline(sessionId),
+    fetchQuestion(String(loadedSession.questionId)), fetchLearningTimeline(sessionId),
   ])
   question.value = loadedQuestion
   timeline.value = loadedTimeline
+  const hasFormalSubmission = loadedTimeline.some((item) => item.eventType === "SUBMISSION" && item.submissionType === "SELF_EXPLANATION")
+  grading.value = hasFormalSubmission ? await fetchGrading(sessionId) : null
+  if (grading.value && ["PENDING", "RUNNING"].includes(grading.value.status)) startGradingPolling()
 }
 
 async function reloadAfterVersionConflict(
@@ -429,11 +443,25 @@ onMounted(async () => {
   }
 })
 
+async function pollGrading() {
+  if (gradingPollInFlight || submitting.value || voiceRecording.value) return
+  gradingPollInFlight = true
+  try {
+    const [nextGrading, nextSession, nextTimeline] = await Promise.all([fetchGrading(sessionId), fetchSession(sessionId), fetchLearningTimeline(sessionId)])
+    grading.value = nextGrading; session.value = nextSession; timeline.value = nextTimeline; gradingPollError.value = ""
+    if (nextGrading && ["SUCCEEDED", "FAILED"].includes(nextGrading.status) && ["SUCCEEDED", "FAILED"].includes(nextGrading.evaluationStatus)) stopGradingPolling()
+  } catch (error) { gradingPollError.value = error instanceof Error ? error.message : String(error) } finally { gradingPollInFlight = false }
+}
+function startGradingPolling() { if (gradingPollTimer) return; void pollGrading(); gradingPollTimer = setInterval(() => { void pollGrading() }, 2000) }
+function stopGradingPolling() { if (gradingPollTimer) clearInterval(gradingPollTimer); gradingPollTimer = undefined }
+async function acknowledgeGradingResult() { if (!grading.value) return; try { grading.value = await acknowledgeGrading(sessionId); await loadSessionData() } catch (error) { errorMessage.value = error instanceof Error ? error.message : String(error) } }
+async function retryGradingResult() { gradingRetrying.value = true; try { grading.value = await retryGrading(sessionId); startGradingPolling() } catch (error) { errorMessage.value = error instanceof Error ? error.message : String(error) } finally { gradingRetrying.value = false } }
+
 async function refreshTimeline() {
   const knownIds = new Set(timeline.value.map((item) => item.id))
   const refreshedTimeline = await fetchLearningTimeline(sessionId)
   timeline.value = refreshedTimeline
-  const ids = refreshedTimeline.filter((item) => !knownIds.has(item.id) && isSpokenReply(item))
+  const ids = refreshedTimeline.filter((item) => canShowTeachingContent.value && !knownIds.has(item.id) && isSpokenReply(item))
     .map((item) => item.id)
   if (submitting.value) {
     pendingSpeechIds = ids
@@ -593,11 +621,13 @@ async function submitExplanation() {
       errorMessage.value = "关键步骤和讲解不能同时为空"
       return
     }
-    session.value = await submitStepAttempt(
-      sessionId,
-      currentStepContent.value,
-      session.value.version,
-    )
+    const hasFormalSubmission = timeline.value.some((item) => item.eventType === "SUBMISSION" && item.submissionType === "SELF_EXPLANATION")
+    if (!hasFormalSubmission) {
+      const response = await submitGradedStepAttempt(sessionId, currentStepContent.value, session.value.version)
+      session.value = response.session; grading.value = response.grading; startGradingPolling()
+    } else {
+      session.value = await submitStepAttempt(sessionId, currentStepContent.value, session.value.version)
+    }
     lastSubmittedSelfExplanation.value = draftContent
     clearStepState()
     syncActiveSegmentWithStage()
@@ -730,6 +760,7 @@ async function handleVoiceCompleted(
 }
 
 onBeforeUnmount(() => {
+  stopGradingPolling()
   stopTeacherSpeech()
   stepVoiceRecorderRef.value?.stop()
   explainVoiceRecorderRef.value?.stop()
@@ -937,7 +968,9 @@ async function respondToSolution(understood: boolean) {
         <section v-if="question" class="question-content" aria-label="题目">
           <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </section>
-        <section v-if="nextStepText" class="session-section feedback-section" aria-label="学习反馈" aria-live="polite">
+        <FirstExplanationGrading :grading="grading" :retrying="gradingRetrying" @retry="retryGradingResult" @acknowledge="acknowledgeGradingResult" />
+        <el-alert v-if="gradingPollError" :title="gradingPollError" type="error" :closable="false" show-icon />
+        <section v-if="canShowTeachingContent && nextStepText" class="session-section feedback-section" aria-label="学习反馈" aria-live="polite">
           <div class="feedback-card">
             <div class="feedback-next-step"><span id="next-step-speech" class="speech-anchor" /><p><strong>下一步：</strong>{{ nextStepText }}</p></div>
           </div>
@@ -1014,7 +1047,7 @@ async function respondToSolution(understood: boolean) {
                 <el-empty v-else description="当前阶段暂无自讲输入" />
               </div>
               <div v-show="activeSegment === 'guidedAnswers'" class="dialog-pane">
-                <template v-if="session.latestSupport?.guidedQuestions?.length">
+                <template v-if="canShowTeachingContent && session.latestSupport?.guidedQuestions?.length">
                   <div v-if="speechControlsTarget === '#guided-speech'" class="speech-content-heading"><span id="guided-speech" class="speech-anchor" /><span>子问题</span></div>
                   <div v-for="item in session.latestSupport.guidedQuestions" :key="item.id" class="guided-question">
                     <p>{{ item.question }}</p>
@@ -1060,7 +1093,7 @@ async function respondToSolution(understood: boolean) {
                 <el-empty v-else description="暂无子问题" />
               </div>
               <div v-show="activeSegment === 'masteryCheck'" class="dialog-pane">
-                <template v-if="session.masteryCheck?.questions?.length">
+                <template v-if="canShowTeachingContent && session.masteryCheck?.questions?.length">
                   <div v-if="speechControlsTarget === '#mastery-speech'" class="speech-content-heading"><span id="mastery-speech" class="speech-anchor" /><span>掌握度核验</span></div>
                   <p class="mastery-check-hint">本题不支持重新完整自讲。请回答下面的核验问题，确认你是否真的掌握。</p>
                   <div v-for="item in session.masteryCheck.questions" :key="item.id" class="guided-question">
@@ -1163,18 +1196,18 @@ async function respondToSolution(understood: boolean) {
               </div>
             </div>
           </section>
-          <section v-if="session.flowStage === 'AI_EVALUATING'" class="session-section"><h2>AI 正在评价</h2><p>请等待评价结果返回。</p></section>
-          <section v-else-if="session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2 class="speech-content-heading"><span id="solution-speech" class="speech-anchor" />完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析。本题不会再要求完整重讲，确认后直接进入掌握度核验。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，进入掌握度核验</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
-          <section v-else-if="session.flowStage === 'WAIT_MASTERY_CHECK'" class="session-section mastery-check-state">
+          <section v-if="canShowTeachingContent && session.flowStage === 'AI_EVALUATING'" class="session-section"><h2>AI 正在评价</h2><p>请等待评价结果返回。</p></section>
+          <section v-else-if="canShowTeachingContent && session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2 class="speech-content-heading"><span id="solution-speech" class="speech-anchor" />完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析。本题不会再要求完整重讲，确认后直接进入掌握度核验。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，进入掌握度核验</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
+          <section v-else-if="canShowTeachingContent && session.flowStage === 'WAIT_MASTERY_CHECK'" class="session-section mastery-check-state">
             <h2>掌握度核验</h2>
             <p class="mastery-check-note">请到上方「掌握度核验」中回答下面的问题；全部通过即完成本题。</p>
           </section>
         </template>
-        <section v-if="session.needHumanReason && session.status === 'IN_PROGRESS'" class="session-section"><el-alert title="已申请人工复核，你可以继续自讲。" type="warning" :closable="false" show-icon /></section>
-        <section v-if="session.status === 'COMPLETED'" class="session-section completion-state"><h2>本轮自讲已完成</h2><p>{{ session.masteryCheck?.outcome === 'COMPLETED' ? masteryOutcomeLabels.COMPLETED : '你已经正确、完整地讲清了这道题。' }}</p></section>
-        <section v-else-if="session.status === 'NEEDS_REVIEW'" class="session-section solution-state"><h2 class="speech-content-heading"><span v-if="speechIsSolution" id="solution-speech" class="speech-anchor" />本题已结束，仍有未解决问题</h2><p>{{ masteryOutcomeLabels.NEEDS_REVIEW }}</p><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
-        <section v-else-if="session.status === 'STOPPED_LIMIT'" class="session-section solution-state"><h2 class="speech-content-heading"><span v-if="speechIsSolution" id="solution-speech" class="speech-anchor" />已达到本轮支持上限</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
-        <section v-if="session.masteryCheck?.results?.length" class="session-section mastery-check-state">
+        <section v-if="canShowTeachingContent && session.needHumanReason && session.status === 'IN_PROGRESS'" class="session-section"><el-alert title="已申请人工复核，你可以继续自讲。" type="warning" :closable="false" show-icon /></section>
+        <section v-if="canShowTeachingContent && session.status === 'COMPLETED'" class="session-section completion-state"><h2>本轮自讲已完成</h2><p>{{ session.masteryCheck?.outcome === 'COMPLETED' ? masteryOutcomeLabels.COMPLETED : '你已经正确、完整地讲清了这道题。' }}</p></section>
+        <section v-else-if="canShowTeachingContent && session.status === 'NEEDS_REVIEW'" class="session-section solution-state"><h2 class="speech-content-heading"><span v-if="speechIsSolution" id="solution-speech" class="speech-anchor" />本题已结束，仍有未解决问题</h2><p>{{ masteryOutcomeLabels.NEEDS_REVIEW }}</p><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
+        <section v-else-if="canShowTeachingContent && session.status === 'STOPPED_LIMIT'" class="session-section solution-state"><h2 class="speech-content-heading"><span v-if="speechIsSolution" id="solution-speech" class="speech-anchor" />已达到本轮支持上限</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
+        <section v-if="canShowTeachingContent && session.masteryCheck?.results?.length" class="session-section mastery-check-state">
           <h2>掌握度核验结论</h2>
           <div v-for="item in session.masteryCheck.questions" :key="item.id" class="guided-question">
             <p>{{ item.question }}</p>
@@ -1188,6 +1221,7 @@ async function respondToSolution(understood: boolean) {
           </div>
         </section>
         <TeacherSpeechPlayer
+          v-if="canShowTeachingContent"
           ref="teacherSpeechRef"
           :session-id="sessionId"
           :item-ids="teacherReplyIds"
@@ -1197,11 +1231,11 @@ async function respondToSolution(understood: boolean) {
         />
         <section class="session-section timeline-section" aria-labelledby="timeline-title">
           <h2 id="timeline-title">历史记录</h2>
-          <el-empty v-if="!timeline.length" description="提交自讲后，学习记录会显示在这里" :image-size="72" />
+          <el-empty v-if="!visibleTimeline.length" description="提交自讲后，学习记录会显示在这里" :image-size="72" />
           <el-scrollbar v-else class="conversation-scroll">
             <div class="conversation-list">
               <article
-                v-for="item in timeline"
+                v-for="item in visibleTimeline"
                 :key="item.id"
                 class="conversation-message"
                 :class="timelineItemClass(item)"

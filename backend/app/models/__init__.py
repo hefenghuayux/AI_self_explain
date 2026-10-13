@@ -5,6 +5,7 @@ from app.models.base import Base
 from app.models.explanation_attempt import ExplanationAttempt
 from app.models.explanation_step import ExplanationStep
 from app.models.external_call_record import ExternalCallRecord
+from app.models.first_explanation_grading import FirstExplanationGrading
 from app.models.mastery_check import MasteryCheck
 from app.models.question import Question
 from app.models.session import Session
@@ -22,6 +23,7 @@ __all__ = [
     "Base",
     "ExplanationAttempt",
     "ExplanationStep",
+    "FirstExplanationGrading",
     "ExternalCallRecord",
     "MasteryCheck",
     "Question",

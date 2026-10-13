@@ -51,6 +51,7 @@ class ModelRequestSnapshot(BaseModel):
         "GUIDED_ANSWER_ASSESSMENT",
         "AI_MASTERY_CHECK",
         "MASTERY_CHECK_ASSESSMENT",
+        "FIRST_EXPLANATION_GRADING",
     ]
     prompt_version: str = Field(alias="promptVersion")
     blocks: ModelRequestBlocks
