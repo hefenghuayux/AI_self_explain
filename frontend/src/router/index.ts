@@ -2,13 +2,14 @@ import { createRouter, createWebHistory, START_LOCATION } from "vue-router"
 
 import { authUser, initializeAuth } from "../stores/auth"
 import { fetchSessionHistory } from "../api/sessions"
-import LoginView from "../views/LoginView.vue"
-import QuestionDetailView from "../views/QuestionDetailView.vue"
-import QuestionFormView from "../views/QuestionFormView.vue"
-import QuestionListView from "../views/QuestionListView.vue"
-import RegisterView from "../views/RegisterView.vue"
-import SessionEventLogView from "../views/SessionEventLogView.vue"
-import SessionView from "../views/SessionView.vue"
+
+const LoginView = () => import("../views/LoginView.vue")
+const QuestionDetailView = () => import("../views/QuestionDetailView.vue")
+const QuestionFormView = () => import("../views/QuestionFormView.vue")
+const QuestionListView = () => import("../views/QuestionListView.vue")
+const RegisterView = () => import("../views/RegisterView.vue")
+const SessionEventLogView = () => import("../views/SessionEventLogView.vue")
+const SessionView = () => import("../views/SessionView.vue")
 
 const router = createRouter({
   history: createWebHistory(),
