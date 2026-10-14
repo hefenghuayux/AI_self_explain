@@ -403,9 +403,13 @@ function restoreLastSubmittedExplanation() {
   }
 }
 
-async function loadSessionData() {
+async function loadSessionData(cancelledRun?: { runId: string; minVersion: number }) {
   stopTeacherSpeech()
   const loadedSession = await fetchSession(sessionId)
+  if (cancelledRun && (loadedSession.version < cancelledRun.minVersion
+    || loadedSession.activeRunId === cancelledRun.runId)) {
+    throw new Error("中断已受理，等待会话状态同步，请稍后刷新")
+  }
   session.value = loadedSession
   if (!dialogDraftsReady) applyStoredDialogDrafts()
   for (const answer of loadedSession.latestSupport?.guidedAnswers ?? []) {
@@ -1240,58 +1244,54 @@ async function respondToSolution(understood: boolean) {
                   />
                   <p class="recording-help">步骤录音转写到输入框；讲解录音随本次自讲提交。</p>
                   <div class="step-actions self-explain-actions">
-                    <div class="self-explain-tools" role="group" aria-label="公式与语音工具">
-                      <el-button
-                        data-testid="insert-formula"
-                        :disabled="(submitting && !explanationSubmitting) || voiceRecording"
-                        @click="openFormulaEditor"
-                      >插入公式</el-button>
-                      <VoiceRecorder
-                        ref="explainVoiceRecorderRef"
-                        :session-id="sessionId"
-                        :version="session.version"
-                        target="SELF_EXPLANATION_EXPLAIN"
-                        start-test-id="record-explain"
-                        stop-test-id="stop-record-explain"
-                        label="讲解录音"
-                        inline
-                        :disabled="submitting
-                          || teachingEvaluationPending
-                          || (voiceRecording && activeVoiceKey !== 'explain')"
-                        :prepare-start="prepareExplainVoice"
-                        @completed="handleVoiceCompleted('SELF_EXPLANATION_EXPLAIN', undefined, $event)"
-                        @busy-change="handleVoiceBusyChange('explain', $event)"
-                        @error="errorMessage = $event"
-                      />
-                      <VoiceRecorder
-                        ref="stepVoiceRecorderRef"
-                        :session-id="sessionId"
-                        :version="session.version"
-                        target="SELF_EXPLANATION_STEP"
-                        start-test-id="record-step"
-                        stop-test-id="stop-record-step"
-                        label="步骤录音"
-                        inline
-                        :disabled="submitting
-                          || teachingEvaluationPending
-                          || (voiceRecording && activeVoiceKey !== 'step')"
-                        :prepare-start="prepareStepVoice"
-                        @final-transcript="currentStepContent = appendTranscript(currentStepContent, $event)"
-                        @completed="handleVoiceCompleted('SELF_EXPLANATION_STEP', undefined, $event)"
-                        @busy-change="handleVoiceBusyChange('step', $event)"
-                        @error="errorMessage = $event"
-                      />
-                    </div>
-                    <div class="self-explain-submit">
-                      <el-button
-                        data-testid="submit-explanation"
-                        type="primary"
-                        :disabled="submitting || cancelling || runPending || voiceRecording || teachingEvaluationPending"
-                        :loading="submitting"
-                        @click="submitExplanation"
-                      >提交自讲</el-button>
-                      <el-button v-if="cancellableRunId" data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
-                    </div>
+                    <el-button
+                      data-testid="insert-formula"
+                      :disabled="(submitting && !explanationSubmitting) || voiceRecording"
+                      @click="openFormulaEditor"
+                    >插入公式</el-button>
+                    <el-button
+                      data-testid="submit-explanation"
+                      type="primary"
+                      :disabled="submitting || cancelling || runPending || voiceRecording || teachingEvaluationPending"
+                      :loading="submitting"
+                      @click="submitExplanation"
+                    >提交</el-button>
+                    <el-button v-if="cancellableRunId" data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
+                    <VoiceRecorder
+                      ref="explainVoiceRecorderRef"
+                      :session-id="sessionId"
+                      :version="session.version"
+                      target="SELF_EXPLANATION_EXPLAIN"
+                      start-test-id="record-explain"
+                      stop-test-id="stop-record-explain"
+                      label="讲解录音"
+                      inline
+                      :disabled="submitting
+                        || teachingEvaluationPending
+                        || (voiceRecording && activeVoiceKey !== 'explain')"
+                      :prepare-start="prepareExplainVoice"
+                      @completed="handleVoiceCompleted('SELF_EXPLANATION_EXPLAIN', undefined, $event)"
+                      @busy-change="handleVoiceBusyChange('explain', $event)"
+                      @error="errorMessage = $event"
+                    />
+                    <VoiceRecorder
+                      ref="stepVoiceRecorderRef"
+                      :session-id="sessionId"
+                      :version="session.version"
+                      target="SELF_EXPLANATION_STEP"
+                      start-test-id="record-step"
+                      stop-test-id="stop-record-step"
+                      label="步骤录音"
+                      inline
+                      :disabled="submitting
+                        || teachingEvaluationPending
+                        || (voiceRecording && activeVoiceKey !== 'step')"
+                      :prepare-start="prepareStepVoice"
+                      @final-transcript="currentStepContent = appendTranscript(currentStepContent, $event)"
+                      @completed="handleVoiceCompleted('SELF_EXPLANATION_STEP', undefined, $event)"
+                      @busy-change="handleVoiceBusyChange('step', $event)"
+                      @error="errorMessage = $event"
+                    />
                   </div>
                 </template>
                 <el-empty v-else description="当前阶段暂无自讲输入" />
@@ -1562,11 +1562,6 @@ h2 { font-size: var(--font-size-lg); }
 .mastery-check-note { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
 .step-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); }
 .session-section .recording-help { margin: var(--space-2) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
-.self-explain-actions { align-items: flex-start; justify-content: space-between; margin-top: var(--space-2); gap: var(--space-3); }
-.self-explain-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; flex: 1 1 320px; max-width: 420px; gap: var(--space-2); }
-.self-explain-tools > * { min-width: 0; }
-.self-explain-tools > .el-button { width: 100%; margin: 0; }
-.self-explain-submit { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
 .step-content-input {
   display: block;
   box-sizing: border-box;
@@ -1663,11 +1658,7 @@ h2 { font-size: var(--font-size-lg); }
   .question-content { padding: var(--space-4); }
   .dialog-panel { padding: var(--space-4); }
   .actions .el-button { flex: 1 1 100%; }
-  .self-explain-tools { flex-basis: 100%; max-width: none; }
-  .self-explain-tools :deep(.el-button) { min-height: 44px; height: auto; padding: var(--space-2) var(--space-1); }
-  .self-explain-tools :deep(.el-button > span) { white-space: normal; line-height: 1.4; }
-  .self-explain-submit { width: 100%; }
-  .self-explain-submit .el-button { flex: 1 1 auto; }
+  .step-actions .el-button { flex: 1 1 100%; }
   .conversation-scroll { height: 480px; }
   .conversation-list { padding: var(--space-3); }
   .conversation-message { width: 100%; max-width: none; }

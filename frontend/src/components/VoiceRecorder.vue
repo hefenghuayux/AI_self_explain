@@ -255,6 +255,5 @@ defineExpose({ start, stop })
 .actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
 .voice-recorder.is-inline { margin-top: 0; padding: 0; border: 0; background: transparent; }
 .voice-recorder.is-inline .actions { margin-top: 0; }
-.voice-recorder.is-inline .actions .el-button { width: 100%; margin: 0; }
 @media (max-width: 640px) { .actions .el-button { width: 100%; } }
 </style>
