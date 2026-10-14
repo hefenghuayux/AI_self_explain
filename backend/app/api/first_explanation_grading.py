@@ -115,6 +115,7 @@ async def submit_graded_step_attempt(
                     FirstExplanationGrading.status == "CANCELLED",
                 )
             ),
+            ExplanationAttempt.cancelled_run_id.is_(None),
         )
         .limit(1)
     ) is not None:

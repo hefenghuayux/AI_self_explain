@@ -625,8 +625,10 @@ async function stopCurrentRun() {
   try {
     session.value = await cancelCurrentRun(sessionId, runId)
     requestToAbort?.controller.abort()
+    if (grading.value && (["PENDING", "RUNNING"].includes(grading.value.status)
+      || ["PENDING", "RUNNING"].includes(grading.value.evaluationStatus))) grading.value = null
     try {
-      await loadSessionData()
+      await loadSessionData({ runId, minVersion: session.value.version })
     } catch (refreshError) {
       errorMessage.value = refreshError instanceof Error ? refreshError.message : String(refreshError)
     }

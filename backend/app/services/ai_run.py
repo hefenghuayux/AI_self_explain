@@ -1,8 +1,8 @@
 """Cancellation boundary for one student-triggered AI operation."""
 
 import asyncio
-from datetime import UTC, datetime
 from contextvars import ContextVar
+from datetime import UTC, datetime
 from threading import Event, Lock
 from uuid import UUID, uuid4
 
@@ -17,8 +17,8 @@ from app.models.explanation_attempt import ExplanationAttempt
 from app.models.first_explanation_grading import FirstExplanationGrading
 from app.models.mastery_check import MasteryCheck
 from app.models.session import Session
-from app.models.student_submission import StudentSubmission
 from app.models.state_transition_event import StateTransitionEvent
+from app.models.student_submission import StudentSubmission
 from app.models.support_event import SupportEvent
 from app.repositories.sessions import session_snapshot
 
@@ -142,9 +142,14 @@ def begin_run(db: DatabaseSession, session: Session, run_id: str | None, runtime
         status="ACTIVE", snapshot=snapshot, checkpoints=checkpoints,
     ))
     locked.active_run_id = run_id
-    db.commit()
-    db.info["ai_run"] = (session.id, run_id)
     handle = runtime.run_handles.setdefault(run_id, RunHandle())
+    try:
+        db.commit()
+    except Exception:
+        runtime.run_handles.pop(run_id, None)
+        raise
+    db.info["ai_run"] = (session.id, run_id)
+    handle.check()
     current_run.set(handle)
     return run_id
 
@@ -177,7 +182,10 @@ def cancel_run(db: DatabaseSession, session: Session, run_id: str, runtime) -> S
         .execution_options(populate_existing=True)
     )
     record = db.scalar(select(AIRun).where(AIRun.id == run_id).with_for_update())
-    if locked is None or locked.active_run_id != run_id or record is None or record.status != "ACTIVE":
+    if (
+        locked is None or locked.active_run_id != run_id
+        or record is None or record.status != "ACTIVE"
+    ):
         raise AIRunCancelled("当前运行不存在或已结束")
     handle = runtime.run_handles.get(run_id)
     if handle is not None:
@@ -202,7 +210,9 @@ def cancel_run(db: DatabaseSession, session: Session, run_id: str, runtime) -> S
     ):
         setattr(locked, field, snapshot[key])
     locked.current_draft = snapshot["currentDraft"]
-    locked.finished_at = datetime.fromisoformat(snapshot["finishedAt"]) if snapshot["finishedAt"] else None
+    locked.finished_at = (
+        datetime.fromisoformat(snapshot["finishedAt"]) if snapshot["finishedAt"] else None
+    )
     locked.version += 1
 
     for evaluation in db.scalars(select(AIEvaluation).where(
@@ -252,6 +262,11 @@ def cancel_run(db: DatabaseSession, session: Session, run_id: str, runtime) -> S
         StudentSubmission.id > checkpoints["submission"],
     )):
         submission.context = {**submission.context, "cancelledRunId": run_id}
+    for attempt in db.scalars(select(ExplanationAttempt).where(
+        ExplanationAttempt.session_id == session.id,
+        ExplanationAttempt.id > checkpoints["attempt"],
+    )):
+        attempt.cancelled_run_id = run_id
     for transition in db.scalars(select(StateTransitionEvent).where(
         StateTransitionEvent.session_id == session.id,
         StateTransitionEvent.id > checkpoints["transition"],
