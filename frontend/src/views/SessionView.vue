@@ -74,6 +74,8 @@ const doubtDraft = ref("")
 const appealDraft = ref("")
 const loading = ref(true)
 const submitting = ref(false)
+// 自讲请求进行时允许编辑下一份草稿；准备步骤和失败刷新时仍锁定输入。
+const explanationSubmitting = ref(false)
 const errorMessage = ref("")
 const voiceRecording = ref(false)
 const activeVoiceKey = ref<string>()
@@ -109,6 +111,10 @@ const teacherReplyIds = computed(() => {
 })
 
 const canShowTeachingContent = computed(() => !grading.value || (Boolean(grading.value.acknowledgedAt) && ["SUCCEEDED", "FAILED"].includes(grading.value.evaluationStatus)))
+const teachingEvaluationPending = computed(() => session.value?.flowStage === "AI_EVALUATING"
+  || Boolean(grading.value && ["PENDING", "RUNNING"].includes(grading.value.evaluationStatus)))
+const canShowSelfExplanation = computed(() => teachingEvaluationPending.value
+  || Boolean(session.value && ["WAIT_INITIAL_CHOICE", "CAPTURING_INPUT", "WAIT_STUDENT_ACTION"].includes(session.value.flowStage)))
 const visibleTimeline = computed(() => canShowTeachingContent.value ? timeline.value : timeline.value.filter((item) => item.speaker === "STUDENT"))
 const speechIsSolution = computed(() => Boolean(session.value?.solutionExposed && question.value?.fullSolution
   && canShowTeachingContent.value
@@ -389,7 +395,8 @@ async function loadSessionData() {
   timeline.value = loadedTimeline
   const hasFormalSubmission = loadedTimeline.some((item) => item.eventType === "SUBMISSION" && item.submissionType === "SELF_EXPLANATION")
   grading.value = hasFormalSubmission ? await fetchGrading(sessionId) : null
-  if (grading.value && ["PENDING", "RUNNING"].includes(grading.value.status)) startGradingPolling()
+  if (grading.value && (["PENDING", "RUNNING"].includes(grading.value.status)
+    || ["PENDING", "RUNNING"].includes(grading.value.evaluationStatus))) startGradingPolling()
 }
 
 async function reloadAfterVersionConflict(
@@ -489,9 +496,7 @@ function timelineItemClass(item: LearningTimelineItem) {
 function canUseSegment(segment: SegmentKey) {
   if (!session.value || submitting.value) return false
   if (segment === "selfExplain") {
-    return ["WAIT_INITIAL_CHOICE", "CAPTURING_INPUT", "WAIT_STUDENT_ACTION"].includes(
-      session.value.flowStage,
-    )
+    return canShowSelfExplanation.value
   }
   if (segment === "guidedAnswers") return session.value.flowStage === "WAIT_GUIDED_ANSWERS"
   if (segment === "masteryCheck") return session.value.flowStage === "WAIT_MASTERY_CHECK"
@@ -584,7 +589,7 @@ function hasStepEvidence() {
 }
 
 function openFormulaEditor() {
-  if (submitting.value || voiceRecording.value) return
+  if ((submitting.value && !explanationSubmitting.value) || voiceRecording.value) return
   formulaEditorRef.value?.open()
 }
 
@@ -608,7 +613,7 @@ async function ensureStepInputReady() {
 }
 
 async function submitExplanation() {
-  if (!session.value) return
+  if (!session.value || submitting.value || teachingEvaluationPending.value) return
   if (voiceRecording.value) {
     stopVoiceRecorder(activeVoiceKey.value ?? "")
     return
@@ -619,24 +624,26 @@ async function submitExplanation() {
   try {
     await ensureStepInputReady()
     draftContent = currentStepContent.value
+    explanationSubmitting.value = true
     if (currentStepId.value === null || !hasStepEvidence()) {
       errorMessage.value = "关键步骤和讲解不能同时为空"
       return
     }
     const hasFormalSubmission = timeline.value.some((item) => item.eventType === "SUBMISSION" && item.submissionType === "SELF_EXPLANATION")
     if (!hasFormalSubmission) {
-      const response = await submitGradedStepAttempt(sessionId, currentStepContent.value, session.value.version)
+      const response = await submitGradedStepAttempt(sessionId, draftContent, session.value.version)
       session.value = response.session; grading.value = response.grading; startGradingPolling()
     } else {
-      session.value = await submitStepAttempt(sessionId, currentStepContent.value, session.value.version)
+      session.value = await submitStepAttempt(sessionId, draftContent, session.value.version)
     }
     lastSubmittedSelfExplanation.value = draftContent
     clearStepState()
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
+    explanationSubmitting.value = false
     if (isVersionConflict(error)) {
-      await reloadAfterVersionConflict(draftContent)
+      await reloadAfterVersionConflict(currentStepContent.value)
     } else if (!(await handleAIServiceUnavailable(error, draftContent))) {
       errorMessage.value = error instanceof Error ? error.message : String(error)
     }
@@ -648,6 +655,7 @@ async function submitExplanation() {
       }
     }
   } finally {
+    explanationSubmitting.value = false
     submitting.value = false
   }
 }
@@ -978,7 +986,7 @@ async function respondToSolution(understood: boolean) {
           </div>
         </section>
         <div v-if="speechControlsTarget === '#latest-reply-speech'" class="speech-content-heading"><span id="latest-reply-speech" class="speech-anchor" /><span>老师回复</span></div>
-        <template v-if="!isTerminalSession()">
+        <template v-if="!isTerminalSession() || teachingEvaluationPending">
           <section class="session-section input-section" aria-label="当前输入与主操作">
             <el-segmented
               v-model="activeSegment"
@@ -990,24 +998,22 @@ async function respondToSolution(understood: boolean) {
             />
             <div class="dialog-panel">
               <div v-show="activeSegment === 'selfExplain'" class="dialog-pane">
-                <template v-if="session.flowStage === 'WAIT_INITIAL_CHOICE'
-                  || session.flowStage === 'CAPTURING_INPUT'
-                  || session.flowStage === 'WAIT_STUDENT_ACTION'">
+                <template v-if="canShowSelfExplanation">
                   <FormulaEditor
                     ref="formulaEditorRef"
                     v-model="currentStepContent"
-                    :disabled="submitting || activeSegment !== 'selfExplain'"
+                    :disabled="(submitting && !explanationSubmitting) || activeSegment !== 'selfExplain'"
                   />
                   <div class="step-actions self-explain-actions">
                     <el-button
                       data-testid="insert-formula"
-                      :disabled="submitting || voiceRecording"
+                      :disabled="(submitting && !explanationSubmitting) || voiceRecording"
                       @click="openFormulaEditor"
                     >插入公式</el-button>
                     <el-button
                       data-testid="submit-explanation"
                       type="primary"
-                      :disabled="submitting || voiceRecording"
+                      :disabled="submitting || voiceRecording || teachingEvaluationPending"
                       :loading="submitting"
                       @click="submitExplanation"
                     >提交</el-button>
@@ -1021,6 +1027,7 @@ async function respondToSolution(understood: boolean) {
                       label="讲解录音"
                       inline
                       :disabled="submitting
+                        || teachingEvaluationPending
                         || (voiceRecording && activeVoiceKey !== 'explain')"
                       :prepare-start="prepareExplainVoice"
                       @completed="handleVoiceCompleted('SELF_EXPLANATION_EXPLAIN', undefined, $event)"
@@ -1037,6 +1044,7 @@ async function respondToSolution(understood: boolean) {
                       label="步骤录音"
                       inline
                       :disabled="submitting
+                        || teachingEvaluationPending
                         || (voiceRecording && activeVoiceKey !== 'step')"
                       :prepare-start="prepareStepVoice"
                       @final-transcript="currentStepContent = appendTranscript(currentStepContent, $event)"
