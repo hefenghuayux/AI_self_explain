@@ -38,6 +38,7 @@ from app.services.ai_evaluation import (
     _student_explanation_from_attempt,
 )
 from app.services.ai_reasoning import resolve_reasoning_params
+from app.services.ai_stream import stream_failed, stream_validated
 from app.services.session_event_log import SessionEventLog
 
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "generate_teaching.md"
@@ -135,6 +136,7 @@ class AITeachingService:
                 model_response.content, context=context
             )
             if validation_errors:
+                stream_failed(request.purpose)
                 previous_output = model_response.content
                 self.repository.record_external_call_validation(
                     record=external_call,
@@ -156,6 +158,7 @@ class AITeachingService:
 
             if output is None:
                 raise RuntimeError("AI 教学校验完成后缺少教学结果")
+            stream_validated(request.purpose)
             self.repository.record_external_call_validation(
                 record=external_call,
                 validation_status="VALID",

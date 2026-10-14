@@ -24,6 +24,8 @@ from app.schemas.model_request_snapshot import (
     ModelTransportSnapshot,
 )
 from app.services.ai_evaluation import AIModelClient
+from app.services.ai_run import AIRunCancelled, bind_run, finish_run
+from app.services.ai_stream import current_stream, stream_failed, stream_validated
 
 logger = logging.getLogger(__name__)
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "first_explanation_grading.md"
@@ -112,7 +114,9 @@ def _build_request(
             messages=messages,
             response_format={"type": "json_object"},
             reasoning_effort=settings.ai_reasoning_effort,
-            extra_body={"max_tokens": settings.ai_max_output_tokens},
+            extra_body={"max_tokens": settings.ai_max_output_tokens,
+                        **({"stream": True, "stream_options": {"include_usage": True}}
+                           if current_stream.get() else {})},
         ),
         privacy=ModelRequestPrivacy(
             containsStudentContent=True, containsAnswerMaterial=True, containsMemory=False
@@ -142,11 +146,23 @@ def run_grading(
         record.status = "SUCCEEDED"
         record.error_message = None
         db.commit()
+        stream_validated("FIRST_EXPLANATION_GRADING")
+        context = current_stream.get()
+        if context is not None:
+            context.registry.update_result(
+                context.run_id,
+                {"grading": to_grading_response(record).model_dump(mode="json", by_alias=True)},
+            )
     except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as error:
+        stream_failed("FIRST_EXPLANATION_GRADING")
         record.status = "FAILED"
         record.error_message = f"评分输出校验失败：{error}"
         db.commit()
     except Exception as error:
+        stream_failed("FIRST_EXPLANATION_GRADING")
+        if isinstance(error, AIRunCancelled):
+            db.rollback()
+            return
         logger.exception("首次自讲评分失败 grading=%s", record.id)
         record.status = "FAILED"
         record.error_message = f"评分服务失败：{error}"
@@ -156,11 +172,21 @@ def run_grading(
 def run_parallel_tasks(
     *, settings, http_client, database_session_factory, session_id: int, attempt_id: int,
     grading_id: int, teacher_speech_service=None, prewarm_speech: bool = False,
+    run_id: str | None = None, runtime=None,
 ):
+    stream_context = current_stream.get()
+    from app.services.context_runtime import current_context
+
+    request_context = current_context.get()
+
     def run_evaluation() -> None:
         from app.api.sessions import evaluate_explanation_attempt
 
         with database_session_factory() as db:
+            current_stream.set(stream_context)
+            current_context.set(request_context)
+            if run_id is not None:
+                bind_run(db, session_id, run_id, runtime)
             session = db.get(Session, session_id)
             attempt = db.get(ExplanationAttempt, attempt_id)
             if session is None or attempt is None:
@@ -179,15 +205,22 @@ def run_parallel_tasks(
                     repository=SessionRepository(db), session=session, attempt=attempt,
                     database_session=db, request=request,
                 )
+            except AIRunCancelled:
+                db.rollback()
+                return
             except Exception:
                 logger.exception("后台自讲评价失败 session=%s", session_id)
                 grading_db = database_session_factory()
                 try:
+                    if run_id is not None:
+                        bind_run(grading_db, session_id, run_id, runtime)
                     grading_record = grading_db.get(FirstExplanationGrading, grading_id)
                     if grading_record is not None:
                         grading_record.evaluation_status = "FAILED"
                         grading_record.evaluation_error = "自讲评价服务失败，请稍后重试。"
                         grading_db.commit()
+                except AIRunCancelled:
+                    grading_db.rollback()
                 finally:
                     grading_db.close()
                 if session.flow_stage == "AI_EVALUATING":
@@ -200,11 +233,15 @@ def run_parallel_tasks(
             else:
                 grading_db = database_session_factory()
                 try:
+                    if run_id is not None:
+                        bind_run(grading_db, session_id, run_id, runtime)
                     grading_record = grading_db.get(FirstExplanationGrading, grading_id)
                     if grading_record is not None:
                         grading_record.evaluation_status = "SUCCEEDED"
                         grading_record.evaluation_error = None
                         grading_db.commit()
+                except AIRunCancelled:
+                    grading_db.rollback()
                 finally:
                     grading_db.close()
 
@@ -219,17 +256,30 @@ def run_parallel_tasks(
                 session_id=session_id,
                 attempt_id=attempt_id,
                 grading_id=grading_id,
+                run_id=run_id,
+                runtime=runtime,
+                finish_on_completion=False,
+                stream_context=stream_context,
             ),
         ]
         for future in futures:
             future.result()
+    if run_id is not None and stream_context is None:
+        with database_session_factory() as db:
+            finish_run(db, session_id, run_id, runtime)
 
 
 def run_grading_only(
     *, settings, http_client, database_session_factory, session_id: int, attempt_id: int,
-    grading_id: int,
+    grading_id: int, run_id: str | None = None, runtime=None,
+    finish_on_completion: bool = True,
+    stream_context=None,
 ) -> None:
+    if stream_context is not None:
+        current_stream.set(stream_context)
     with database_session_factory() as db:
+        if run_id is not None:
+            bind_run(db, session_id, run_id, runtime)
         record = db.get(FirstExplanationGrading, grading_id)
         session = db.get(Session, session_id)
         attempt = db.get(ExplanationAttempt, attempt_id)
@@ -245,3 +295,6 @@ def run_grading_only(
             settings=settings,
             http_client=http_client,
         )
+    if run_id is not None and finish_on_completion and current_stream.get() is None:
+        with database_session_factory() as db:
+            finish_run(db, session_id, run_id, runtime)

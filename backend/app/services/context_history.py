@@ -95,7 +95,9 @@ def load_history(
     attempts_query = select(ExplanationAttempt).where(
         ExplanationAttempt.session_id == session.id,
         ExplanationAttempt.round == session.round,
-        ExplanationAttempt.id.in_(select(AIEvaluation.attempt_id)),
+        ExplanationAttempt.id.in_(
+            select(AIEvaluation.attempt_id).where(AIEvaluation.validation_status == "VALID")
+        ),
     )
     if exclude_attempt_id is not None:
         attempts_query = attempts_query.where(ExplanationAttempt.id != exclude_attempt_id)
@@ -107,7 +109,11 @@ def load_history(
     supports = list(
         database_session.scalars(
             select(SupportEvent)
-            .where(SupportEvent.session_id == session.id, SupportEvent.round == session.round)
+            .where(
+                SupportEvent.session_id == session.id,
+                SupportEvent.round == session.round,
+                SupportEvent.status != "CANCELLED",
+            )
             .order_by(SupportEvent.id)
             .execution_options(populate_existing=True)
         )

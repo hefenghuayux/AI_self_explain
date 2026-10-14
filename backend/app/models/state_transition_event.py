@@ -22,6 +22,7 @@ class StateTransitionEvent(Base):
     related_evaluation_id: Mapped[int | None] = mapped_column(Integer)
     related_support_event_id: Mapped[int | None] = mapped_column(Integer, index=True)
     request_id: Mapped[str | None] = mapped_column(String(100))
+    cancelled_run_id: Mapped[str | None] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

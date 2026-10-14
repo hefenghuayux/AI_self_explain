@@ -1,7 +1,9 @@
+import asyncio
 import json
 import logging
 import time
 from collections.abc import Mapping
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,6 +31,7 @@ from app.schemas.model_request_snapshot import (
     ModelTransportSnapshot,
 )
 from app.services.ai_reasoning import resolve_reasoning_params
+from app.services.ai_stream import JSONTextStream, current_stream, stream_failed, stream_validated
 from app.services.session_event_log import SessionEventLog
 
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "evaluate_explanation.md"
@@ -79,17 +82,56 @@ class AIModelClient:
     def evaluate(self, request: ModelRequestSnapshot) -> AIModelResponse:
         started_at = time.perf_counter()
         endpoint = f"{str(self.settings.ai_base_url).rstrip('/')}/chat/completions"
-        try:
-            response = self.http_client.post(
-                endpoint,
-                headers={
-                    "Authorization": f"Bearer {self.settings.ai_api_key.get_secret_value()}",
-                    "Content-Type": "application/json",
-                },
-                # DeepSeek 当前只支持 JSON object 模式。动态 Schema 仍在提示词和
-                # 本地校验中严格执行；这里直接发送审计快照中的真实 transport。
-                json=request.transport_payload(),
+        from app.services.ai_run import current_run
+
+        run = current_run.get()
+        if run is not None:
+            run.check()
+        headers = {
+            "Authorization": f"Bearer {self.settings.ai_api_key.get_secret_value()}",
+            "Content-Type": "application/json",
+        }
+        stream_context = current_stream.get()
+        if stream_context is not None:
+            request.transport.extra_body["stream"] = True
+            request.transport.extra_body["stream_options"] = {"include_usage": True}
+            generation = stream_context.registry.begin_channel(
+                stream_context.run_id, request.purpose,
             )
+            try:
+                return asyncio.run(self._stream_response(
+                    endpoint, headers=headers, request=request, run=run,
+                    stream_context=stream_context, generation=generation, started_at=started_at,
+                ))
+            except httpx.TimeoutException as error:
+                stream_failed(request.purpose)
+                raise AITransportError(error_type="AI_TIMEOUT", message=f"AI 请求超时：{error}",
+                                       duration_ms=_duration_ms(started_at)) from error
+            except httpx.RequestError as error:
+                stream_failed(request.purpose)
+                if run is not None:
+                    run.check()
+                raise AITransportError(
+                    error_type="AI_SERVICE_ERROR", message=f"AI 服务请求失败：{error}",
+                    duration_ms=_duration_ms(started_at),
+                ) from error
+            except Exception:
+                stream_failed(request.purpose)
+                if run is not None:
+                    run.check()
+                raise
+        try:
+            if run is None:
+                response = self.http_client.post(
+                    endpoint, headers=headers, json=request.transport_payload()
+                )
+            else:
+                response = run.post(
+                    endpoint, headers=headers, body=request.transport_payload(),
+                    timeout=self.settings.ai_request_timeout_seconds,
+                )
+            if run is not None:
+                run.check()
         except httpx.TimeoutException as error:
             raise AITransportError(
                 error_type="AI_TIMEOUT",
@@ -97,18 +139,24 @@ class AIModelClient:
                 duration_ms=_duration_ms(started_at),
             ) from error
         except httpx.RequestError as error:
+            if run is not None:
+                run.check()
             raise AITransportError(
                 error_type="AI_SERVICE_ERROR",
                 message=f"AI 服务请求失败：{error}",
                 duration_ms=_duration_ms(started_at),
             ) from error
+        except Exception:
+            if run is not None:
+                run.check()
+            raise
 
         raw_response = response.text
         if response.is_error:
             overflow = False
             if response.status_code in {400, 413, 422}:
                 try:
-                    detail = response.json().get("error", {})
+                    detail = json.loads(raw_response).get("error", {})
                     code = detail.get("code")
                     message = str(detail.get("message", "")).lower()
                     overflow = code in {"context_length_exceeded", "context_window_exceeded"} or (
@@ -124,7 +172,7 @@ class AIModelClient:
                 raw_response=raw_response,
             )
         try:
-            response_body = response.json()
+            response_body = json.loads(raw_response)
             content = response_body["choices"][0]["message"]["content"]
         except (IndexError, KeyError, TypeError, ValueError) as error:
             raise AITransportError(
@@ -143,6 +191,105 @@ class AIModelClient:
         return AIModelResponse(
             raw_response=raw_response,
             content=content,
+            duration_ms=_duration_ms(started_at),
+        )
+
+    async def _stream_response(self, endpoint, *, headers, request, run,
+                               stream_context, generation, started_at) -> AIModelResponse:
+        raw_parts: list[str] = []
+        content_parts: list[str] = []
+        session_context = request.blocks.session_context
+        parser = JSONTextStream(
+            request.purpose,
+            lambda fields: stream_context.registry.update_fields(
+                stream_context.run_id, request.purpose, generation, fields,
+            ),
+            support_count=session_context.get("supportCountRound", 0),
+            support_limit=self.settings.first_round_support_limit,
+        )
+        async with AsyncExitStack() as stack:
+            if run is not None:
+                from app.services.ai_stream import tracked_stream_call
+
+                await stack.enter_async_context(tracked_stream_call(run))
+            client = await stack.enter_async_context(httpx.AsyncClient(
+                timeout=self.settings.ai_request_timeout_seconds,
+            ))
+            response = await stack.enter_async_context(client.stream(
+                "POST", endpoint, headers=headers, json=request.transport_payload(),
+            ))
+            if response.is_error:
+                raw_response = (await response.aread()).decode("utf-8", errors="replace")
+                overflow = False
+                if response.status_code in {400, 413, 422}:
+                    try:
+                        detail = json.loads(raw_response).get("error", {})
+                        message = str(detail.get("message", "")).lower()
+                        overflow = detail.get("code") in {
+                            "context_length_exceeded", "context_window_exceeded",
+                        } or (
+                            "maximum context length" in message
+                            or "context window" in message and "exceed" in message
+                        )
+                    except (ValueError, AttributeError):
+                        pass
+                raise AITransportError(
+                    error_type="CONTEXT_WINDOW_EXCEEDED" if overflow else "AI_SERVICE_ERROR",
+                    message=f"AI 服务返回 HTTP {response.status_code}",
+                    duration_ms=_duration_ms(started_at), raw_response=raw_response,
+                )
+            done = False
+            event_lines: list[str] = []
+            try:
+                async for line in response.aiter_lines():
+                    if run is not None:
+                        run.check()
+                    if line.startswith("data:"):
+                        event_lines.append(line[5:].lstrip(" "))
+                        continue
+                    if line:
+                        continue
+                    if not event_lines:
+                        continue
+                    data = "\n".join(event_lines)
+                    event_lines = []
+                    raw_parts.append(data)
+                    if data == "[DONE]":
+                        done = True
+                        break
+                    event = json.loads(data)
+                    if "error" in event:
+                        raise ValueError(f"AI 流返回错误：{event['error']}")
+                    choices = event["choices"]
+                    if not isinstance(choices, list):
+                        raise ValueError("AI 流 choices 必须为数组")
+                    if not choices:
+                        continue
+                    choice = choices[0]
+                    if choice.get("index", 0) != 0:
+                        raise ValueError("AI 流返回了非预期的 choice 索引")
+                    delta = choice["delta"]
+                    text = delta.get("content")
+                    if text is not None:
+                        if not isinstance(text, str):
+                            raise ValueError("AI 流 delta.content 必须为字符串")
+                        content_parts.append(text)
+                        parser.feed(text)
+                    if choice.get("finish_reason") in {"length", "content_filter"}:
+                        raise ValueError(f"AI 流未正常完成：{choice['finish_reason']}")
+                if not done:
+                    raise ValueError("AI 流连接在 [DONE] 事件前结束")
+                parser.finish()
+                content = "".join(content_parts)
+                if not content.strip():
+                    raise ValueError("AI 流正文不能为空")
+            except (ValueError, TypeError, KeyError, IndexError, AttributeError) as error:
+                raise AITransportError(
+                    error_type="AI_SERVICE_ERROR", message=f"AI 流响应无法解析：{error}",
+                    duration_ms=_duration_ms(started_at), raw_response="\n".join(raw_parts),
+                ) from error
+        return AIModelResponse(
+            raw_response="\n".join(raw_parts), content=content,
             duration_ms=_duration_ms(started_at),
         )
 
@@ -222,6 +369,7 @@ class AIEvaluationService:
                 attempt.confirmed_text,
             )
             if validation_errors:
+                stream_failed(request.purpose)
                 previous_output = model_response.content
                 event_log.append_model_responded(
                     session_id=session.id,
@@ -278,6 +426,7 @@ class AIEvaluationService:
 
             if evaluation_output is None:
                 raise RuntimeError("AI 评价校验完成后缺少评价结果")
+            stream_validated(request.purpose)
             self.repository.record_external_call_validation(
                 record=external_call,
                 validation_status="VALID",

@@ -1,4 +1,5 @@
 from app.models.ai_evaluation import AIEvaluation
+from app.models.ai_run import AIRun
 from app.models.audio_file import AudioFile
 from app.models.auth_session import AuthSession
 from app.models.base import Base
@@ -18,6 +19,7 @@ from app.models.user import User
 
 __all__ = [
     "AIEvaluation",
+    "AIRun",
     "AudioFile",
     "AuthSession",
     "Base",

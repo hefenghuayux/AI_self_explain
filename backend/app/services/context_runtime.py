@@ -42,6 +42,11 @@ def note_success(total_tokens: object) -> None:
 
 def prepare_request(request, database_session, session, *, exclude_attempt_id=None):
     """Update only the shared-history layer and matching audit fields."""
+    from app.services.ai_stream import current_stream
+
+    if current_stream.get() is not None:
+        request.transport.extra_body["stream"] = True
+        request.transport.extra_body["stream_options"] = {"include_usage": True}
     history = build_shared_history(database_session, session, exclude_attempt_id=exclude_attempt_id)
     request.transport.messages[2].content = json.dumps(history, ensure_ascii=False)
     request.blocks.memory_context = history
@@ -208,6 +213,7 @@ class ContextRuntime:
         self.locks: dict[int, asyncio.Lock] = {}
         self.users: dict[int, int] = {}
         self.failed_history: dict[int, str] = {}
+        self.run_handles: dict[str, object] = {}
 
     def compact_after_response(self, context: RequestContext):
         fingerprint = None
@@ -236,7 +242,10 @@ class ContextMiddleware:
 
     async def __call__(self, scope, receive, send):
         # 教师语音只读取已保存内容，不参与学习状态或历史压缩，不能阻塞学生操作。
-        if re.fullmatch(r"/api/sessions/\d+/teacher-speech(?:/stream)?", scope.get("path", "")):
+        if re.fullmatch(
+            r"/api/sessions/\d+/(?:teacher-speech(?:/stream)?|cancel-current-run|ai-runs)",
+            scope.get("path", ""),
+        ):
             await self.app(scope, receive, send)
             return
         match = re.fullmatch(r"/api/sessions/(\d+)(?:/.*)?", scope.get("path", ""))
@@ -244,11 +253,20 @@ class ContextMiddleware:
             await self.app(scope, receive, send)
             return
         runtime = scope["app"].state.context_runtime
+        scope.setdefault("state", {})
         session_id = int(match.group(1))
         lock = runtime.locks.setdefault(session_id, asyncio.Lock())
         runtime.users[session_id] = runtime.users.get(session_id, 0) + 1
         acquired = False
         token = None
+        response_status = None
+
+        async def tracked_send(message):
+            nonlocal response_status
+            if message["type"] == "http.response.start":
+                response_status = message["status"]
+            await send(message)
+
         try:
             try:
                 await asyncio.wait_for(
@@ -269,7 +287,7 @@ class ContextMiddleware:
                 return
             context = RequestContext(runtime, session_id)
             token = current_context.set(context)
-            await self.app(scope, receive, send)
+            await self.app(scope, receive, tracked_send)
             # ASGI has sent the complete response and closed the request DB session.
             if context.needs_compaction and context.prefix:
                 task = asyncio.create_task(
@@ -281,6 +299,16 @@ class ContextMiddleware:
                     await task
                     raise
         finally:
+            run_id = scope["state"].get("ai_run_id")
+            background_run = response_status == 202 and (
+                scope["state"].get("stream_background", False)
+                or scope.get("path", "").endswith(("/graded-step-attempts", "/grading/retry"))
+            )
+            if run_id is not None and not background_run:
+                from app.services.ai_run import finish_run
+
+                with runtime.database_session_factory() as db:
+                    finish_run(db, session_id, run_id, runtime)
             if token is not None:
                 current_context.reset(token)
             if acquired:

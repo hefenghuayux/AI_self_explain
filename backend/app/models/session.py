@@ -50,6 +50,7 @@ class Session(Base):
     )
     last_support_draft: Mapped[str] = mapped_column(Text, nullable=False, default="")
     paused_from_stage: Mapped[str | None] = mapped_column(String(40))
+    active_run_id: Mapped[str | None] = mapped_column(String(64), index=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

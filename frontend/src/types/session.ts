@@ -116,6 +116,7 @@ export interface Session {
   currentDraft: string
   currentStepId: number | null
   version: number
+  activeRunId?: string | null
   initialChoice: InitialChoice | null
   needHumanReason: string | null
   latestEvaluation: AIEvaluation | null

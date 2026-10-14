@@ -7,6 +7,7 @@ import type {
 } from "../types/session"
 import { getAuthToken } from "../stores/auth"
 import { teacherSpeechAutoPlay } from "../stores/teacherSpeech"
+import { AIStreamError, subscribeAIRun } from "./ai-stream"
 
 interface SessionApiErrorDetail {
   code?: string
@@ -36,8 +37,13 @@ export async function requestSessionApi<T>(path: string, options?: RequestInit):
     && /^\/api\/sessions\/[^/]+\/(text-attempts|step-attempts|graded-step-attempts|request-support|ask-doubt|guided-answers|full-solution-understanding)$/.test(path)) {
     headers.set("X-Teacher-Speech-Prewarm", String(teacherSpeechAutoPlay.value))
   }
-  const response = await fetch(path, {
+  const streamOperation = /^\/api\/sessions\/([^/]+)\/(text-attempts|step-attempts|graded-step-attempts|request-support|ask-doubt|guided-answers|appeal|full-solution-understanding|mastery-check-answers|grading\/retry)$/.exec(path)
+  const runId = headers.get("X-AI-Run-ID")
+  const streaming = options?.method?.toUpperCase() === "POST" && streamOperation && runId
+  const response = await fetch(streaming ? `/api/sessions/${streamOperation[1]}/ai-runs` : path, {
     ...options,
+    // Starting the background task must survive detaching the page's stream reader.
+    ...(streaming ? { signal: undefined, body: JSON.stringify({ runId, operation: streamOperation[2], input: options?.body ? JSON.parse(String(options.body)) : {} }) } : {}),
     headers,
   })
   if (!response.ok) {
@@ -65,6 +71,14 @@ export async function requestSessionApi<T>(path: string, options?: RequestInit):
       detailSessionId,
     )
   }
+  if (streaming) {
+    await response.json()
+    try { return await subscribeAIRun<T>(streamOperation[1], runId, { signal: options?.signal ?? undefined }) }
+    catch (error) {
+      if (error instanceof AIStreamError) throw new SessionApiError(error.message, error.status, error.code, Number(streamOperation[1]))
+      throw error
+    }
+  }
   return (await response.json()) as T
 }
 
@@ -87,6 +101,13 @@ export function fetchLearningTimeline(sessionId: string): Promise<LearningTimeli
   return requestSessionApi<LearningTimelineItem[]>(`/api/sessions/${sessionId}/timeline`)
 }
 
+export function cancelCurrentRun(sessionId: string, runId: string): Promise<Session> {
+  return requestSessionApi<Session>(`/api/sessions/${sessionId}/cancel-current-run`, {
+    method: "POST",
+    body: JSON.stringify({ runId }),
+  })
+}
+
 export function submitInitialChoice(
   sessionId: string,
   choice: InitialChoice,
@@ -103,10 +124,14 @@ export function submitTextAttempt(
   confirmedText: string,
   version: number,
   voiceAttemptId?: number,
+  runId?: string,
+  signal?: AbortSignal,
 ): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}/text-attempts`, {
     method: "POST",
     body: JSON.stringify({ confirmedText, version, voiceAttemptId }),
+    headers: runId ? { "X-AI-Run-ID": runId } : undefined,
+    signal,
   })
 }
 
@@ -117,10 +142,12 @@ export function continueExplaining(sessionId: string, version: number): Promise<
   })
 }
 
-export function requestSupport(sessionId: string, mainDraft: string, version: number): Promise<Session> {
+export function requestSupport(sessionId: string, mainDraft: string, version: number, runId?: string, signal?: AbortSignal): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}/request-support`, {
     method: "POST",
     body: JSON.stringify({ mainDraft, version }),
+    headers: runId ? { "X-AI-Run-ID": runId } : undefined,
+    signal,
   })
 }
 
@@ -130,10 +157,14 @@ export function askDoubt(
   doubtText: string,
   version: number,
   voiceAttemptId?: number,
+  runId?: string,
+  signal?: AbortSignal,
 ): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}/ask-doubt`, {
     method: "POST",
     body: JSON.stringify({ mainDraft, doubtText, version, voiceAttemptId }),
+    headers: runId ? { "X-AI-Run-ID": runId } : undefined,
+    signal,
   })
 }
 
@@ -142,10 +173,14 @@ export function submitGuidedAnswers(
   answers: GuidedAnswer[],
   version: number,
   voiceAttemptId?: number,
+  runId?: string,
+  signal?: AbortSignal,
 ): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}/guided-answers`, {
     method: "POST",
     body: JSON.stringify({ answers, version, voiceAttemptId }),
+    headers: runId ? { "X-AI-Run-ID": runId } : undefined,
+    signal,
   })
 }
 
@@ -154,10 +189,14 @@ export function submitAppeal(
   reason: string,
   version: number,
   voiceAttemptId?: number,
+  runId?: string,
+  signal?: AbortSignal,
 ): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}/appeal`, {
     method: "POST",
     body: JSON.stringify({ reason, version, voiceAttemptId }),
+    headers: runId ? { "X-AI-Run-ID": runId } : undefined,
+    signal,
   })
 }
 
@@ -165,10 +204,14 @@ export function submitSolutionUnderstanding(
   sessionId: string,
   understood: boolean,
   version: number,
+  runId?: string,
+  signal?: AbortSignal,
 ): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}/full-solution-understanding`, {
     method: "POST",
     body: JSON.stringify({ understood, version }),
+    headers: runId ? { "X-AI-Run-ID": runId } : undefined,
+    signal,
   })
 }
 
@@ -176,9 +219,13 @@ export function submitMasteryCheckAnswers(
   sessionId: string,
   answers: GuidedAnswer[],
   version: number,
+  runId?: string,
+  signal?: AbortSignal,
 ): Promise<Session> {
   return requestSessionApi<Session>(`/api/sessions/${sessionId}/mastery-check-answers`, {
     method: "POST",
     body: JSON.stringify({ answers, version }),
+    headers: runId ? { "X-AI-Run-ID": runId } : undefined,
+    signal,
   })
 }

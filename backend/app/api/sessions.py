@@ -47,6 +47,7 @@ from app.schemas.ai_evaluation import AIEvaluationResponse
 from app.schemas.mastery_check import MasteryCheckQuestion
 from app.schemas.session import (
     AppealInput,
+    CancelRunInput,
     CreateSessionInput,
     DoubtRequestInput,
     GuidedAnswersInput,
@@ -73,6 +74,7 @@ from app.services.ai_mastery_check import (
     MasteryCheckQuestionInput,
     mastery_check_run_id,
 )
+from app.services.ai_run import AIRunCancelled, begin_run, cancel_or_reserve_run
 from app.services.ai_support import AISupportService, support_run_id
 from app.services.ai_teaching import AITeachingService
 from app.services.audio_storage import AudioStorage, AudioStorageError
@@ -100,6 +102,25 @@ def get_session_or_404(
 def reject_operation(detail: str) -> None:
     logger.warning("会话操作被拒绝：%s", detail, extra={"operation": "session_operation_rejected"})
     raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
+def begin_ai_run(database_session: DatabaseSession, session: Session, request: Request) -> None:
+    if getattr(request.state, "stream_managed", False):
+        from app.services.ai_run import bind_run
+
+        bind_run(
+            database_session, session.id, request.state.ai_run_id,
+            request.app.state.context_runtime,
+        )
+        return
+    try:
+        run_id = begin_run(
+            database_session, session, request.headers.get("X-AI-Run-ID"),
+            request.app.state.context_runtime,
+        )
+    except (ValueError, AIRunCancelled) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    request.state.ai_run_id = run_id
 
 
 def validate_version(session: Session, version: int) -> None:
@@ -289,6 +310,29 @@ def get_learning_timeline(
     return repository.get_student_timeline(session_id)
 
 
+@router.post("/{session_id}/cancel-current-run", response_model=SessionResponse)
+def cancel_current_run(
+    session_id: int,
+    cancel_input: CancelRunInput,
+    request: Request,
+    database_session: DatabaseSession,
+    current_user: CurrentUser,
+) -> SessionResponse:
+    repository = SessionRepository(database_session)
+    session = get_session_or_404(repository, session_id, current_user)
+    try:
+        cancelled = cancel_or_reserve_run(
+            database_session, session, cancel_input.run_id,
+            request.app.state.context_runtime,
+        )
+    except (ValueError, AIRunCancelled) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    registry = getattr(request.app.state, "ai_stream_registry", None)
+    if registry is not None and registry.snapshot(cancel_input.run_id) is not None:
+        registry.finish(cancel_input.run_id, cancelled=True)
+    return to_session_response(repository, cancelled)
+
+
 @router.post("/{session_id}/pause", response_model=SessionResponse)
 def pause_session(
     session_id: int,
@@ -350,6 +394,7 @@ def submit_text_attempt(
     if session.flow_stage != FLOW_STAGE_CAPTURING_INPUT:
         reject_operation(f"当前流程阶段不能提交文本：{session.flow_stage}")
     validate_version(session, attempt_input.version)
+    begin_ai_run(database_session, session, request)
     preflight_submission(
         database_session, session, request.app.state.settings, text=attempt_input.confirmed_text
     )
@@ -430,6 +475,7 @@ def submit_step_attempt(
         )
     except ValueError as error:
         reject_operation(str(error))
+    begin_ai_run(database_session, session, request)
     preflight_submission(
         database_session,
         session,
@@ -603,6 +649,7 @@ def request_support(
     validate_version(session, action_input.version)
     if session.flow_stage != FLOW_STAGE_WAIT_STUDENT_ACTION:
         reject_operation(f"当前流程阶段不能请求提示：{session.flow_stage}")
+    begin_ai_run(database_session, session, request)
     preflight_submission(
         database_session, session, request.app.state.settings, main_draft=action_input.main_draft
     )
@@ -669,6 +716,7 @@ def ask_doubt(
     validate_version(session, action_input.version)
     if not can_submit_student_interruption(session.flow_stage):
         reject_operation(f"当前流程阶段不能提出疑问：{session.flow_stage}")
+    begin_ai_run(database_session, session, request)
     preflight_submission(
         database_session, session, request.app.state.settings,
         main_draft=action_input.main_draft, doubt_text=action_input.doubt_text,
@@ -795,6 +843,7 @@ def submit_guided_answers(
             merged_answers=merged_answers,
         )
         return to_session_response(repository, updated_session)
+    begin_ai_run(database_session, session, request)
     preflight_submission(
         database_session, session, request.app.state.settings,
         support_event=support_event, answers=merged_answers,
@@ -900,6 +949,7 @@ def respond_to_first_solution(
     if session.flow_stage != FLOW_STAGE_SHOWING_FULL_SOLUTION:
         reject_operation(f"当前流程阶段不能确认第一轮解析理解情况：{session.flow_stage}")
     latest_evaluation = repository.get_latest_valid_evaluation(session.id)
+    begin_ai_run(database_session, session, request)
     responded_session = repository.respond_to_first_solution(
         session=session,
         evaluation_id=None if latest_evaluation is None else latest_evaluation.id,
@@ -959,6 +1009,7 @@ def submit_mastery_check_answers(
         )
         for item in stored_questions
     ]
+    begin_ai_run(database_session, session, request)
     # 学生输入与随后的回答评价共用一次运行，轨迹里两者属于同一轮。
     run_id = mastery_check_run_id(session, "MASTERY_CHECK_ASSESSMENT")
     repository.record_user_message(

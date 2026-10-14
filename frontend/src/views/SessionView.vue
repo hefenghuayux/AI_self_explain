@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router"
 
 import {
   askDoubt,
+  cancelCurrentRun,
   continueExplaining,
   createSession,
   fetchLearningTimeline,
@@ -17,6 +18,7 @@ import {
   submitSolutionUnderstanding,
 } from "../api/sessions"
 import { acknowledgeGrading, fetchGrading, retryGrading, submitGradedStepAttempt } from "../api/grading"
+import { registerAIStreamListener, subscribeAIRun, type AIRunSnapshot } from "../api/ai-stream"
 import {
   fetchSessionSteps,
   submitStepAttempt,
@@ -32,6 +34,7 @@ import type {
   LearningTimelineItem,
   Session,
   SessionHistoryItem,
+  FlowStage,
   VoiceInputTarget,
 } from "../types/session"
 import type { StepsResponse } from "../types/session-step"
@@ -56,11 +59,37 @@ const router = useRouter()
 const session = ref<Session>()
 const question = ref<Question>()
 const timeline = ref<LearningTimelineItem[]>([])
-const firstGradingSubmissionText = computed(() => timeline.value.find((item) =>
-  item.eventType === "SUBMISSION" && item.submissionType === "SELF_EXPLANATION",
-)?.content ?? "")
+const firstGradingSubmissionText = computed(() => {
+  const submittedSteps = grading.value?.studentSteps?.map((step) =>
+    [step.stepContent, step.explainTranscript].filter(Boolean).join("\n"),
+  ).filter(Boolean).join("\n")
+  if (submittedSteps) return submittedSteps
+  const gradedAt = grading.value ? new Date(grading.value.createdAt).getTime() : Infinity
+  return timeline.value.filter((item) => item.eventType === "SUBMISSION"
+    && item.submissionType === "SELF_EXPLANATION"
+    && new Date(item.createdAt).getTime() <= gradedAt).at(-1)?.content ?? ""
+})
 const grading = ref<Grading | null>(null)
 const gradingRetrying = ref(false)
+const streamSnapshot = ref<AIRunSnapshot | null>(null)
+const gradingStreamRunId = ref<string>()
+const gradingDismissed = ref(false)
+const awaitingFirstGrading = ref(false)
+let detachStreamListener: (() => void) | undefined
+let pageDetached = false
+const gradingPreviewFields = computed(() => {
+  if (!streamSnapshot.value || ["FAILED", "CANCELLED"].includes(streamSnapshot.value.status)) return {}
+  const channel = streamSnapshot.value.channels.FIRST_EXPLANATION_GRADING
+  return channel && channel.status !== "FAILED" ? channel.fields : {}
+})
+const teachingPreviews = computed(() => {
+  if (streamSnapshot.value?.status !== "RUNNING") return []
+  return Object.entries(streamSnapshot.value.channels)
+    .filter(([purpose, channel]) => purpose !== "FIRST_EXPLANATION_GRADING" && channel.status !== "FAILED")
+    .flatMap(([purpose, channel]) => Object.entries(channel.fields)
+      .filter(([, text]) => text.trim())
+      .map(([field, text]) => ({ key: `${purpose}:${channel.generation}:${field}`, text })))
+})
 let gradingPollTimer: ReturnType<typeof setInterval> | undefined
 let gradingPollInFlight = false
 const gradingPollError = ref("")
@@ -77,6 +106,10 @@ const doubtDraft = ref("")
 const appealDraft = ref("")
 const loading = ref(true)
 const submitting = ref(false)
+const cancelling = ref(false)
+const activeAiRequest = ref<{ runId: string; controller: AbortController; previousStage: FlowStage } | null>(null)
+let aiRequestGeneration = 0
+let gradingPollGeneration = 0
 // 自讲请求进行时允许编辑下一份草稿；准备步骤和失败刷新时仍锁定输入。
 const explanationSubmitting = ref(false)
 const errorMessage = ref("")
@@ -113,9 +146,12 @@ const teacherReplyIds = computed(() => {
   return items.slice(start, lastReply + 1).filter(isSpokenReply).map((item) => item.id)
 })
 
-const canShowTeachingContent = computed(() => !grading.value || (Boolean(grading.value.acknowledgedAt) && ["SUCCEEDED", "FAILED"].includes(grading.value.evaluationStatus)))
+const canShowTeachingContent = computed(() => (!grading.value && !awaitingFirstGrading.value)
+  || gradingDismissed.value || Boolean(grading.value?.acknowledgedAt))
 const teachingEvaluationPending = computed(() => session.value?.flowStage === "AI_EVALUATING"
   || Boolean(grading.value && ["PENDING", "RUNNING"].includes(grading.value.evaluationStatus)))
+const cancellableRunId = computed(() => activeAiRequest.value?.runId || session.value?.activeRunId || null)
+const runPending = computed(() => Boolean(cancellableRunId.value))
 const canShowSelfExplanation = computed(() => teachingEvaluationPending.value
   || Boolean(session.value && ["WAIT_INITIAL_CHOICE", "CAPTURING_INPUT", "WAIT_STUDENT_ACTION"].includes(session.value.flowStage)))
 const visibleTimeline = computed(() => canShowTeachingContent.value ? timeline.value : timeline.value.filter((item) => item.speaker === "STUDENT"))
@@ -163,6 +199,7 @@ watch([submitting, voiceRecording, canShowTeachingContent], async ([busy, record
 }, { flush: "post" })
 
 const sessionId = String(route.params.sessionId)
+const pendingAIRunStorageKey = `ai-self-explain:session:${sessionId}:pending-ai-run`
 const dialogDraftStorageKey = `ai-self-explain:session:${sessionId}:dialog-drafts`
 let dialogDraftsReady = false
 
@@ -353,7 +390,9 @@ function applyStepsResponse(response: StepsResponse) {
 
 async function loadCurrentSteps() {
   if (!session.value || session.value.flowStage !== "CAPTURING_INPUT") return
+  const generation = aiRequestGeneration
   const response = await fetchSessionSteps(sessionId, "current")
+  if (generation !== aiRequestGeneration) return
   applyStepsResponse(response)
 }
 
@@ -398,7 +437,10 @@ async function loadSessionData() {
   timeline.value = loadedTimeline
   const hasFormalSubmission = loadedTimeline.some((item) => item.eventType === "SUBMISSION" && item.submissionType === "SELF_EXPLANATION")
   grading.value = hasFormalSubmission ? await fetchGrading(sessionId) : null
-  if (grading.value && (["PENDING", "RUNNING"].includes(grading.value.status)
+  const pendingRunId = loadedSession.activeRunId || localStorage.getItem(pendingAIRunStorageKey)
+  if (pendingRunId && !activeAiRequest.value && !cancelling.value) {
+    void restoreAIStream(pendingRunId)
+  } else if (!loadedSession.activeRunId && grading.value && (["PENDING", "RUNNING"].includes(grading.value.status)
     || ["PENDING", "RUNNING"].includes(grading.value.evaluationStatus))) startGradingPolling()
 }
 
@@ -456,22 +498,156 @@ onMounted(async () => {
 })
 
 async function pollGrading() {
-  if (gradingPollInFlight || submitting.value || voiceRecording.value) return
+  if (gradingPollInFlight || submitting.value || voiceRecording.value || cancelling.value) return
   gradingPollInFlight = true
+  const generation = gradingPollGeneration
+  const aiGeneration = aiRequestGeneration
   try {
     const [nextGrading, nextSession, nextTimeline] = await Promise.all([fetchGrading(sessionId), fetchSession(sessionId), fetchLearningTimeline(sessionId)])
+    if (generation !== gradingPollGeneration || aiGeneration !== aiRequestGeneration) return
     grading.value = nextGrading; session.value = nextSession; timeline.value = nextTimeline; gradingPollError.value = ""
     if (nextGrading && ["SUCCEEDED", "FAILED"].includes(nextGrading.status) && ["SUCCEEDED", "FAILED"].includes(nextGrading.evaluationStatus)) stopGradingPolling()
-  } catch (error) { gradingPollError.value = error instanceof Error ? error.message : String(error) } finally { gradingPollInFlight = false }
+  } catch (error) { if (generation === gradingPollGeneration && aiGeneration === aiRequestGeneration) gradingPollError.value = error instanceof Error ? error.message : String(error) } finally { gradingPollInFlight = false }
 }
 function startGradingPolling() { if (gradingPollTimer) return; void pollGrading(); gradingPollTimer = setInterval(() => { void pollGrading() }, 2000) }
-function stopGradingPolling() { if (gradingPollTimer) clearInterval(gradingPollTimer); gradingPollTimer = undefined }
+function stopGradingPolling() { gradingPollGeneration += 1; if (gradingPollTimer) clearInterval(gradingPollTimer); gradingPollTimer = undefined }
 async function acknowledgeGradingResult() { if (!grading.value) return; try { await acknowledgeGrading(sessionId); await loadSessionData() } catch (error) { errorMessage.value = error instanceof Error ? error.message : String(error) } }
-async function retryGradingResult() { gradingRetrying.value = true; try { grading.value = await retryGrading(sessionId); startGradingPolling() } catch (error) { errorMessage.value = error instanceof Error ? error.message : String(error) } finally { gradingRetrying.value = false } }
+async function retryGradingResult() {
+  if (cancelling.value || !session.value) return
+  gradingRetrying.value = true
+  gradingDismissed.value = false
+  const request = beginAIRequest()
+  try {
+    const nextGrading = await retryGrading(sessionId, request.runId, request.controller.signal)
+    if (!isActiveAIRequest(request)) return
+    grading.value = nextGrading
+    const nextSession = await fetchSession(sessionId)
+    if (!isActiveAIRequest(request)) return
+    session.value = nextSession
+    if (isActiveAIRequest(request)) startGradingPolling()
+  } catch (error) {
+    if (isActiveAIRequest(request)) errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    if (isActiveAIRequest(request)) { activeAiRequest.value = null; gradingRetrying.value = false }
+  }
+}
+
+function updateStreamPreview(snapshot: AIRunSnapshot) {
+  if (!isActiveAIRequest(snapshot)) return
+  streamSnapshot.value = snapshot
+  if (snapshot.status !== "RUNNING") localStorage.removeItem(pendingAIRunStorageKey)
+  if (snapshot.channels.FIRST_EXPLANATION_GRADING) gradingStreamRunId.value = snapshot.runId
+  const result = snapshot.result as { session?: Session; grading?: Grading; flowStage?: FlowStage; report?: unknown } | null
+  if (result?.grading) grading.value = result.grading
+  if (result?.session) session.value = result.session
+  else if (snapshot.status === "SUCCEEDED" && result?.flowStage) session.value = result as Session
+  else if (snapshot.status === "SUCCEEDED" && result && "report" in result) grading.value = result as Grading
+}
+
+function beginAIRequest(runId: string = crypto.randomUUID()) {
+  const request = {
+    runId,
+    controller: new AbortController(),
+    previousStage: session.value!.flowStage,
+  }
+  aiRequestGeneration += 1
+  detachStreamListener?.()
+  streamSnapshot.value = null
+  activeAiRequest.value = request
+  localStorage.setItem(pendingAIRunStorageKey, runId)
+  detachStreamListener = registerAIStreamListener(sessionId, request.runId, updateStreamPreview)
+  return request
+}
+
+watch(activeAiRequest, (request) => {
+  if (request) return
+  detachStreamListener?.(); detachStreamListener = undefined
+  awaitingFirstGrading.value = false
+  if (!pageDetached) {
+    if (!streamSnapshot.value || streamSnapshot.value.status !== "RUNNING") localStorage.removeItem(pendingAIRunStorageKey)
+    if (streamSnapshot.value?.status === "RUNNING") streamSnapshot.value = null
+  }
+}, { flush: "sync" })
+
+async function restoreAIStream(runId: string) {
+  const request = beginAIRequest(runId)
+  submitting.value = true
+  try {
+    await subscribeAIRun(sessionId, runId, { signal: request.controller.signal })
+    if (!isActiveAIRequest(request)) return
+    syncActiveSegmentWithStage()
+    await refreshTimeline()
+    grading.value = await fetchGrading(sessionId)
+  } catch (error) {
+    if (!isActiveAIRequest(request)) return
+    streamSnapshot.value = null
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+    try {
+      const [nextSession, nextGrading, nextTimeline] = await Promise.all([fetchSession(sessionId), fetchGrading(sessionId), fetchLearningTimeline(sessionId)])
+      if (!isActiveAIRequest(request)) return
+      session.value = nextSession; grading.value = nextGrading; timeline.value = nextTimeline
+    } catch (refreshError) {
+      if (isActiveAIRequest(request)) errorMessage.value += `；刷新会话失败：${refreshError instanceof Error ? refreshError.message : String(refreshError)}`
+    }
+  } finally {
+    if (isActiveAIRequest(request)) { activeAiRequest.value = null; submitting.value = false }
+  }
+}
+
+function isActiveAIRequest(request: { runId: string }) {
+  return activeAiRequest.value?.runId === request.runId && !cancelling.value
+}
+
+async function stopCurrentRun() {
+  const runId = cancellableRunId.value
+  if (!runId || cancelling.value || !session.value) return
+  const previousSession = session.value
+  const previousStage = activeAiRequest.value?.previousStage
+  const requestToAbort = activeAiRequest.value
+  cancelling.value = true
+  aiRequestGeneration += 1
+  stopGradingPolling()
+  streamSnapshot.value = null
+  localStorage.removeItem(pendingAIRunStorageKey)
+  activeAiRequest.value = null
+  submitting.value = false
+  explanationSubmitting.value = false
+  gradingRetrying.value = false
+  errorMessage.value = ""
+  stopTeacherSpeech()
+  if (previousStage) session.value = { ...previousSession, flowStage: previousStage }
+  const currentDraft = currentStepContent.value || lastSubmittedSelfExplanation.value
+  const currentTranscript = currentStepTranscript.value
+  try {
+    session.value = await cancelCurrentRun(sessionId, runId)
+    requestToAbort?.controller.abort()
+    try {
+      await loadSessionData()
+    } catch (refreshError) {
+      errorMessage.value = refreshError instanceof Error ? refreshError.message : String(refreshError)
+    }
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+    try {
+      await loadSessionData()
+    } catch (refreshError) {
+      session.value = { ...previousSession, flowStage: "AI_EVALUATING", activeRunId: runId }
+      console.error("中断失败后刷新会话失败", refreshError)
+    }
+  } finally {
+    const lastSubmission = timeline.value.filter((item) => item.eventType === "SUBMISSION"
+      && item.submissionType === "SELF_EXPLANATION").at(-1)?.content
+    currentStepContent.value = currentDraft || (session.value?.flowStage === "CAPTURING_INPUT" ? lastSubmission ?? "" : "")
+    currentStepTranscript.value = currentTranscript
+    cancelling.value = false
+  }
+}
 
 async function refreshTimeline() {
   const knownIds = new Set(timeline.value.map((item) => item.id))
+  const generation = aiRequestGeneration
   const refreshedTimeline = await fetchLearningTimeline(sessionId)
+  if (generation !== aiRequestGeneration) return
   timeline.value = refreshedTimeline
   const ids = refreshedTimeline.filter((item) => canShowTeachingContent.value && !knownIds.has(item.id) && isSpokenReply(item))
     .map((item) => item.id)
@@ -497,7 +673,7 @@ function timelineItemClass(item: LearningTimelineItem) {
 }
 
 function canUseSegment(segment: SegmentKey) {
-  if (!session.value || submitting.value) return false
+  if (!session.value || submitting.value || cancelling.value || runPending.value) return false
   if (segment === "selfExplain") {
     return canShowSelfExplanation.value
   }
@@ -527,7 +703,7 @@ function syncActiveSegmentWithStage() {
 }
 
 function canSubmitStudentInterruption() {
-  return session.value?.status === "IN_PROGRESS"
+  return !cancelling.value && !runPending.value && session.value?.status === "IN_PROGRESS"
     && studentInterruptionFlowStages.has(session.value.flowStage)
 }
 
@@ -616,7 +792,7 @@ async function ensureStepInputReady() {
 }
 
 async function submitExplanation() {
-  if (!session.value || submitting.value || teachingEvaluationPending.value) return
+  if (!session.value || submitting.value || cancelling.value || runPending.value || teachingEvaluationPending.value) return
   if (voiceRecording.value) {
     stopVoiceRecorder(activeVoiceKey.value ?? "")
     return
@@ -624,6 +800,7 @@ async function submitExplanation() {
   submitting.value = true
   errorMessage.value = ""
   let draftContent = ""
+  let request: ReturnType<typeof beginAIRequest> | undefined
   try {
     await ensureStepInputReady()
     draftContent = currentStepContent.value
@@ -632,18 +809,23 @@ async function submitExplanation() {
       errorMessage.value = "关键步骤和讲解不能同时为空"
       return
     }
-    const hasFormalSubmission = timeline.value.some((item) => item.eventType === "SUBMISSION" && item.submissionType === "SELF_EXPLANATION")
-    if (!hasFormalSubmission) {
-      const response = await submitGradedStepAttempt(sessionId, draftContent, session.value.version)
-      session.value = response.session; grading.value = response.grading; startGradingPolling()
-    } else {
-      session.value = await submitStepAttempt(sessionId, draftContent, session.value.version)
-    }
+    request = beginAIRequest()
     lastSubmittedSelfExplanation.value = draftContent
+    if (!grading.value) {
+      awaitingFirstGrading.value = true
+      const response = await submitGradedStepAttempt(sessionId, draftContent, session.value.version, request.runId, request.controller.signal)
+      if (!isActiveAIRequest(request)) return
+      session.value = response.session; grading.value = response.grading
+    } else {
+      const nextSession = await submitStepAttempt(sessionId, draftContent, session.value.version, request.runId, request.controller.signal)
+      if (!isActiveAIRequest(request)) return
+      session.value = nextSession
+    }
     clearStepState()
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
+    if (request && !isActiveAIRequest(request)) return
     explanationSubmitting.value = false
     if (isVersionConflict(error)) {
       await reloadAfterVersionConflict(currentStepContent.value)
@@ -658,8 +840,12 @@ async function submitExplanation() {
       }
     }
   } finally {
-    explanationSubmitting.value = false
-    submitting.value = false
+    if (!request || isActiveAIRequest(request)) {
+      awaitingFirstGrading.value = false
+      activeAiRequest.value = null
+      explanationSubmitting.value = false
+      submitting.value = false
+    }
   }
 }
 
@@ -778,6 +964,12 @@ async function handleVoiceCompleted(
 }
 
 onBeforeUnmount(() => {
+  pageDetached = true
+  const request = activeAiRequest.value
+  aiRequestGeneration += 1
+  activeAiRequest.value = null
+  detachStreamListener?.()
+  request?.controller.abort()
   stopGradingPolling()
   stopTeacherSpeech()
   stepVoiceRecorderRef.value?.stop()
@@ -788,36 +980,43 @@ onBeforeUnmount(() => {
 })
 
 async function submitDoubt() {
-  if (!session.value) return
+  if (!session.value || cancelling.value) return
   if (!doubtDraft.value.trim()) {
     errorMessage.value = "请先输入你的疑问"
     return
   }
   submitting.value = true
   errorMessage.value = ""
+  let request: ReturnType<typeof beginAIRequest> | undefined
   try {
     if (session.value.flowStage === "WAIT_INITIAL_CHOICE") {
       session.value = await submitInitialChoice(sessionId, "HAS_QUESTION", session.value.version)
     }
     const voiceAttemptId = getVoiceAttemptId("DOUBT")
-    session.value = await askDoubt(
+    request = beginAIRequest()
+    const nextSession = await askDoubt(
       sessionId,
       session.value.currentDraft,
       doubtDraft.value,
       session.value.version,
       voiceAttemptId,
+      request.runId,
+      request.controller.signal,
     )
+    if (!isActiveAIRequest(request)) return
+    session.value = nextSession
     clearVoiceAttemptId("DOUBT")
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
+    if (request && !isActiveAIRequest(request)) return
     if (await handleAIServiceUnavailable(error)) {
       clearVoiceAttemptId("DOUBT")
     } else {
       errorMessage.value = error instanceof Error ? error.message : String(error)
     }
   } finally {
-    submitting.value = false
+    if (!request || isActiveAIRequest(request)) { activeAiRequest.value = null; submitting.value = false }
   }
 }
 
@@ -845,7 +1044,7 @@ function masteryResultFor(questionId: string) {
 
 async function submitMasteryAnswers() {
   const masteryCheck = session.value?.masteryCheck
-  if (!session.value || !masteryCheck) return
+  if (!session.value || !masteryCheck || cancelling.value) return
   const answers: GuidedAnswer[] = []
   for (const masteryQuestion of masteryCheck.questions) {
     const answer = masteryAnswerText.value[masteryQuestion.id]?.trim() ?? ""
@@ -857,21 +1056,25 @@ async function submitMasteryAnswers() {
   }
   submitting.value = true
   errorMessage.value = ""
+  const request = beginAIRequest()
   try {
-    session.value = await submitMasteryCheckAnswers(sessionId, answers, session.value.version)
+    const nextSession = await submitMasteryCheckAnswers(sessionId, answers, session.value.version, request.runId, request.controller.signal)
+    if (!isActiveAIRequest(request)) return
+    session.value = nextSession
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
+    if (!isActiveAIRequest(request)) return
     if (!(await handleAIServiceUnavailable(error))) {
       errorMessage.value = error instanceof Error ? error.message : String(error)
     }
   } finally {
-    submitting.value = false
+    if (isActiveAIRequest(request)) { activeAiRequest.value = null; submitting.value = false }
   }
 }
 
 async function submitGuidedQuestionAnswer(questionId: string) {
-  if (!session.value || !session.value.latestSupport?.guidedQuestions) return
+  if (!session.value || !session.value.latestSupport?.guidedQuestions || cancelling.value) return
   const answer = guidedAnswerText.value[questionId]?.trim() ?? ""
   if (!answer) {
     errorMessage.value = "请先回答这个子问题"
@@ -879,25 +1082,31 @@ async function submitGuidedQuestionAnswer(questionId: string) {
   }
   submitting.value = true
   errorMessage.value = ""
+  const request = beginAIRequest()
   try {
     const voiceAttemptId = getVoiceAttemptId("GUIDED_ANSWER", questionId)
-    session.value = await submitGuidedAnswers(
+    const nextSession = await submitGuidedAnswers(
       sessionId,
       [{ questionId, answer }],
       session.value.version,
       voiceAttemptId,
+      request.runId,
+      request.controller.signal,
     )
+    if (!isActiveAIRequest(request)) return
+    session.value = nextSession
     clearVoiceAttemptId("GUIDED_ANSWER", questionId)
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
+    if (!isActiveAIRequest(request)) return
     if (await handleAIServiceUnavailable(error)) {
       clearVoiceAttemptId("GUIDED_ANSWER", questionId)
     } else {
       errorMessage.value = error instanceof Error ? error.message : String(error)
     }
   } finally {
-    submitting.value = false
+    if (isActiveAIRequest(request)) { activeAiRequest.value = null; submitting.value = false }
   }
 }
 
@@ -908,29 +1117,38 @@ async function appealEvaluation() {
   }
   submitting.value = true
   errorMessage.value = ""
+  const request = beginAIRequest()
   try {
     const voiceAttemptId = getVoiceAttemptId("APPEAL")
-    session.value = await submitAppeal(
+    const nextSession = await submitAppeal(
       sessionId,
       appealDraft.value,
       session.value.version,
       voiceAttemptId,
+      request.runId,
+      request.controller.signal,
     )
+    if (!isActiveAIRequest(request)) return
+    session.value = nextSession
     clearVoiceAttemptId("APPEAL")
     await refreshTimeline()
   } catch (error) {
+    if (!isActiveAIRequest(request)) return
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
-    submitting.value = false
+    if (isActiveAIRequest(request)) { activeAiRequest.value = null; submitting.value = false }
   }
 }
 
 async function respondToSolution(understood: boolean) {
-  if (!session.value) return
+  if (!session.value || cancelling.value) return
   submitting.value = true
   errorMessage.value = ""
+  const request = beginAIRequest()
   try {
-    session.value = await submitSolutionUnderstanding(sessionId, understood, session.value.version)
+    const nextSession = await submitSolutionUnderstanding(sessionId, understood, session.value.version, request.runId, request.controller.signal)
+    if (!isActiveAIRequest(request)) return
+    session.value = nextSession
     if (session.value.flowStage === "CAPTURING_INPUT") {
       await loadCurrentSteps()
     } else {
@@ -939,17 +1157,18 @@ async function respondToSolution(understood: boolean) {
     syncActiveSegmentWithStage()
     await refreshTimeline()
   } catch (error) {
+    if (!isActiveAIRequest(request)) return
     if (!(await handleAIServiceUnavailable(error))) {
       errorMessage.value = error instanceof Error ? error.message : String(error)
     }
   } finally {
-    submitting.value = false
+    if (isActiveAIRequest(request)) { activeAiRequest.value = null; submitting.value = false }
   }
 }
 </script>
 
 <template>
-  <main class="session-page" :aria-busy="loading || submitting">
+  <main class="session-page" :aria-busy="loading || submitting || cancelling">
     <div class="session-shell">
       <Teleport to="#app-header-actions">
         <div v-if="session" class="page-actions" role="none">
@@ -986,7 +1205,14 @@ async function respondToSolution(understood: boolean) {
         <section v-if="question" class="question-content" aria-label="题目">
           <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </section>
-        <FirstExplanationGrading :grading="grading" :retrying="gradingRetrying" :submission-text="firstGradingSubmissionText" @retry="retryGradingResult" @acknowledge="acknowledgeGradingResult" />
+        <FirstExplanationGrading :grading="grading" :retrying="gradingRetrying" :submission-text="firstGradingSubmissionText" :preview-fields="gradingPreviewFields" :stream-run-id="gradingStreamRunId" @open="gradingDismissed = false" @close="gradingDismissed = true" @retry="retryGradingResult" @acknowledge="acknowledgeGradingResult" />
+        <section v-if="canShowTeachingContent && teachingPreviews.length" class="session-section stream-preview" aria-label="老师回复正在生成" aria-live="polite" aria-busy="true">
+          <h2>老师回复</h2><p class="stream-preview__status" role="status">正在生成，完成后确认内容。</p>
+          <p v-for="preview in teachingPreviews" :key="preview.key" class="stream-preview__text">{{ preview.text }}</p>
+        </section>
+        <div v-if="cancellableRunId && (activeSegment !== 'selfExplain' || !canShowSelfExplanation)" class="actions cancel-run-actions">
+          <el-button data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
+        </div>
         <el-alert v-if="gradingPollError" :title="gradingPollError" type="error" :closable="false" show-icon />
         <section v-if="canShowTeachingContent && nextStepText" class="session-section feedback-section" aria-label="学习反馈" aria-live="polite">
           <div class="feedback-card">
@@ -1060,10 +1286,11 @@ async function respondToSolution(understood: boolean) {
                       <el-button
                         data-testid="submit-explanation"
                         type="primary"
-                        :disabled="submitting || voiceRecording || teachingEvaluationPending"
+                        :disabled="submitting || cancelling || runPending || voiceRecording || teachingEvaluationPending"
                         :loading="submitting"
                         @click="submitExplanation"
                       >提交自讲</el-button>
+                      <el-button v-if="cancellableRunId" data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
                     </div>
                   </div>
                 </template>
@@ -1086,7 +1313,7 @@ async function respondToSolution(understood: boolean) {
                         :data-testid="`submit-guided-answer-${item.id}`"
                         type="primary"
                         :loading="submitting"
-                        :disabled="guidedAnswerSubmitted(item.id)
+                        :disabled="cancelling || runPending || guidedAnswerSubmitted(item.id)
                           || voiceRecording
                           || session.flowStage !== 'WAIT_GUIDED_ANSWERS'"
                         @click="submitGuidedQuestionAnswer(item.id)"
@@ -1134,7 +1361,7 @@ async function respondToSolution(understood: boolean) {
                       data-testid="submit-mastery-check"
                       type="primary"
                       :loading="submitting"
-                      :disabled="submitting || masteryCheckCompleted() || session.flowStage !== 'WAIT_MASTERY_CHECK'"
+                      :disabled="submitting || cancelling || runPending || masteryCheckCompleted() || session.flowStage !== 'WAIT_MASTERY_CHECK'"
                       @click="submitMasteryAnswers"
                     >提交核验回答</el-button>
                   </div>
@@ -1155,7 +1382,7 @@ async function respondToSolution(understood: boolean) {
                       data-testid="submit-doubt"
                       type="primary"
                       :loading="submitting"
-                      :disabled="submitting || voiceRecording || !canSubmitStudentInterruption()"
+                      :disabled="submitting || cancelling || runPending || voiceRecording || !canSubmitStudentInterruption()"
                       @click="submitDoubt"
                     >提交</el-button>
                   <VoiceRecorder
@@ -1220,7 +1447,7 @@ async function respondToSolution(understood: boolean) {
             </div>
           </section>
           <section v-if="canShowTeachingContent && session.flowStage === 'AI_EVALUATING'" class="session-section"><h2>AI 正在评价</h2><p>请等待评价结果返回。</p></section>
-          <section v-else-if="canShowTeachingContent && session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2 class="speech-content-heading"><span id="solution-speech" class="speech-anchor" />完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析。本题不会再要求完整重讲，确认后直接进入掌握度核验。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" @click="respondToSolution(true)">我会了，进入掌握度核验</el-button><el-button :loading="submitting" @click="respondToSolution(false)">仍然不会</el-button></div></section>
+          <section v-else-if="canShowTeachingContent && session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2 class="speech-content-heading"><span id="solution-speech" class="speech-anchor" />完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析。本题不会再要求完整重讲，确认后直接进入掌握度核验。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" :disabled="cancelling" @click="respondToSolution(true)">我会了，进入掌握度核验</el-button><el-button :loading="submitting" :disabled="cancelling" @click="respondToSolution(false)">仍然不会</el-button></div></section>
           <section v-else-if="canShowTeachingContent && session.flowStage === 'WAIT_MASTERY_CHECK'" class="session-section mastery-check-state">
             <h2>掌握度核验</h2>
             <p class="mastery-check-note">请到上方「掌握度核验」中回答下面的问题；全部通过即完成本题。</p>
@@ -1286,6 +1513,7 @@ async function respondToSolution(understood: boolean) {
 </template>
 
 <style scoped>
+.stream-preview__text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75}.stream-preview__status{color:var(--color-text-secondary);font-size:var(--font-size-sm)}
 .session-page { max-width: 1040px; margin: 0 auto; padding: var(--space-6) var(--space-6) var(--space-12); }
 .session-shell { min-width: 0; }
 .page-actions { display: flex; flex-direction: column; }

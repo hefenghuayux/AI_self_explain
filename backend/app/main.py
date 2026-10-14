@@ -10,6 +10,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import sessionmaker
 
+from app.api.ai_stream import recover_interrupted_streams
+from app.api.ai_stream import router as ai_stream_router
 from app.api.auth import router as auth_router
 from app.api.first_explanation_grading import router as first_explanation_grading_router
 from app.api.health import router as health_router
@@ -29,6 +31,8 @@ from app.core.logging import (
 from app.models.session import Session
 from app.repositories.sessions import SessionRepository
 from app.services.ai_evaluation import AIServiceUnavailableError
+from app.services.ai_run import AIRunCancelled
+from app.services.ai_stream import AIStreamRegistry
 from app.services.context_compaction import CompactionError
 from app.services.context_runtime import ContextMiddleware, ContextRuntime
 from app.services.realtime_asr import configure_dashscope
@@ -55,6 +59,11 @@ def create_app(settings: Settings) -> FastAPI:
         application.state.context_runtime = ContextRuntime(
             settings, ai_http_client, application.state.database_session_factory
         )
+        application.state.ai_stream_registry = AIStreamRegistry(
+            application.state.database_session_factory
+        )
+        application.state.ai_stream_tasks = set()
+        await asyncio.to_thread(recover_interrupted_streams, application)
         logger.info(
             "应用启动完成",
             extra={"eventName": "application.started", "operation": "application_startup"},
@@ -62,6 +71,9 @@ def create_app(settings: Settings) -> FastAPI:
         try:
             yield
         finally:
+            for handle in list(application.state.context_runtime.run_handles.values()):
+                handle.cancel()
+            await asyncio.gather(*application.state.ai_stream_tasks, return_exceptions=True)
             await asyncio.to_thread(application.state.teacher_speech_service.close)
             ai_http_client.close()
             tts_http_client.close()
@@ -118,8 +130,16 @@ def create_app(settings: Settings) -> FastAPI:
             },
         )
 
+    @application.exception_handler(AIRunCancelled)
+    async def ai_run_cancelled_handler(request: Request, error: AIRunCancelled):
+        return JSONResponse(
+            status_code=409,
+            content={"detail": {"code": "AI_RUN_CANCELLED", "message": str(error)}},
+        )
+
     application.include_router(health_router, prefix="/api")
     application.include_router(first_explanation_grading_router, prefix="/api")
+    application.include_router(ai_stream_router, prefix="/api")
     application.include_router(auth_router, prefix="/api")
     application.include_router(questions_router, prefix="/api")
     application.include_router(sessions_router, prefix="/api")

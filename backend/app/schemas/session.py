@@ -53,6 +53,10 @@ class StudentActionInput(QuestionSchema):
     version: int = Field(ge=0)
 
 
+class CancelRunInput(QuestionSchema):
+    run_id: str = Field(min_length=36, max_length=36)
+
+
 class HelpRequestInput(StudentActionInput):
     main_draft: str = ""
 
@@ -159,6 +163,7 @@ class MasteryCheckResponse(QuestionSchema):
 
 class SessionResponse(QuestionSchema):
     id: int
+    active_run_id: str | None = None
     question_id: int
     initial_choice: InitialChoice | None
     status: SessionStatus

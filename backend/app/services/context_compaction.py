@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session as DatabaseSession
 from app.core.config import Settings
 from app.models.session import Session
 from app.schemas.model_request_snapshot import ModelRequestMessage
+from app.services.ai_run import AIRunCancelled
 from app.services.context_history import load_history, select_compaction
 from app.services.context_tokens import ContextTokenizer
 from app.services.event_store import EventStore
@@ -146,6 +147,9 @@ class ContextCompactor:
             db.rollback()
             logger.warning("Context compaction failed: session=%s code=%s", session_id, error.code)
             raise
+        except AIRunCancelled:
+            db.rollback()
+            raise
         except Exception as error:
             db.rollback()
             logger.exception("Context compaction failed: session=%s", session_id)
@@ -153,31 +157,45 @@ class ContextCompactor:
 
     def _summarize(self, messages: list[dict[str, str]], max_tokens: int) -> str:
         endpoint = f"{str(self.settings.ai_base_url).rstrip('/')}/chat/completions"
+        from app.services.ai_run import current_run
+
+        run = current_run.get()
+        if run is not None:
+            run.check()
+        headers = {
+            "Authorization": f"Bearer {self.settings.ai_api_key.get_secret_value()}",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "model": self.settings.ai_model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "thinking": {"type": "disabled"},
+            "response_format": {"type": "json_object"},
+        }
+        timeout = min(
+            self.settings.ai_request_timeout_seconds,
+            self.settings.context_compaction_wait_timeout_seconds,
+        )
         try:
-            response = self.http_client.post(
-                endpoint,
-                headers={
-                    "Authorization": f"Bearer {self.settings.ai_api_key.get_secret_value()}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.settings.ai_model,
-                    "messages": messages,
-                    "max_tokens": max_tokens,
-                    "thinking": {"type": "disabled"},
-                    "response_format": {"type": "json_object"},
-                },
-                timeout=min(
-                    self.settings.ai_request_timeout_seconds,
-                    self.settings.context_compaction_wait_timeout_seconds,
-                ),
-            )
+            if run is None:
+                response = self.http_client.post(
+                    endpoint, headers=headers, json=body, timeout=timeout,
+                )
+            else:
+                response = run.post(endpoint, headers=headers, body=body, timeout=timeout)
         except httpx.TimeoutException as error:
             raise CompactionError(
                 "CONTEXT_COMPACTION_TIMEOUT", "Summary request timed out"
             ) from error
         except httpx.RequestError as error:
+            if run is not None:
+                run.check()
             raise CompactionError("CONTEXT_COMPACTION_MODEL_ERROR", str(error)) from error
+        except Exception:
+            if run is not None:
+                run.check()
+            raise
         if response.is_error:
             raise CompactionError(
                 "CONTEXT_COMPACTION_MODEL_ERROR",

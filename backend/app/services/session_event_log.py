@@ -211,7 +211,18 @@ def _parse_usage(raw_response: str) -> dict[str, int] | None:
     如果 raw_response 不是合法 JSON、不含 usage 或没有可识别的字段，返回 None。
     """
     try:
-        parsed = json.loads(raw_response)
+        try:
+            parsed = json.loads(raw_response)
+        except json.JSONDecodeError:
+            # Streaming audit preserves each SSE data payload verbatim, including [DONE].
+            parsed = {}
+            for line in reversed(raw_response.splitlines()):
+                if line.strip() == "[DONE]":
+                    continue
+                event = json.loads(line)
+                if isinstance(event, dict) and isinstance(event.get("usage"), dict):
+                    parsed = event
+                    break
         usage = parsed.get("usage")
         if not isinstance(usage, dict):
             return None

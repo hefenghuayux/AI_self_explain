@@ -42,6 +42,7 @@ from app.services.ai_evaluation import (
     AITransportError,
 )
 from app.services.ai_reasoning import resolve_reasoning_params
+from app.services.ai_stream import stream_failed, stream_validated
 from app.services.session_event_log import SessionEventLog
 
 SHARED_SYSTEM_PATH = Path(__file__).resolve().parents[1] / "prompts" / "shared_system.md"
@@ -200,6 +201,7 @@ class AIMasteryCheckService:
                 if validation_errors:
                     raise ValueError("；".join(validation_errors))
             except (ValidationError, ValueError) as error:
+                stream_failed(request.purpose)
                 validation_errors = (
                     [entry["msg"] for entry in error.errors()]
                     if isinstance(error, ValidationError)
@@ -242,6 +244,7 @@ class AIMasteryCheckService:
                     )
                     return None
                 continue
+            stream_validated(request.purpose)
             self.repository.record_external_call_validation(
                 record=external_call,
                 validation_status="VALID",

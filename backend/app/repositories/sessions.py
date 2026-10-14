@@ -266,7 +266,7 @@ class SessionRepository:
     def get_latest_valid_support(self, session_id: int) -> SupportEvent | None:
         statement = (
             select(SupportEvent)
-            .where(SupportEvent.session_id == session_id)
+            .where(SupportEvent.session_id == session_id, SupportEvent.status != "CANCELLED")
             .order_by(SupportEvent.id.desc())
         )
         return self.database_session.scalars(statement).first()
@@ -282,7 +282,7 @@ class SessionRepository:
         support_events = list(
             self.database_session.scalars(
                 select(SupportEvent)
-                .where(SupportEvent.session_id == session_id)
+                .where(SupportEvent.session_id == session_id, SupportEvent.status != "CANCELLED")
                 .order_by(SupportEvent.created_at, SupportEvent.id)
             )
         )
@@ -405,6 +405,7 @@ class SessionRepository:
             .where(
                 StateTransitionEvent.session_id == session_id,
                 StateTransitionEvent.to_flow_stage == FLOW_STAGE_SHOWING_FULL_SOLUTION,
+                StateTransitionEvent.cancelled_run_id.is_(None),
             )
             .order_by(StateTransitionEvent.created_at, StateTransitionEvent.id)
         )
@@ -426,6 +427,7 @@ class SessionRepository:
             select(StateTransitionEvent)
             .where(
                 StateTransitionEvent.session_id == session_id,
+                StateTransitionEvent.cancelled_run_id.is_(None),
                 or_(
                     # 兼容历史审计数据：早期版本会把 to_status 置为 NEED_HUMAN。
                     StateTransitionEvent.to_status == "NEED_HUMAN",
@@ -1348,6 +1350,7 @@ class SessionRepository:
             .where(
                 SupportEvent.session_id == session_id,
                 SupportEvent.support_kind == "GUIDED_QUESTIONS",
+                SupportEvent.status != "CANCELLED",
             )
             .order_by(SupportEvent.id.desc())
         )
