@@ -52,6 +52,7 @@ interface DialogDrafts {
   doubt: string
   appeal: string
   lastSubmittedSelfExplanation: string
+  selfExplanation: string | null
 }
 
 const route = useRoute()
@@ -152,8 +153,17 @@ const teachingEvaluationPending = computed(() => session.value?.flowStage === "A
   || Boolean(grading.value && ["PENDING", "RUNNING"].includes(grading.value.evaluationStatus)))
 const cancellableRunId = computed(() => activeAiRequest.value?.runId || session.value?.activeRunId || null)
 const runPending = computed(() => Boolean(cancellableRunId.value))
-const canShowSelfExplanation = computed(() => teachingEvaluationPending.value
-  || Boolean(session.value && ["WAIT_INITIAL_CHOICE", "CAPTURING_INPUT", "WAIT_STUDENT_ACTION"].includes(session.value.flowStage)))
+// 查看自讲不受流程限制；子问题、核验、解析、暂停和终态只允许查看。
+const selfExplanationReadOnly = computed(() => session.value?.status !== "IN_PROGRESS"
+  || ["WAIT_GUIDED_ANSWERS", "WAIT_MASTERY_CHECK", "SHOWING_FULL_SOLUTION"].includes(session.value.flowStage))
+const selfExplanationEditingDisabled = computed(() => selfExplanationReadOnly.value
+  || cancelling.value || (submitting.value && !explanationSubmitting.value && !teachingEvaluationPending.value))
+const canSubmitSelfExplanation = computed(() => session.value?.status === "IN_PROGRESS"
+  && ["WAIT_INITIAL_CHOICE", "CAPTURING_INPUT", "WAIT_STUDENT_ACTION"].includes(session.value.flowStage)
+  && !submitting.value && !cancelling.value && !runPending.value && !teachingEvaluationPending.value)
+const showGuidedAnswers = computed(() => session.value?.status === "IN_PROGRESS"
+  && session.value.flowStage === "WAIT_GUIDED_ANSWERS" && canShowTeachingContent.value
+  && Boolean(session.value.latestSupport?.guidedQuestions?.length))
 const visibleTimeline = computed(() => canShowTeachingContent.value ? timeline.value : timeline.value.filter((item) => item.speaker === "STUDENT"))
 const speechIsSolution = computed(() => Boolean(session.value?.solutionExposed && question.value?.fullSolution
   && canShowTeachingContent.value
@@ -287,6 +297,7 @@ function emptyDialogDrafts(): DialogDrafts {
     doubt: "",
     appeal: "",
     lastSubmittedSelfExplanation: "",
+    selfExplanation: null,
   }
 }
 
@@ -331,6 +342,7 @@ function readDialogDrafts(): { hasStoredDrafts: boolean; drafts: DialogDrafts } 
         lastSubmittedSelfExplanation: typeof parsed.lastSubmittedSelfExplanation === "string"
           ? parsed.lastSubmittedSelfExplanation
           : "",
+        selfExplanation: typeof parsed.selfExplanation === "string" ? parsed.selfExplanation : null,
       },
     }
   } catch (error) {
@@ -349,6 +361,7 @@ function persistDialogDrafts() {
       doubt: doubtDraft.value,
       appeal: appealDraft.value,
       lastSubmittedSelfExplanation: lastSubmittedSelfExplanation.value,
+      selfExplanation: currentStepContent.value,
     }),
   )
 }
@@ -360,12 +373,15 @@ function applyStoredDialogDrafts() {
   doubtDraft.value = savedDraftState.drafts.doubt
   appealDraft.value = savedDraftState.drafts.appeal
   lastSubmittedSelfExplanation.value = savedDraftState.drafts.lastSubmittedSelfExplanation
+  if (savedDraftState.drafts.selfExplanation !== null) {
+    currentStepContent.value = savedDraftState.drafts.selfExplanation
+  }
   dialogDraftsReady = true
-  persistDialogDrafts()
+  return savedDraftState.drafts.selfExplanation !== null
 }
 
 watch(
-  [guidedAnswerText, masteryAnswerText, doubtDraft, appealDraft, lastSubmittedSelfExplanation],
+  [guidedAnswerText, masteryAnswerText, doubtDraft, appealDraft, lastSubmittedSelfExplanation, currentStepContent],
   persistDialogDrafts,
   { deep: true },
 )
@@ -388,12 +404,14 @@ function applyStepsResponse(response: StepsResponse) {
   }
 }
 
-async function loadCurrentSteps() {
+async function loadCurrentSteps(preserveContent = false) {
   if (!session.value || session.value.flowStage !== "CAPTURING_INPUT") return
   const generation = aiRequestGeneration
   const response = await fetchSessionSteps(sessionId, "current")
   if (generation !== aiRequestGeneration) return
+  const draftContent = currentStepContent.value
   applyStepsResponse(response)
+  if (preserveContent) currentStepContent.value = draftContent
 }
 
 // 服务端已有步骤内容时以服务端为准，避免旧内容覆盖学生已保存的步骤。
@@ -411,7 +429,7 @@ async function loadSessionData(cancelledRun?: { runId: string; minVersion: numbe
     throw new Error("中断已受理，等待会话状态同步，请稍后刷新")
   }
   session.value = loadedSession
-  if (!dialogDraftsReady) applyStoredDialogDrafts()
+  const preserveDraft = dialogDraftsReady || applyStoredDialogDrafts()
   for (const answer of loadedSession.latestSupport?.guidedAnswers ?? []) {
     if (!guidedAnswerText.value[answer.questionId]) {
       guidedAnswerText.value[answer.questionId] = answer.answer
@@ -423,13 +441,13 @@ async function loadSessionData(cancelledRun?: { runId: string; minVersion: numbe
     }
   }
   if (loadedSession.flowStage === "CAPTURING_INPUT") {
-    await loadCurrentSteps()
-    restoreLastSubmittedExplanation()
+    await loadCurrentSteps(preserveDraft)
+    if (!preserveDraft) restoreLastSubmittedExplanation()
   } else {
     clearStepState()
     // 提交后会话停在 WAIT_STUDENT_ACTION 等阶段，服务端没有可读的当前步骤，
     // 刷新页面后用上次提交的内容回填；输入框已有内容时保留学生当前输入。
-    if (!currentStepContent.value.trim()) {
+    if (!preserveDraft && !currentStepContent.value.trim()) {
       currentStepContent.value = lastSubmittedSelfExplanation.value
     }
   }
@@ -439,6 +457,11 @@ async function loadSessionData(cancelledRun?: { runId: string; minVersion: numbe
   ])
   question.value = loadedQuestion
   timeline.value = loadedTimeline
+  if (!preserveDraft && !currentStepContent.value.trim()) {
+    currentStepContent.value = loadedTimeline.filter((item) => item.eventType === "SUBMISSION"
+      && item.submissionType === "SELF_EXPLANATION").at(-1)?.content ?? ""
+  }
+  persistDialogDrafts()
   const hasFormalSubmission = loadedTimeline.some((item) => item.eventType === "SUBMISSION" && item.submissionType === "SELF_EXPLANATION")
   grading.value = hasFormalSubmission ? await fetchGrading(sessionId) : null
   const pendingRunId = loadedSession.activeRunId || localStorage.getItem(pendingAIRunStorageKey)
@@ -620,7 +643,7 @@ async function stopCurrentRun() {
   errorMessage.value = ""
   stopTeacherSpeech()
   if (previousStage) session.value = { ...previousSession, flowStage: previousStage }
-  const currentDraft = currentStepContent.value || lastSubmittedSelfExplanation.value
+  const currentDraft = currentStepContent.value
   const currentTranscript = currentStepTranscript.value
   try {
     session.value = await cancelCurrentRun(sessionId, runId)
@@ -641,9 +664,7 @@ async function stopCurrentRun() {
       console.error("中断失败后刷新会话失败", refreshError)
     }
   } finally {
-    const lastSubmission = timeline.value.filter((item) => item.eventType === "SUBMISSION"
-      && item.submissionType === "SELF_EXPLANATION").at(-1)?.content
-    currentStepContent.value = currentDraft || (session.value?.flowStage === "CAPTURING_INPUT" ? lastSubmission ?? "" : "")
+    currentStepContent.value = currentDraft
     currentStepTranscript.value = currentTranscript
     cancelling.value = false
   }
@@ -679,18 +700,17 @@ function timelineItemClass(item: LearningTimelineItem) {
 }
 
 function canUseSegment(segment: SegmentKey) {
+  if (segment === "selfExplain") return Boolean(session.value)
   if (!session.value || submitting.value || cancelling.value || runPending.value) return false
-  if (segment === "selfExplain") {
-    return canShowSelfExplanation.value
-  }
-  if (segment === "guidedAnswers") return session.value.flowStage === "WAIT_GUIDED_ANSWERS"
-  if (segment === "masteryCheck") return session.value.flowStage === "WAIT_MASTERY_CHECK"
+  if (segment === "guidedAnswers") return showGuidedAnswers.value
+  if (segment === "masteryCheck") return session.value.status === "IN_PROGRESS" && session.value.flowStage === "WAIT_MASTERY_CHECK"
   if (segment === "doubt") return canSubmitStudentInterruption()
   return hasAppealableAiResponse() && canSubmitStudentInterruption()
 }
 
 // 掌握度核验只在进入核验阶段后出现，其他阶段不提前暴露该入口。
 const segmentOptions = computed(() => segmentEntries
+  .filter((segment) => segment.value !== "guidedAnswers" || showGuidedAnswers.value)
   .filter((segment) => segment.value !== "masteryCheck"
     || session.value?.flowStage === "WAIT_MASTERY_CHECK")
   .map((segment) => ({
@@ -699,14 +719,16 @@ const segmentOptions = computed(() => segmentEntries
   })))
 
 function syncActiveSegmentWithStage() {
-  if (session.value?.flowStage === "WAIT_GUIDED_ANSWERS") {
+  if (showGuidedAnswers.value) {
     activeSegment.value = "guidedAnswers"
-  } else if (session.value?.flowStage === "WAIT_MASTERY_CHECK") {
+  } else if (session.value?.status === "IN_PROGRESS" && session.value.flowStage === "WAIT_MASTERY_CHECK") {
     activeSegment.value = "masteryCheck"
   } else if (activeSegment.value === "guidedAnswers" || activeSegment.value === "masteryCheck") {
     activeSegment.value = "selfExplain"
   }
 }
+
+watch([showGuidedAnswers, () => session.value?.flowStage, () => session.value?.status], syncActiveSegmentWithStage)
 
 function canSubmitStudentInterruption() {
   return !cancelling.value && !runPending.value && session.value?.status === "IN_PROGRESS"
@@ -774,7 +796,7 @@ function hasStepEvidence() {
 }
 
 function openFormulaEditor() {
-  if ((submitting.value && !explanationSubmitting.value) || voiceRecording.value) return
+  if (selfExplanationEditingDisabled.value || voiceRecording.value) return
   formulaEditorRef.value?.open()
 }
 
@@ -791,14 +813,12 @@ async function ensureStepInputReady() {
   }
   if (transitionedToStepInput && session.value.flowStage === "CAPTURING_INPUT") {
     await loadCurrentSteps()
-    if (draftBeforeTransition.trim()) {
-      currentStepContent.value = draftBeforeTransition
-    }
+    currentStepContent.value = draftBeforeTransition
   }
 }
 
 async function submitExplanation() {
-  if (!session.value || submitting.value || cancelling.value || runPending.value || teachingEvaluationPending.value) return
+  if (!session.value || !canSubmitSelfExplanation.value) return
   if (voiceRecording.value) {
     stopVoiceRecorder(activeVoiceKey.value ?? "")
     return
@@ -1216,7 +1236,7 @@ async function respondToSolution(understood: boolean) {
           <h2>老师回复</h2><p class="stream-preview__status" role="status">正在生成，完成后确认内容。</p>
           <p v-for="preview in teachingPreviews" :key="preview.key" class="stream-preview__text">{{ preview.text }}</p>
         </section>
-        <div v-if="cancellableRunId && (activeSegment !== 'selfExplain' || !canShowSelfExplanation)" class="actions cancel-run-actions">
+        <div v-if="cancellableRunId && activeSegment !== 'selfExplain'" class="actions cancel-run-actions">
           <el-button data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
         </div>
         <el-alert v-if="gradingPollError" :title="gradingPollError" type="error" :closable="false" show-icon />
@@ -1226,7 +1246,6 @@ async function respondToSolution(understood: boolean) {
           </div>
         </section>
         <div v-if="speechControlsTarget === '#latest-reply-speech'" class="speech-content-heading"><span id="latest-reply-speech" class="speech-anchor" /><span>老师回复</span></div>
-        <template v-if="!isTerminalSession() || teachingEvaluationPending">
           <section class="session-section input-section" aria-label="当前输入与主操作">
             <el-segmented
               v-model="activeSegment"
@@ -1238,23 +1257,22 @@ async function respondToSolution(understood: boolean) {
             />
             <div class="dialog-panel">
               <div v-show="activeSegment === 'selfExplain'" class="dialog-pane">
-                <template v-if="canShowSelfExplanation">
                   <FormulaEditor
                     ref="formulaEditorRef"
                     v-model="currentStepContent"
-                    :disabled="(submitting && !explanationSubmitting) || activeSegment !== 'selfExplain'"
+                    :disabled="selfExplanationEditingDisabled || activeSegment !== 'selfExplain'"
                   />
                   <p class="recording-help">步骤录音转写到输入框；讲解录音随本次自讲提交。</p>
                   <div class="step-actions self-explain-actions">
                     <el-button
                       data-testid="insert-formula"
-                      :disabled="(submitting && !explanationSubmitting) || voiceRecording"
+                      :disabled="selfExplanationEditingDisabled || voiceRecording"
                       @click="openFormulaEditor"
                     >插入公式</el-button>
                     <el-button
                       data-testid="submit-explanation"
                       type="primary"
-                      :disabled="submitting || cancelling || runPending || voiceRecording || teachingEvaluationPending"
+                      :disabled="!canSubmitSelfExplanation || voiceRecording"
                       :loading="submitting"
                       @click="submitExplanation"
                     >提交</el-button>
@@ -1268,7 +1286,7 @@ async function respondToSolution(understood: boolean) {
                       stop-test-id="stop-record-explain"
                       label="讲解录音"
                       inline
-                      :disabled="submitting
+                      :disabled="selfExplanationReadOnly || submitting
                         || teachingEvaluationPending
                         || (voiceRecording && activeVoiceKey !== 'explain')"
                       :prepare-start="prepareExplainVoice"
@@ -1285,7 +1303,7 @@ async function respondToSolution(understood: boolean) {
                       stop-test-id="stop-record-step"
                       label="步骤录音"
                       inline
-                      :disabled="submitting
+                      :disabled="selfExplanationReadOnly || submitting
                         || teachingEvaluationPending
                         || (voiceRecording && activeVoiceKey !== 'step')"
                       :prepare-start="prepareStepVoice"
@@ -1295,11 +1313,9 @@ async function respondToSolution(understood: boolean) {
                       @error="errorMessage = $event"
                     />
                   </div>
-                </template>
-                <el-empty v-else description="当前阶段暂无自讲输入" />
               </div>
               <div v-show="activeSegment === 'guidedAnswers'" class="dialog-pane">
-                <template v-if="canShowTeachingContent && session.latestSupport?.guidedQuestions?.length">
+                <template v-if="showGuidedAnswers && session.latestSupport?.guidedQuestions?.length">
                   <div v-if="speechControlsTarget === '#guided-speech'" class="speech-content-heading"><span id="guided-speech" class="speech-anchor" /><span>子问题</span></div>
                   <div v-for="item in session.latestSupport.guidedQuestions" :key="item.id" class="guided-question">
                     <p>{{ item.question }}</p>
@@ -1448,6 +1464,7 @@ async function respondToSolution(understood: boolean) {
               </div>
             </div>
           </section>
+        <template v-if="!isTerminalSession() || teachingEvaluationPending">
           <section v-if="canShowTeachingContent && session.flowStage === 'AI_EVALUATING'" class="session-section"><h2>AI 正在评价</h2><p>请等待评价结果返回。</p></section>
           <section v-else-if="canShowTeachingContent && session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2 class="speech-content-heading"><span id="solution-speech" class="speech-anchor" />完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析。本题不会再要求完整重讲，确认后直接进入掌握度核验。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" :disabled="cancelling" @click="respondToSolution(true)">我会了，进入掌握度核验</el-button><el-button :loading="submitting" :disabled="cancelling" @click="respondToSolution(false)">仍然不会</el-button></div></section>
           <section v-else-if="canShowTeachingContent && session.flowStage === 'WAIT_MASTERY_CHECK'" class="session-section mastery-check-state">
