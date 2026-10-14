@@ -83,8 +83,14 @@ def _build_request(
     }
     content = json.dumps({"studentSteps": [student_steps]}, ensure_ascii=False)
     task = PROMPT_PATH.read_text(encoding="utf-8")
+    # 传输层使用 JSON object 模式，字段约束与本地校验共用同一份 Schema。
+    output_schema = FirstExplanationGradingOutput.model_json_schema(by_alias=True)
+    system_instructions = (
+        "只返回符合以下 JSON Schema 的合法 JSON 对象，所有必填字段都必须提供。\n"
+        + json.dumps(output_schema, ensure_ascii=False)
+    )
     messages = [
-        ModelRequestMessage(role="system", content="只返回合法 JSON。"),
+        ModelRequestMessage(role="system", content=system_instructions),
         ModelRequestMessage(role="user", content=json.dumps(question_context, ensure_ascii=False)),
         ModelRequestMessage(role="user", content=task),
         ModelRequestMessage(role="user", content=content),
@@ -94,7 +100,7 @@ def _build_request(
         purpose="FIRST_EXPLANATION_GRADING",
         promptVersion=FIRST_EXPLANATION_GRADING_VERSION,
         blocks=ModelRequestBlocks(
-            systemInstructions="只返回合法 JSON。",
+            systemInstructions=system_instructions,
             questionContext=question_context,
             sessionContext={"attemptId": attempt.id},
             taskInstructions=task,

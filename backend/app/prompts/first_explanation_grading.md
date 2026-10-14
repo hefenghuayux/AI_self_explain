@@ -10,3 +10,11 @@
 - 歧义时选择现有证据支持的最合理解释，并在 ambiguityNotes 记录来源、采用解释和影响。
 
 只返回：correctnessScore、correctnessReason、completenessScore、completenessReason、missingRequirements、ambiguityNotes、rubricLimitations、summary。
+
+输出字段类型必须符合请求中的 JSON Schema，所有字段都必须提供：
+- correctnessScore、completenessScore：0 到 4 的整数。
+- correctnessReason、completenessReason、summary：字符串。
+- missingRequirements：字符串数组，无缺失要求时返回 []。
+- ambiguityNotes：对象数组，每项固定包含 source、interpretation、impact 三个字符串字段，分别说明可定位来源、采用的解释和评分影响；无歧义时返回 []。不要返回整段字符串或字符串数组。
+- rubricLimitations：字符串数组，只记录题目判据的缺失、含糊或冲突；无限制时返回 []。不要返回整段字符串。
+禁止省略字段、用 null 或字符串代替数组、增加字段；不要输出 Markdown 代码块。
