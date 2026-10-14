@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from "vue"
+import { computed, onBeforeUnmount, ref } from "vue"
 
 import { getAuthToken } from "../stores/auth"
 import type { VoiceInputTarget } from "../types/session"
@@ -25,11 +25,26 @@ const emit = defineEmits<{
   finalTranscript: [text: string]
   completed: [payload: { attemptId: number; version: number }]
   recordingChange: [recording: boolean]
+  busyChange: [busy: boolean]
   error: [message: string]
 }>()
 
-const recording = ref(false)
+type VoiceState = "idle" | "connecting" | "recording" | "transcribing" | "completed" | "failed"
+const state = ref<VoiceState>("idle")
+const recording = computed(() => state.value === "recording")
+const busy = computed(() => ["connecting", "recording", "transcribing"].includes(state.value))
+const statusText = computed(() => ({
+  idle: "",
+  connecting: "正在准备录音并连接…",
+  recording: "正在录音，点击按钮停止。",
+  transcribing: "正在完成转写，请稍候…",
+  completed: props.target === "SELF_EXPLANATION_EXPLAIN"
+    ? "讲解转写已保存，提交自讲时一并使用。"
+    : "转写完成，请检查输入内容。",
+  failed: "录音未完成，可重新尝试。",
+})[state.value])
 const previewText = ref("")
+let disposed = false
 let socket: WebSocket | undefined
 let audioContext: AudioContext | undefined
 let mediaStream: MediaStream | undefined
@@ -78,97 +93,133 @@ function releaseMicrophone() {
   audioContext = undefined
 }
 
-function finishRecording() {
+function setState(next: VoiceState) {
   const wasRecording = recording.value
+  const wasBusy = busy.value
+  state.value = next
+  if (wasRecording !== recording.value) emit("recordingChange", recording.value)
+  if (wasBusy !== busy.value) emit("busyChange", busy.value)
+}
+
+function releaseSocket() {
+  if (!socket) return
+  socket.onmessage = null
+  socket.onerror = null
+  socket.onclose = null
+  socket.close()
+  socket = undefined
+}
+
+function fail(message: string) {
   releaseMicrophone()
-  recording.value = false
-  if (wasRecording) emit("recordingChange", false)
+  releaseSocket()
+  previewText.value = ""
+  setState("failed")
+  emit("error", message)
 }
 
 async function start() {
-  if (recording.value || props.disabled) return
-  if (props.prepareStart && !(await props.prepareStart())) return
+  if (disposed || busy.value || props.disabled) return
+  setState("connecting")
   previewText.value = ""
   try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    if (props.prepareStart && !(await props.prepareStart())) {
+      if (!disposed) setState("idle")
+      return
+    }
+    if (disposed) return
+    const acquiredStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    if (disposed) {
+      acquiredStream.getTracks().forEach((track) => track.stop())
+      return
+    }
+    mediaStream = acquiredStream
     const voiceStream = createVoiceStreamUrl()
     socket = new WebSocket(voiceStream.url, ["bearer", voiceStream.token])
     socket.binaryType = "arraybuffer"
     socket.onmessage = (event) => {
-      const message = JSON.parse(String(event.data)) as {
-        type: string
-        text?: string
-        attemptId?: number
-        version?: number
-        sampleRateHz?: number
-        message?: string
-      }
-      if (message.type === "ready") {
-        targetSampleRate = message.sampleRateHz ?? targetSampleRate
-        audioContext = new AudioContext()
-        sourceNode = audioContext.createMediaStreamSource(mediaStream!)
-        processorNode = audioContext.createScriptProcessor(4096, 1, 1)
-        silentGainNode = audioContext.createGain()
-        silentGainNode.gain.value = 0
-        processorNode.onaudioprocess = (audioEvent) => {
-          if (socket?.readyState !== WebSocket.OPEN || !audioContext) return
-          socket.send(encodePcm16(audioEvent.inputBuffer.getChannelData(0), audioContext.sampleRate))
+      try {
+        const message = JSON.parse(String(event.data)) as {
+          type: string
+          text?: string
+          attemptId?: number
+          version?: number
+          sampleRateHz?: number
+          message?: string
         }
-        sourceNode.connect(processorNode)
-        processorNode.connect(silentGainNode)
-        silentGainNode.connect(audioContext.destination)
-        recording.value = true
-        emit("recordingChange", true)
-      } else if (message.type === "partial_transcript") {
-        previewText.value = message.text ?? ""
-      } else if (message.type === "final_transcript") {
-        previewText.value = ""
-        if (message.text) emit("finalTranscript", message.text)
-      } else if (message.type === "completed") {
-        finishRecording()
-        if (typeof message.attemptId !== "number") {
-          emit("error", "实时语音识别未返回语音尝试编号")
-          return
+        if (message.type === "ready") {
+          if (state.value !== "connecting") return
+          targetSampleRate = message.sampleRateHz ?? targetSampleRate
+          audioContext = new AudioContext()
+          sourceNode = audioContext.createMediaStreamSource(mediaStream!)
+          processorNode = audioContext.createScriptProcessor(4096, 1, 1)
+          silentGainNode = audioContext.createGain()
+          silentGainNode.gain.value = 0
+          processorNode.onaudioprocess = (audioEvent) => {
+            if (socket?.readyState !== WebSocket.OPEN || !audioContext) return
+            socket.send(encodePcm16(audioEvent.inputBuffer.getChannelData(0), audioContext.sampleRate))
+          }
+          sourceNode.connect(processorNode)
+          processorNode.connect(silentGainNode)
+          silentGainNode.connect(audioContext.destination)
+          setState("recording")
+        } else if (message.type === "partial_transcript") {
+          previewText.value = message.text ?? ""
+        } else if (message.type === "final_transcript") {
+          previewText.value = ""
+          if (message.text) emit("finalTranscript", message.text)
+        } else if (message.type === "completed") {
+          if (typeof message.attemptId !== "number") {
+            fail("实时语音识别未返回语音尝试编号")
+            return
+          }
+          if (typeof message.version !== "number") {
+            fail("实时语音识别未返回最新会话版本")
+            return
+          }
+          releaseMicrophone()
+          releaseSocket()
+          previewText.value = ""
+          setState("completed")
+          emit("completed", {
+            attemptId: message.attemptId,
+            version: message.version,
+          })
+        } else if (message.type === "error") {
+          fail(message.message ?? "实时语音识别失败")
         }
-        if (typeof message.version !== "number") {
-          emit("error", "实时语音识别未返回最新会话版本")
-          return
-        }
-        emit("completed", {
-          attemptId: message.attemptId,
-          version: message.version,
-        })
-      } else if (message.type === "error") {
-        finishRecording()
-        emit("error", message.message ?? "实时语音识别失败")
+      } catch (error) {
+        fail(error instanceof Error ? error.message : String(error))
       }
     }
     socket.onerror = () => {
-      if (mediaStream) {
-        finishRecording()
-        emit("error", "无法连接实时语音识别服务")
-      }
+      fail("无法连接实时语音识别服务")
     }
     socket.onclose = () => {
-      if (recording.value) finishRecording()
+      if (busy.value) fail("实时语音识别连接已断开，转写未完成")
     }
   } catch (error) {
-    finishRecording()
-    emit("error", error instanceof Error ? error.message : String(error))
+    if (!disposed) fail(error instanceof Error ? error.message : String(error))
   }
 }
 
 function stop() {
+  if (!recording.value) return
   const activeSocket = socket
-  finishRecording()
+  releaseMicrophone()
+  setState("transcribing")
   if (activeSocket?.readyState === WebSocket.OPEN) {
     activeSocket.send(JSON.stringify({ type: "stop" }))
+  } else {
+    fail("实时语音识别连接已断开，转写未完成")
   }
 }
 
 onBeforeUnmount(() => {
+  disposed = true
   releaseMicrophone()
-  socket?.close()
+  releaseSocket()
+  setState("idle")
 })
 
 defineExpose({ start, stop })
@@ -180,15 +231,16 @@ defineExpose({ start, stop })
       <span class="recording-indicator" :class="{ 'is-recording': recording }" aria-hidden="true"></span>
       <div><h3>{{ recording ? "正在录音" : "实时语音输入" }}</h3><p>句末转写会追加到输入框，确认前不会进入 AI 评价。</p></div>
     </div>
-    <p v-if="!inline && previewText" class="transcript-preview" aria-live="polite">正在转写：{{ previewText }}</p>
     <div class="actions">
       <el-button
         :data-testid="recording ? stopTestId : startTestId"
         :type="recording ? 'danger' : undefined"
-        :disabled="disabled"
+        :disabled="!recording && (disabled || busy)"
         @click="recording ? stop() : start()"
-      >{{ recording ? '录音中' : label }}</el-button>
+      >{{ recording ? `停止${label}` : label }}</el-button>
     </div>
+    <p v-if="statusText" class="voice-status" role="status">{{ statusText }}</p>
+    <p v-if="previewText" class="transcript-preview" aria-live="polite">正在转写：{{ previewText }}</p>
   </section>
 </template>
 
@@ -203,5 +255,6 @@ defineExpose({ start, stop })
 .actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
 .voice-recorder.is-inline { margin-top: 0; padding: 0; border: 0; background: transparent; }
 .voice-recorder.is-inline .actions { margin-top: 0; }
+.voice-recorder.is-inline .actions .el-button { width: 100%; margin: 0; }
 @media (max-width: 640px) { .actions .el-button { width: 100%; } }
 </style>

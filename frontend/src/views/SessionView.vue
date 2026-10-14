@@ -723,13 +723,14 @@ function appendGuidedTranscript(questionId: string, text: string) {
   )
 }
 
-function handleRecordingChange(voiceKey: string, recording: boolean) {
-  if (recording) stopTeacherSpeech()
-  if (recording && activeVoiceKey.value && activeVoiceKey.value !== voiceKey) {
+// 连接、录音和等待最终转写期间共用操作互斥，避免提前提交或启动第二段录音。
+function handleVoiceBusyChange(voiceKey: string, busy: boolean) {
+  if (busy) stopTeacherSpeech()
+  if (busy && activeVoiceKey.value && activeVoiceKey.value !== voiceKey) {
     stopVoiceRecorder(activeVoiceKey.value)
   }
-  voiceRecording.value = recording
-  activeVoiceKey.value = recording ? voiceKey : (
+  voiceRecording.value = busy
+  activeVoiceKey.value = busy ? voiceKey : (
     activeVoiceKey.value === voiceKey ? undefined : activeVoiceKey.value
   )
 }
@@ -751,6 +752,8 @@ async function handleVoiceCompleted(
   targetId: string | undefined,
   payload: { attemptId: number; version: number },
 ) {
+  // 转写完成后先刷新服务端版本，再恢复提交与下一次录音。
+  submitting.value = true
   if (target !== "SELF_EXPLANATION_STEP" && target !== "SELF_EXPLANATION_EXPLAIN") {
     voiceAttemptIds.value[voiceAttemptKey(target, targetId)] = payload.attemptId
   }
@@ -769,6 +772,8 @@ async function handleVoiceCompleted(
     syncActiveSegmentWithStage()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -1007,54 +1012,59 @@ async function respondToSolution(understood: boolean) {
                     v-model="currentStepContent"
                     :disabled="(submitting && !explanationSubmitting) || activeSegment !== 'selfExplain'"
                   />
+                  <p class="recording-help">步骤录音转写到输入框；讲解录音随本次自讲提交。</p>
                   <div class="step-actions self-explain-actions">
-                    <el-button
-                      data-testid="insert-formula"
-                      :disabled="(submitting && !explanationSubmitting) || voiceRecording"
-                      @click="openFormulaEditor"
-                    >插入公式</el-button>
-                    <el-button
-                      data-testid="submit-explanation"
-                      type="primary"
-                      :disabled="submitting || voiceRecording || teachingEvaluationPending"
-                      :loading="submitting"
-                      @click="submitExplanation"
-                    >提交</el-button>
-                    <VoiceRecorder
-                      ref="explainVoiceRecorderRef"
-                      :session-id="sessionId"
-                      :version="session.version"
-                      target="SELF_EXPLANATION_EXPLAIN"
-                      start-test-id="record-explain"
-                      stop-test-id="stop-record-explain"
-                      label="讲解录音"
-                      inline
-                      :disabled="submitting
-                        || teachingEvaluationPending
-                        || (voiceRecording && activeVoiceKey !== 'explain')"
-                      :prepare-start="prepareExplainVoice"
-                      @completed="handleVoiceCompleted('SELF_EXPLANATION_EXPLAIN', undefined, $event)"
-                      @recording-change="handleRecordingChange('explain', $event)"
-                      @error="errorMessage = $event"
-                    />
-                    <VoiceRecorder
-                      ref="stepVoiceRecorderRef"
-                      :session-id="sessionId"
-                      :version="session.version"
-                      target="SELF_EXPLANATION_STEP"
-                      start-test-id="record-step"
-                      stop-test-id="stop-record-step"
-                      label="步骤录音"
-                      inline
-                      :disabled="submitting
-                        || teachingEvaluationPending
-                        || (voiceRecording && activeVoiceKey !== 'step')"
-                      :prepare-start="prepareStepVoice"
-                      @final-transcript="currentStepContent = appendTranscript(currentStepContent, $event)"
-                      @completed="handleVoiceCompleted('SELF_EXPLANATION_STEP', undefined, $event)"
-                      @recording-change="handleRecordingChange('step', $event)"
-                      @error="errorMessage = $event"
-                    />
+                    <div class="self-explain-tools" role="group" aria-label="公式与语音工具">
+                      <el-button
+                        data-testid="insert-formula"
+                        :disabled="(submitting && !explanationSubmitting) || voiceRecording"
+                        @click="openFormulaEditor"
+                      >插入公式</el-button>
+                      <VoiceRecorder
+                        ref="explainVoiceRecorderRef"
+                        :session-id="sessionId"
+                        :version="session.version"
+                        target="SELF_EXPLANATION_EXPLAIN"
+                        start-test-id="record-explain"
+                        stop-test-id="stop-record-explain"
+                        label="讲解录音"
+                        inline
+                        :disabled="submitting
+                          || teachingEvaluationPending
+                          || (voiceRecording && activeVoiceKey !== 'explain')"
+                        :prepare-start="prepareExplainVoice"
+                        @completed="handleVoiceCompleted('SELF_EXPLANATION_EXPLAIN', undefined, $event)"
+                        @busy-change="handleVoiceBusyChange('explain', $event)"
+                        @error="errorMessage = $event"
+                      />
+                      <VoiceRecorder
+                        ref="stepVoiceRecorderRef"
+                        :session-id="sessionId"
+                        :version="session.version"
+                        target="SELF_EXPLANATION_STEP"
+                        start-test-id="record-step"
+                        stop-test-id="stop-record-step"
+                        label="步骤录音"
+                        inline
+                        :disabled="submitting
+                          || teachingEvaluationPending
+                          || (voiceRecording && activeVoiceKey !== 'step')"
+                        :prepare-start="prepareStepVoice"
+                        @final-transcript="currentStepContent = appendTranscript(currentStepContent, $event)"
+                        @completed="handleVoiceCompleted('SELF_EXPLANATION_STEP', undefined, $event)"
+                        @busy-change="handleVoiceBusyChange('step', $event)"
+                        @error="errorMessage = $event"
+                      />
+                    </div>
+                    <div class="self-explain-submit">
+                      <el-button
+                        data-testid="submit-explanation"
+                        type="primary"
+                        :disabled="submitting || voiceRecording || teachingEvaluationPending"
+                        :loading="submitting"
+                        @click="submitExplanation"
+                      >提交自讲</el-button>
+                    </div>
                   </div>
                 </template>
                 <el-empty v-else description="当前阶段暂无自讲输入" />
@@ -1097,7 +1107,7 @@ async function respondToSolution(understood: boolean) {
                           || (voiceRecording && activeVoiceKey !== `guided-${item.id}`)"
                         @final-transcript="appendGuidedTranscript(item.id, $event)"
                         @completed="handleVoiceCompleted('GUIDED_ANSWER', item.id, $event)"
-                        @recording-change="handleRecordingChange(`guided-${item.id}`, $event)"
+                        @busy-change="handleVoiceBusyChange(`guided-${item.id}`, $event)"
                         @error="errorMessage = $event"
                       />
                     </div>
@@ -1161,7 +1171,7 @@ async function respondToSolution(understood: boolean) {
                     :disabled="submitting || (voiceRecording && activeVoiceKey !== 'doubt')"
                     @final-transcript="doubtDraft = appendTranscript(doubtDraft, $event)"
                     @completed="handleVoiceCompleted('DOUBT', undefined, $event)"
-                    @recording-change="handleRecordingChange('doubt', $event)"
+                    @busy-change="handleVoiceBusyChange('doubt', $event)"
                     @error="errorMessage = $event"
                   />
                 </div>
@@ -1202,7 +1212,7 @@ async function respondToSolution(understood: boolean) {
                     :disabled="submitting || (voiceRecording && activeVoiceKey !== 'appeal')"
                     @final-transcript="appealDraft = appendTranscript(appealDraft, $event)"
                     @completed="handleVoiceCompleted('APPEAL', undefined, $event)"
-                    @recording-change="handleRecordingChange('appeal', $event)"
+                    @busy-change="handleVoiceBusyChange('appeal', $event)"
                     @error="errorMessage = $event"
                   />
                 </div>
@@ -1276,7 +1286,7 @@ async function respondToSolution(understood: boolean) {
 </template>
 
 <style scoped>
-.session-page { max-width: 1040px; margin: 0 auto; padding: var(--space-8) var(--space-6) var(--space-12); }
+.session-page { max-width: 1040px; margin: 0 auto; padding: var(--space-6) var(--space-6) var(--space-12); }
 .session-shell { min-width: 0; }
 .page-actions { display: flex; flex-direction: column; }
 .page-actions button, .page-actions a { display: flex; align-items: center; min-height: 44px; padding: var(--space-2) var(--space-4); border: 0; background: transparent; color: var(--color-text-primary); font: inherit; font-size: var(--font-size-sm); text-decoration: none; cursor: pointer; text-align: left; }
@@ -1294,24 +1304,25 @@ async function respondToSolution(understood: boolean) {
 .error-state .el-alert { flex: 1; }
 h2, h3 { margin: 0; line-height: 1.4; }
 h2 { font-size: var(--font-size-lg); }
-.question-content { padding: var(--space-6); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
+.question-content { padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
+.question-content .question-rich-text { margin-top: 0; }
 .question-rich-text { max-width: var(--reading-width); margin-top: var(--space-3); color: var(--color-text-primary); font-size: var(--font-size-lg); font-weight: 600; line-height: 1.75; overflow-wrap: anywhere; }
 .question-rich-text :deep(p) { margin: 0; }
 .question-rich-text :deep(p + p) { margin-top: var(--space-3); }
 .question-rich-text :deep(img) { display: block; max-width: 100%; height: auto; }
 .session-section { margin-top: var(--space-8); }
 .session-section p { color: var(--color-text-secondary); }
-.dialog-segmented { width: 100%; margin-top: var(--space-4); }
+.input-section, .feedback-section { margin-top: var(--space-4); }
+.dialog-segmented { --el-segmented-item-selected-bg-color: var(--color-brand-700); width: 100%; margin-top: 0; }
 .dialog-segmented :deep(.el-segmented__item) { min-height: 44px; }
 .dialog-panel {
   margin-top: var(--space-2);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-lg);
-  padding: var(--space-6);
+  padding: var(--space-4);
   background: var(--color-surface);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
 }
-.dialog-pane { min-height: 190px; }
 .guided-question + .guided-question { margin-top: var(--space-4); }
 .guided-question p { margin: 0 0 var(--space-2); color: var(--color-text-primary); font-weight: 600; }
 .guided-question .voice-recorder { margin-top: 0; }
@@ -1322,6 +1333,12 @@ h2 { font-size: var(--font-size-lg); }
 .mastery-result.is-attention { color: var(--color-warning, #b45309); }
 .mastery-check-note { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
 .step-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); }
+.session-section .recording-help { margin: var(--space-2) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.self-explain-actions { align-items: flex-start; justify-content: space-between; margin-top: var(--space-2); gap: var(--space-3); }
+.self-explain-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; flex: 1 1 320px; max-width: 420px; gap: var(--space-2); }
+.self-explain-tools > * { min-width: 0; }
+.self-explain-tools > .el-button { width: 100%; margin: 0; }
+.self-explain-submit { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
 .step-content-input {
   display: block;
   box-sizing: border-box;
@@ -1342,10 +1359,10 @@ h2 { font-size: var(--font-size-lg); }
 }
 .step-content-input:disabled { cursor: not-allowed; opacity: 0.65; }
 :deep(.student-math-error) { color: var(--color-error-700); background: var(--color-error-100); text-decoration: underline wavy; }
-.feedback-card { margin-top: var(--space-4); padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
-.feedback-next-step { margin: var(--space-4) 0 0; padding: var(--space-3); border-left: 3px solid var(--color-brand-600); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--color-brand-50); overflow-wrap: anywhere; }
+.feedback-card { border: 1px solid var(--color-brand-100); border-left: 3px solid var(--color-brand-600); border-radius: var(--radius-lg); background: var(--color-brand-50); }
+.feedback-next-step { padding: var(--space-3); overflow-wrap: anywhere; }
 .feedback-next-step, .speech-content-heading { display: flex; align-items: flex-start; gap: var(--space-2); }
-.feedback-next-step p { margin: 8px 0 0; min-width: 0; }
+.feedback-next-step p { margin: 0; min-width: 0; }
 .speech-anchor { display: inline-flex; flex-shrink: 0; }
 .speech-content-heading { align-items: center; margin-bottom: var(--space-3); font-weight: 600; }
 .conversation-scroll {
@@ -1406,14 +1423,23 @@ h2 { font-size: var(--font-size-lg); }
 .solution-state p { max-width: var(--reading-width); white-space: pre-wrap; color: var(--color-text-primary); }
 @media (max-width: 768px) {
   .dialog-segmented :deep(.el-segmented__group) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: var(--space-2); background: transparent; }
+  /* Element Plus 在浮动选中层上设置内联 display，多行布局改由各选项绘制底色。 */
+  .dialog-segmented :deep(.el-segmented__item-selected) { display: none !important; }
   .dialog-segmented :deep(.el-segmented__item) { min-width: 0; padding: var(--space-2); border-radius: var(--radius-md); white-space: normal; }
+  .dialog-segmented :deep(.el-segmented__item.is-selected) { background: var(--color-brand-700); }
+  .dialog-segmented :deep(.el-segmented__item.is-selected.is-disabled) { color: var(--color-text-secondary); background: var(--color-brand-100); }
+  .dialog-segmented :deep(.el-segmented__item:has(input:focus-visible)) { outline: 2px solid var(--color-brand-700); outline-offset: 2px; }
 }
 @media (max-width: 640px) {
-  .session-page { padding: var(--space-6) var(--space-4) var(--space-8); }
+  .session-page { padding: var(--space-4) var(--space-4) var(--space-8); }
   .question-content { padding: var(--space-4); }
   .dialog-panel { padding: var(--space-4); }
   .actions .el-button { flex: 1 1 100%; }
-  .step-actions .el-button { flex: 1 1 100%; }
+  .self-explain-tools { flex-basis: 100%; max-width: none; }
+  .self-explain-tools :deep(.el-button) { min-height: 44px; height: auto; padding: var(--space-2) var(--space-1); }
+  .self-explain-tools :deep(.el-button > span) { white-space: normal; line-height: 1.4; }
+  .self-explain-submit { width: 100%; }
+  .self-explain-submit .el-button { flex: 1 1 auto; }
   .conversation-scroll { height: 480px; }
   .conversation-list { padding: var(--space-3); }
   .conversation-message { width: 100%; max-width: none; }
