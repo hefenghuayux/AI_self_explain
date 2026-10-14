@@ -1,11 +1,16 @@
+import base64
+import json
+import logging
 import re
+from functools import wraps
 from html.parser import HTMLParser
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.auth import CurrentUser, DatabaseSession
+from app.models.first_explanation_grading import FirstExplanationGrading
 from app.models.question import Question
 from app.models.session import Session
 from app.models.tts_voice import TTSSpeechSettings, TTSVoice
@@ -15,6 +20,67 @@ from app.services.teacher_speech import TeacherSpeechError
 router = APIRouter(prefix="/sessions", tags=["teacher-speech"])
 SPEECH_EVENT_TYPES = {"SUPPORT", "GUIDED_QUESTIONS", "FOLLOW_UP", "MASTERY_QUESTIONS"}
 TEACHING_ACTIONS = {"ASK_FOCUSED_QUESTION", "GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"}
+logger = logging.getLogger(__name__)
+
+
+def is_speech_item(item: dict) -> bool:
+    return item["speaker"] == "AI" and (
+        item["event_type"] in SPEECH_EVENT_TYPES
+        or item["event_type"] == "EVALUATION"
+        and item["action"] in TEACHING_ACTIONS
+    )
+
+
+def selected_voice(database_session, user_id: int) -> TTSVoice:
+    selection = database_session.get(TTSSpeechSettings, user_id)
+    if selection is None or selection.voice_id is None:
+        raise TeacherSpeechError("TTS_VOICE_NOT_SELECTED", "尚未选择教师音色，请在设置中选择", 503)
+    voice = database_session.get(TTSVoice, selection.voice_id)
+    if voice is None:
+        raise TeacherSpeechError("TTS_VOICE_MISSING", "当前教师音色记录不存在", 503)
+    return voice
+
+
+def prewarm_teacher_reply(endpoint):
+    @wraps(endpoint)
+    def wrapped(*args, **kwargs):
+        request = kwargs["request"]
+        # 后台首次评价使用显式传递的 headers 快照；普通请求使用真实 HTTP headers。
+        if getattr(request, "headers", {}).get("X-Teacher-Speech-Prewarm") != "true":
+            return endpoint(*args, **kwargs)
+        db = kwargs["database_session"]
+        session = kwargs.get("session")
+        if session is None:
+            session = db.get(Session, kwargs["session_id"])
+            user = kwargs["current_user"]
+            if session is None or session.user_id != user.id:
+                return endpoint(*args, **kwargs)
+        repository = SessionRepository(db)
+        known_ids = {item["id"] for item in repository.get_student_timeline(session.id)}
+        result = endpoint(*args, **kwargs)
+        items = [
+            item
+            for item in repository.get_student_timeline(session.id)
+            if item["id"] not in known_ids and is_speech_item(item)
+        ]
+        if items:
+            try:
+                text = "\n".join(str(item["content"]) for item in items)
+                request.app.state.teacher_speech_service.prewarm(
+                    text, selected_voice(db, session.user_id)
+                )
+            except TeacherSpeechError as error:
+                # TTS 不改变已保存的教学结果和学习状态；播放时仍返回明确错误。
+                logger.warning(
+                    "教师语音预热未启动",
+                    extra={
+                        "eventName": "tts.prewarm.failed",
+                        "errorType": error.code,
+                    },
+                )
+        return result
+
+    return wrapped
 
 
 class TeacherSpeechInput(BaseModel):
@@ -87,6 +153,21 @@ def synthesize_teacher_speech(
     database_session: DatabaseSession,
     current_user: CurrentUser,
 ) -> FileResponse:
+    session, text = speech_source(session_id, speech_input, database_session, current_user)
+    try:
+        path = request.app.state.teacher_speech_service.synthesize(
+            text, selected_voice(database_session, current_user.id)
+        )
+    except TeacherSpeechError as error:
+        raise HTTPException(
+            error.status_code, {"code": error.code, "message": str(error)}
+        ) from error
+    return FileResponse(
+        path, media_type="audio/wav", headers={"Cache-Control": "private, no-store"}
+    )
+
+
+def speech_source(session_id, speech_input, database_session, current_user):
     session = database_session.get(Session, session_id)
     if session is None or session.user_id != current_user.id:
         raise HTTPException(404, "会话不存在")
@@ -106,26 +187,67 @@ def synthesize_teacher_speech(
         if len(items) != len(requested):
             raise HTTPException(404, "请求的教师回复记录不存在")
         for item in items:
-            eligible = item["event_type"] in SPEECH_EVENT_TYPES or (
-                item["event_type"] == "EVALUATION" and item["action"] in TEACHING_ACTIONS
-            )
-            if item["speaker"] != "AI" or not eligible:
+            if not is_speech_item(item):
                 raise HTTPException(422, "请求的记录不属于可朗读的教师回复")
         text = "\n".join(str(item["content"]) for item in items)
+    return session, text
+
+
+@router.post("/{session_id}/teacher-speech/stream", response_class=StreamingResponse)
+def stream_teacher_speech(
+    session_id: int,
+    speech_input: TeacherSpeechInput,
+    request: Request,
+    database_session: DatabaseSession,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    session, text = speech_source(session_id, speech_input, database_session, current_user)
+    # 预热允许在评分期间运行；直接请求播放也必须遵守前端相同的确认门槛。
+    from sqlalchemy import select
+
+    grading = database_session.scalar(
+        select(FirstExplanationGrading)
+        .where(FirstExplanationGrading.session_id == session.id)
+        .order_by(FirstExplanationGrading.id.desc())
+        .limit(1)
+    )
+    if grading is not None and (
+        grading.acknowledged_at is None or grading.evaluation_status not in {"SUCCEEDED", "FAILED"}
+    ):
+        raise HTTPException(403, "请先确认首次评分结果再播放教师回复")
     try:
-        selection = database_session.get(TTSSpeechSettings, current_user.id)
-        if selection is None or selection.voice_id is None:
-            raise TeacherSpeechError(
-                "TTS_VOICE_NOT_SELECTED", "尚未选择教师音色，请在设置中选择", 503
-            )
-        voice = database_session.get(TTSVoice, selection.voice_id)
-        if voice is None:
-            raise TeacherSpeechError("TTS_VOICE_MISSING", "当前教师音色记录不存在", 503)
-        path = request.app.state.teacher_speech_service.synthesize(text, voice)
+        chunks = request.app.state.teacher_speech_service.stream(
+            text, selected_voice(database_session, current_user.id)
+        )
     except TeacherSpeechError as error:
         raise HTTPException(
             error.status_code, {"code": error.code, "message": str(error)}
         ) from error
-    return FileResponse(
-        path, media_type="audio/wav", headers={"Cache-Control": "private, no-store"}
+
+    def events():
+        def encode(event: dict) -> bytes:
+            return (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
+
+        try:
+            yield encode(
+                {
+                    "type": "format",
+                    "sampleRate": 24000,
+                    "channels": 1,
+                    "encoding": "pcm_s16le",
+                }
+            )
+            for chunk in chunks:
+                yield encode({"type": "audio", "data": base64.b64encode(chunk).decode("ascii")})
+            yield encode({"type": "done"})
+        except TeacherSpeechError as error:
+            # 响应头发出后用流内 error 结束，不能把截断音频当成成功。
+            yield encode({"type": "error", "code": error.code, "message": str(error)})
+        finally:
+            chunks.close()
+
+    return StreamingResponse(
+        events(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "private, no-store", "X-Accel-Buffering": "no"},
     )

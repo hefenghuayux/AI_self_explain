@@ -236,7 +236,7 @@ class ContextMiddleware:
 
     async def __call__(self, scope, receive, send):
         # 教师语音只读取已保存内容，不参与学习状态或历史压缩，不能阻塞学生操作。
-        if re.fullmatch(r"/api/sessions/\d+/teacher-speech", scope.get("path", "")):
+        if re.fullmatch(r"/api/sessions/\d+/teacher-speech(?:/stream)?", scope.get("path", "")):
             await self.app(scope, receive, send)
             return
         match = re.fullmatch(r"/api/sessions/(\d+)(?:/.*)?", scope.get("path", ""))

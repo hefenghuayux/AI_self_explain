@@ -6,6 +6,7 @@ import type {
   SessionHistoryItem,
 } from "../types/session"
 import { getAuthToken } from "../stores/auth"
+import { teacherSpeechAutoPlay } from "../stores/teacherSpeech"
 
 interface SessionApiErrorDetail {
   code?: string
@@ -26,12 +27,18 @@ export class SessionApiError extends Error {
 }
 
 export async function requestSessionApi<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = new Headers({
+    "Content-Type": "application/json",
+    ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
+  })
+  new Headers(options?.headers).forEach((value, key) => headers.set(key, value))
+  if (options?.method?.toUpperCase() === "POST"
+    && /^\/api\/sessions\/[^/]+\/(text-attempts|step-attempts|graded-step-attempts|request-support|ask-doubt|guided-answers|full-solution-understanding)$/.test(path)) {
+    headers.set("X-Teacher-Speech-Prewarm", String(teacherSpeechAutoPlay.value))
+  }
   const response = await fetch(path, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
-    },
     ...options,
+    headers,
   })
   if (!response.ok) {
     const responseBody = (await response.json()) as {

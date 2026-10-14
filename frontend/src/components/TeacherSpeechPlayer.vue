@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 
-import { fetchTeacherSpeech, type TeacherSpeechRequest } from "../api/teacher-speech"
+import { streamTeacherSpeech, type TeacherSpeechRequest } from "../api/teacher-speech"
+import { TeacherSpeechPlayback, type SpeechPlaybackState } from "../services/teacher-speech-playback"
 import { teacherSpeechAutoPlay as autoPlay, teacherSpeechVoiceVersion } from "../stores/teacherSpeech"
 
 const props = withDefaults(defineProps<{
@@ -12,7 +13,7 @@ const props = withDefaults(defineProps<{
   fullSolution?: boolean
 }>(), { disabled: false })
 
-type SpeechState = "idle" | "preparing" | "playing" | "paused" | "ended" | "blocked" | "failed"
+type SpeechState = "idle" | SpeechPlaybackState | "failed"
 const state = ref<SpeechState>("idle")
 const errorMessage = ref("")
 const selectedRequest = ref<TeacherSpeechRequest>(props.fullSolution
@@ -20,8 +21,9 @@ const selectedRequest = ref<TeacherSpeechRequest>(props.fullSolution
 const hasTarget = computed(() => "fullSolution" in selectedRequest.value || selectedRequest.value.itemIds.length > 0)
 let requestController: AbortController | undefined
 let generation = 0
-let audio: HTMLAudioElement | undefined
-let audioUrl: string | undefined
+let context: AudioContext | undefined
+let playback: TeacherSpeechPlayback | undefined
+let cachedAudio: { key: string; chunks: Uint8Array[] } | undefined
 
 const statusText = computed(() => {
   if (props.disabled) return "当前操作期间已停止语音"
@@ -42,46 +44,49 @@ const playLabel = computed(() => {
   return "播放语音"
 })
 
-function releaseAudio() {
-  if (audio) {
-    audio.onended = null
-    audio.onerror = null
-    audio.pause()
-    audio.removeAttribute("src")
-    audio = undefined
+function getAudioContext() {
+  if (!context) {
+    const AudioContextClass = window.AudioContext
+      ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioContextClass) throw new Error("当前浏览器不支持流式语音播放")
+    context = new AudioContextClass()
   }
-  if (audioUrl) URL.revokeObjectURL(audioUrl)
-  audioUrl = undefined
+  return context
 }
+
+// Unlock in the original user gesture, before recording/submission and network awaits.
+function unlockAudio(event: Event) {
+  if (!event.isTrusted || (playback && state.value === "paused")) return
+  try {
+    void getAudioContext().resume().catch(() => undefined)
+  } catch {
+    // Unsupported browsers report a visible error when playback is requested.
+  }
+}
+const unlockEvents = ["pointerdown", "touchend", "keydown"] as const
+onMounted(() => {
+  for (const event of unlockEvents) document.addEventListener(event, unlockAudio, { capture: true, passive: true })
+})
 
 function stop() {
   generation += 1
   requestController?.abort()
   requestController = undefined
-  releaseAudio()
+  playback?.stop()
+  playback = undefined
   state.value = "idle"
   errorMessage.value = ""
 }
 
-async function startPlayback(activeAudio: HTMLAudioElement, requestGeneration: number) {
-  try {
-    await activeAudio.play()
-    if (requestGeneration !== generation || activeAudio !== audio) {
-      activeAudio.pause()
-      return
-    }
-    state.value = "playing"
-    errorMessage.value = ""
-  } catch (error) {
-    if (requestGeneration !== generation || activeAudio !== audio) return
-    if ((error instanceof DOMException || error instanceof Error) && error.name === "NotAllowedError") {
-      state.value = "blocked"
-    } else {
-      state.value = "failed"
-      errorMessage.value = error instanceof Error ? error.message : String(error)
-      releaseAudio()
-    }
-  }
+function fail(error: unknown, requestGeneration: number) {
+  if (requestGeneration !== generation) return
+  requestController?.abort()
+  requestController = undefined
+  playback?.stop()
+  playback = undefined
+  cachedAudio = undefined
+  state.value = "failed"
+  errorMessage.value = error instanceof Error ? error.message : String(error)
 }
 
 async function synthesizeAndPlay() {
@@ -89,31 +94,37 @@ async function synthesizeAndPlay() {
   stop()
   const requestGeneration = generation
   const request = selectedRequest.value
-  const controller = new AbortController()
-  requestController = controller
+  const key = JSON.stringify([props.sessionId, request, teacherSpeechVoiceVersion.value])
   state.value = "preparing"
   try {
-    const blob = await fetchTeacherSpeech(props.sessionId, request, controller.signal)
-    if (requestGeneration !== generation) return
-    requestController = undefined
-    audioUrl = URL.createObjectURL(blob)
-    const activeAudio = new Audio(audioUrl)
-    audio = activeAudio
-    activeAudio.onended = () => {
-      if (requestGeneration === generation) state.value = "ended"
+    const activePlayback = new TeacherSpeechPlayback(getAudioContext(), (nextState) => {
+      if (requestGeneration === generation) state.value = nextState
+    })
+    playback = activePlayback
+    // Initiate resume before the first network await. A blocked resume must not hold up streaming.
+    void activePlayback.resume().catch((error) => fail(error, requestGeneration))
+    if (cachedAudio?.key === key) {
+      for (const chunk of cachedAudio.chunks) activePlayback.append(chunk)
+      activePlayback.finish()
+      return
     }
-    activeAudio.onerror = () => {
+    cachedAudio = undefined
+    const chunks: Uint8Array[] = []
+    const controller = new AbortController()
+    requestController = controller
+    await streamTeacherSpeech(props.sessionId, request, controller.signal, (chunk) => {
       if (requestGeneration !== generation) return
-      state.value = "failed"
-      errorMessage.value = "音频加载或解码失败，请重试"
-      releaseAudio()
-    }
-    await startPlayback(activeAudio, requestGeneration)
-  } catch (error) {
+      if (chunk.type === "audio") {
+        chunks.push(chunk.data)
+        activePlayback.append(chunk.data)
+      }
+    })
     if (requestGeneration !== generation) return
     requestController = undefined
-    state.value = "failed"
-    errorMessage.value = error instanceof Error ? error.message : String(error)
+    activePlayback.finish()
+    cachedAudio = { key, chunks }
+  } catch (error) {
+    fail(error, requestGeneration)
   }
 }
 
@@ -132,16 +143,25 @@ async function playSolution() {
 
 async function play() {
   if (props.disabled) return
-  if (audio && (state.value === "paused" || state.value === "blocked")) {
-    await startPlayback(audio, generation)
+  if (playback && (state.value === "paused" || state.value === "blocked")) {
+    const requestGeneration = generation
+    try {
+      await playback.resume()
+    } catch (error) {
+      fail(error, requestGeneration)
+    }
   } else {
     await synthesizeAndPlay()
   }
 }
 
-function pause() {
-  audio?.pause()
-  state.value = "paused"
+async function pause() {
+  const requestGeneration = generation
+  try {
+    await playback?.pause()
+  } catch (error) {
+    fail(error, requestGeneration)
+  }
 }
 
 watch(autoPlay, (enabled) => {
@@ -159,9 +179,14 @@ watch(() => props.fullSolution, (fullSolution) => {
 watch(() => props.disabled, (disabled) => {
   if (disabled) stop()
 })
-watch(() => props.sessionId, stop)
-watch(teacherSpeechVoiceVersion, stop, { flush: "sync" })
-onBeforeUnmount(stop)
+watch(() => props.sessionId, () => { stop(); cachedAudio = undefined })
+watch(teacherSpeechVoiceVersion, () => { stop(); cachedAudio = undefined }, { flush: "sync" })
+onBeforeUnmount(() => {
+  stop()
+  cachedAudio = undefined
+  for (const event of unlockEvents) document.removeEventListener(event, unlockAudio, { capture: true })
+  void context?.close().catch(() => undefined)
+})
 
 defineExpose({ playReply, playSolution, stop })
 </script>

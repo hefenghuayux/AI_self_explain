@@ -14,6 +14,7 @@ from fastapi import (
     status,
 )
 
+from app.api.teacher_speech import prewarm_teacher_reply
 from app.core.auth import CurrentUser, DatabaseSession, get_current_user
 from app.core.logging import bind_trace_context, new_correlation_id, reset_trace_context
 from app.models.explanation_attempt import ExplanationAttempt
@@ -463,6 +464,7 @@ def submit_step_attempt(
     )
 
 
+@prewarm_teacher_reply
 def evaluate_explanation_attempt(
     *,
     repository: SessionRepository,
@@ -587,6 +589,7 @@ def continue_explaining(
 
 
 @router.post("/{session_id}/request-support", response_model=SessionResponse)
+@prewarm_teacher_reply
 def request_support(
     session_id: int,
     action_input: HelpRequestInput,
@@ -652,6 +655,7 @@ def request_support(
 
 
 @router.post("/{session_id}/ask-doubt", response_model=SessionResponse)
+@prewarm_teacher_reply
 def ask_doubt(
     session_id: int,
     action_input: DoubtRequestInput,
@@ -719,6 +723,7 @@ def ask_doubt(
 
 
 @router.post("/{session_id}/guided-answers", response_model=SessionResponse)
+@prewarm_teacher_reply
 def submit_guided_answers(
     session_id: int,
     action_input: GuidedAnswersInput,
@@ -880,6 +885,7 @@ def appeal(
 
 
 @router.post("/{session_id}/full-solution-understanding", response_model=SessionResponse)
+@prewarm_teacher_reply
 def respond_to_first_solution(
     session_id: int,
     understanding_input: SolutionUnderstandingInput,

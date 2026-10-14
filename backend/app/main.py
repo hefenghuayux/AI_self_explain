@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import time
@@ -61,6 +62,7 @@ def create_app(settings: Settings) -> FastAPI:
         try:
             yield
         finally:
+            await asyncio.to_thread(application.state.teacher_speech_service.close)
             ai_http_client.close()
             tts_http_client.close()
             database_engine.dispose()

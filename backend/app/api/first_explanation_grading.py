@@ -48,6 +48,8 @@ def _schedule_parallel_tasks(
                 session_id=session_id,
                 attempt_id=attempt_id,
                 grading_id=grading_id,
+                teacher_speech_service=request.app.state.teacher_speech_service,
+                prewarm_speech=request.headers.get("X-Teacher-Speech-Prewarm") == "true",
             )
         except Exception:
             logger.exception("首次自讲后台任务未完成 session=%s", session_id)

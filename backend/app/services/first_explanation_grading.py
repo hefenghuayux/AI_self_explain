@@ -149,7 +149,7 @@ def run_grading(
 
 def run_parallel_tasks(
     *, settings, http_client, database_session_factory, session_id: int, attempt_id: int,
-    grading_id: int,
+    grading_id: int, teacher_speech_service=None, prewarm_speech: bool = False,
 ):
     def run_evaluation() -> None:
         from app.api.sessions import evaluate_explanation_attempt
@@ -160,8 +160,12 @@ def run_parallel_tasks(
             if session is None or attempt is None:
                 return
             request = SimpleNamespace(
+                headers={"X-Teacher-Speech-Prewarm": "true"} if prewarm_speech else {},
                 app=SimpleNamespace(
-                    state=SimpleNamespace(settings=settings, ai_http_client=http_client)
+                    state=SimpleNamespace(
+                        settings=settings, ai_http_client=http_client,
+                        teacher_speech_service=teacher_speech_service,
+                    )
                 )
             )
             try:

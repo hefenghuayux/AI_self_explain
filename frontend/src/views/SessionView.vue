@@ -139,14 +139,16 @@ watch(submitting, (busy) => {
   if (busy) stopTeacherSpeech()
 }, { flush: "sync" })
 
-watch(submitting, async (busy) => {
-  if (busy) return
+watch([submitting, voiceRecording, canShowTeachingContent], async ([busy, recording, visible], [, , previouslyVisible]) => {
+  // 首次评分确认与评价完成后，只为本次解除门槛的回复排队；已确认的历史加载保持静音。
+  if (visible && !previouslyVisible && !loading.value) pendingSpeechIds = [...teacherReplyIds.value]
+  if (busy || recording || !visible) return
   const ids = pendingSpeechIds
   const generation = speechGeneration
   pendingSpeechIds = []
   if (!ids.length) return
   await nextTick()
-  if (generation === speechGeneration && !submitting.value && !voiceRecording.value) {
+  if (generation === speechGeneration && canShowTeachingContent.value && !submitting.value && !voiceRecording.value) {
     void teacherSpeechRef.value?.playReply(ids)
   }
 }, { flush: "post" })
@@ -454,7 +456,7 @@ async function pollGrading() {
 }
 function startGradingPolling() { if (gradingPollTimer) return; void pollGrading(); gradingPollTimer = setInterval(() => { void pollGrading() }, 2000) }
 function stopGradingPolling() { if (gradingPollTimer) clearInterval(gradingPollTimer); gradingPollTimer = undefined }
-async function acknowledgeGradingResult() { if (!grading.value) return; try { grading.value = await acknowledgeGrading(sessionId); await loadSessionData() } catch (error) { errorMessage.value = error instanceof Error ? error.message : String(error) } }
+async function acknowledgeGradingResult() { if (!grading.value) return; try { await acknowledgeGrading(sessionId); await loadSessionData() } catch (error) { errorMessage.value = error instanceof Error ? error.message : String(error) } }
 async function retryGradingResult() { gradingRetrying.value = true; try { grading.value = await retryGrading(sessionId); startGradingPolling() } catch (error) { errorMessage.value = error instanceof Error ? error.message : String(error) } finally { gradingRetrying.value = false } }
 
 async function refreshTimeline() {
