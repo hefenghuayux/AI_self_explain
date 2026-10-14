@@ -56,6 +56,9 @@ const router = useRouter()
 const session = ref<Session>()
 const question = ref<Question>()
 const timeline = ref<LearningTimelineItem[]>([])
+const firstGradingSubmissionText = computed(() => timeline.value.find((item) =>
+  item.eventType === "SUBMISSION" && item.submissionType === "SELF_EXPLANATION",
+)?.content ?? "")
 const grading = ref<Grading | null>(null)
 const gradingRetrying = ref(false)
 let gradingPollTimer: ReturnType<typeof setInterval> | undefined
@@ -978,7 +981,7 @@ async function respondToSolution(understood: boolean) {
         <section v-if="question" class="question-content" aria-label="题目">
           <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </section>
-        <FirstExplanationGrading :grading="grading" :retrying="gradingRetrying" @retry="retryGradingResult" @acknowledge="acknowledgeGradingResult" />
+        <FirstExplanationGrading :grading="grading" :retrying="gradingRetrying" :submission-text="firstGradingSubmissionText" @retry="retryGradingResult" @acknowledge="acknowledgeGradingResult" />
         <el-alert v-if="gradingPollError" :title="gradingPollError" type="error" :closable="false" show-icon />
         <section v-if="canShowTeachingContent && nextStepText" class="session-section feedback-section" aria-label="学习反馈" aria-live="polite">
           <div class="feedback-card">
