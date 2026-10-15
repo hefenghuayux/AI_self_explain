@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -23,7 +24,7 @@ class ExternalCallRecord(Base):
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     error_type: Mapped[str | None] = mapped_column(String(50))
     error_message: Mapped[str | None] = mapped_column(Text)
-    raw_response: Mapped[str | None] = mapped_column(Text)
+    raw_response: Mapped[str | None] = mapped_column(Text().with_variant(mysql.LONGTEXT(), "mysql"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

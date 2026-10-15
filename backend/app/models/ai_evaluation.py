@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -23,7 +24,7 @@ class AIEvaluation(Base):
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
     model_provider: Mapped[str] = mapped_column(String(100), nullable=False)
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    raw_response: Mapped[str | None] = mapped_column(Text)
+    raw_response: Mapped[str | None] = mapped_column(Text().with_variant(mysql.LONGTEXT(), "mysql"))
     validation_status: Mapped[str] = mapped_column(String(30), nullable=False)
     validation_errors: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     request_duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)

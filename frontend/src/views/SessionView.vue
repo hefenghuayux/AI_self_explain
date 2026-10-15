@@ -491,8 +491,9 @@ function isVersionConflict(error: unknown): boolean {
   return error instanceof SessionApiError && error.status === 409
 }
 
-async function handleAIServiceUnavailable(error: unknown, draftContent = "") {
-  if (!(error instanceof SessionApiError) || error.code !== "AI_SERVICE_UNAVAILABLE") {
+async function handleAIRequestFailure(error: unknown, draftContent = "") {
+  if (!(error instanceof SessionApiError)
+    || !["AI_SERVICE_UNAVAILABLE", "AI_OPERATION_FAILED"].includes(error.code ?? "")) {
     return false
   }
   if (draftContent.trim()) {
@@ -510,7 +511,9 @@ async function handleAIServiceUnavailable(error: unknown, draftContent = "") {
   } catch (refreshError) {
     console.error("AI 服务调用失败后刷新会话失败", refreshError)
   }
-  errorMessage.value = "AI服务调用失败，请稍后再试"
+  errorMessage.value = error.code === "AI_SERVICE_UNAVAILABLE"
+    ? "AI服务调用失败，请稍后再试"
+    : error.message
   return true
 }
 
@@ -855,7 +858,7 @@ async function submitExplanation() {
     explanationSubmitting.value = false
     if (isVersionConflict(error)) {
       await reloadAfterVersionConflict(currentStepContent.value)
-    } else if (!(await handleAIServiceUnavailable(error, draftContent))) {
+    } else if (!(await handleAIRequestFailure(error, draftContent))) {
       errorMessage.value = error instanceof Error ? error.message : String(error)
     }
     if (error instanceof SessionApiError && error.code === "TEACHING_GENERATION_FAILED") {
@@ -1036,7 +1039,7 @@ async function submitDoubt() {
     await refreshTimeline()
   } catch (error) {
     if (request && !isActiveAIRequest(request)) return
-    if (await handleAIServiceUnavailable(error)) {
+    if (await handleAIRequestFailure(error)) {
       clearVoiceAttemptId("DOUBT")
     } else {
       errorMessage.value = error instanceof Error ? error.message : String(error)
@@ -1091,7 +1094,7 @@ async function submitMasteryAnswers() {
     await refreshTimeline()
   } catch (error) {
     if (!isActiveAIRequest(request)) return
-    if (!(await handleAIServiceUnavailable(error))) {
+    if (!(await handleAIRequestFailure(error))) {
       errorMessage.value = error instanceof Error ? error.message : String(error)
     }
   } finally {
@@ -1126,7 +1129,7 @@ async function submitGuidedQuestionAnswer(questionId: string) {
     await refreshTimeline()
   } catch (error) {
     if (!isActiveAIRequest(request)) return
-    if (await handleAIServiceUnavailable(error)) {
+    if (await handleAIRequestFailure(error)) {
       clearVoiceAttemptId("GUIDED_ANSWER", questionId)
     } else {
       errorMessage.value = error instanceof Error ? error.message : String(error)
@@ -1184,7 +1187,7 @@ async function respondToSolution(understood: boolean) {
     await refreshTimeline()
   } catch (error) {
     if (!isActiveAIRequest(request)) return
-    if (!(await handleAIServiceUnavailable(error))) {
+    if (!(await handleAIRequestFailure(error))) {
       errorMessage.value = error instanceof Error ? error.message : String(error)
     }
   } finally {
@@ -1236,7 +1239,7 @@ async function respondToSolution(understood: boolean) {
           <h2>老师回复</h2><p class="stream-preview__status" role="status">正在生成，完成后确认内容。</p>
           <p v-for="preview in teachingPreviews" :key="preview.key" class="stream-preview__text">{{ preview.text }}</p>
         </section>
-        <div v-if="cancellableRunId && activeSegment !== 'selfExplain'" class="actions cancel-run-actions">
+        <div v-if="cancellableRunId && !['selfExplain', 'guidedAnswers'].includes(activeSegment)" class="actions cancel-run-actions">
           <el-button data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
         </div>
         <el-alert v-if="gradingPollError" :title="gradingPollError" type="error" :closable="false" show-icon />
@@ -1336,6 +1339,14 @@ async function respondToSolution(understood: boolean) {
                           || session.flowStage !== 'WAIT_GUIDED_ANSWERS'"
                         @click="submitGuidedQuestionAnswer(item.id)"
                       >提交</el-button>
+                      <el-button
+                        v-if="cancellableRunId"
+                        data-testid="cancel-current-run"
+                        type="danger"
+                        plain
+                        :loading="cancelling"
+                        @click="stopCurrentRun"
+                      >中断生成</el-button>
                       <VoiceRecorder
                         v-if="session.flowStage === 'WAIT_GUIDED_ANSWERS' && !guidedAnswerSubmitted(item.id)"
                         ref="guidedVoiceRecorderRefs"

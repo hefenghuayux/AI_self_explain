@@ -40,6 +40,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sessions", tags=["ai-stream"])
 
 
+def _failure_flow_stage(run_snapshot: dict[str, object]) -> str:
+    flow_stage = run_snapshot.get("flowStage")
+    return (
+        flow_stage
+        if isinstance(flow_stage, str) and flow_stage != "AI_EVALUATING"
+        else "CAPTURING_INPUT"
+    )
+
+
 class AIRunInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     run_id: UUID = Field(alias="runId")
@@ -196,7 +205,7 @@ async def _execute(
                     if error_detail and session.flow_stage == "AI_EVALUATING":
                         SessionRepository(db).record_ai_service_failure(
                             session=session,
-                            flow_stage="CAPTURING_INPUT",
+                            flow_stage=_failure_flow_stage(record.snapshot),
                             trigger_type="AI_STREAM_FAILED",
                         )
                         # The existing failure recorder commits; reacquire the cancellation guard.
