@@ -44,7 +44,11 @@ def speech_item_text(item: dict) -> str:
     text = str(item["content"])
     if item["event_type"] not in NUMBERED_SPEECH_EVENT_TYPES:
         return text
-    return re.sub(r"(?m)^\s*\d+\s*[.．、](?:\s+|$)", "", text).strip()
+    return re.sub(
+        r"(?m)^\s*\d+\s*[ \t]*(?:(?:[.．、](?!\d))|…{1,3})[ \t]*",
+        "",
+        text,
+    ).strip()
 
 
 def selected_voice(database_session, user_id: int) -> TTSVoice:

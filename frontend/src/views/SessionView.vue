@@ -1444,11 +1444,12 @@ async function respondToSolution(understood: boolean) {
                 <template v-if="canShowTeachingContent && session.masteryCheck?.questions?.length">
                   <div v-if="speechControlsTarget === '#mastery-speech'" class="speech-content-heading"><span id="mastery-speech" class="speech-anchor" /><span>掌握度核验</span></div>
                   <p class="mastery-check-hint">请回答下面的核验问题，确认你是否真的掌握。</p>
-                  <div v-for="item in session.masteryCheck.questions" :key="item.id" class="guided-question">
-                    <p>{{ item.question }}</p>
+                  <div v-for="(item, index) in session.masteryCheck.questions" :key="item.id" class="guided-question">
                     <el-input
                       v-model="masteryAnswerText[item.id]"
                       :data-testid="`mastery-answer-${item.id}`"
+                      :aria-label="`回答第 ${index + 1} 个核验问题`"
+                      placeholder="请回答上方老师回复中的核验问题"
                       type="textarea"
                       :rows="5"
                       :disabled="submitting || masteryCheckCompleted()"
@@ -1577,12 +1578,6 @@ async function respondToSolution(understood: boolean) {
               </div>
             </div>
           </section>
-        <template v-if="!isTerminalSession() || teachingEvaluationPending">
-          <section v-if="!teacherReplyPending && canShowTeachingContent && session.flowStage === 'WAIT_MASTERY_CHECK'" class="session-section mastery-check-state">
-            <h2>掌握度核验</h2>
-            <p class="mastery-check-note">请到上方「掌握度核验」中回答下面的问题；全部通过即完成本题。</p>
-          </section>
-        </template>
         <section v-if="canShowTeachingContent && session.needHumanReason && session.status === 'IN_PROGRESS'" class="session-section"><el-alert title="已申请人工复核，你可以继续自讲。" type="warning" :closable="false" show-icon /></section>
         <TeacherSpeechPlayer
           v-if="canShowTeachingContent"
@@ -1673,7 +1668,6 @@ h2 { font-size: var(--font-size-lg); }
 .mastery-result { margin: var(--space-2) 0 0; font-weight: 400; }
 .mastery-result.is-positive { color: var(--color-success, #15803d); }
 .mastery-result.is-attention { color: var(--color-warning, #b45309); }
-.mastery-check-note { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
 .step-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); }
 .session-section .recording-help { margin: var(--space-2) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .step-content-input {
