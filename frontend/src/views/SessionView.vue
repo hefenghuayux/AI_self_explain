@@ -104,6 +104,7 @@ const doubtControllers = new Map<string, AbortController>()
 const appealDraft = ref("")
 const loading = ref(true)
 const submitting = ref(false)
+const doubtSubmitting = ref(false)
 const cancelling = ref(false)
 const activeAiRequest = ref<{ runId: string; controller: AbortController; previousStage: FlowStage } | null>(null)
 let aiRequestGeneration = 0
@@ -1094,10 +1095,11 @@ async function followIndependentDoubt(runId: string) {
 async function submitDoubt(retryQuestion?: string) {
   if (!session.value) return
   const text = retryQuestion ?? doubtDraft.value
-  if (!text.trim()) return
+  if (!text.trim() || doubtSubmitting.value) return
   const runId = crypto.randomUUID()
   independentDoubts.value.push({ runId, status: "RUNNING", question: text, result: null, error: null })
   // 独立答疑不占用主流程请求，接收成功后才清空仍未编辑的原草稿。
+  doubtSubmitting.value = true
   try {
     await startIndependentDoubt(sessionId, runId, text, currentStepContent.value || session.value.currentDraft)
     if (pageDetached) return
@@ -1110,6 +1112,8 @@ async function submitDoubt(retryQuestion?: string) {
       row.status = "FAILED"
       row.error = { message: error instanceof Error ? error.message : String(error), code: error instanceof SessionApiError ? error.code ?? "" : "", status: error instanceof SessionApiError ? error.status : 503 }
     }
+  } finally {
+    doubtSubmitting.value = false
   }
 }
 
@@ -1483,8 +1487,8 @@ async function respondToSolution(understood: boolean) {
                   <el-button
                     data-testid="submit-doubt"
                     type="primary"
-                    :loading="submitting"
-                    :disabled="!doubtDraft.trim() || submitting || cancelling || voiceRecording"
+                    :loading="doubtSubmitting"
+                    :disabled="!doubtDraft.trim() || doubtSubmitting || submitting || cancelling || voiceRecording"
                     @click="submitDoubt()"
                   >发送</el-button>
                   <el-button
