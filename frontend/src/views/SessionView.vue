@@ -194,9 +194,13 @@ watch(submitting, (busy) => {
   if (busy) stopTeacherSpeech()
 }, { flush: "sync" })
 
-watch([submitting, voiceRecording, canShowTeachingContent], async ([busy, recording, visible], [, , previouslyVisible]) => {
-  // 首次评分确认与评价完成后，只为本次解除门槛的回复排队；已确认的历史加载保持静音。
-  if (visible && !previouslyVisible && !loading.value) pendingSpeechIds = [...teacherReplyIds.value]
+watch([submitting, voiceRecording, canShowTeachingContent, teacherReplyIds], async ([busy, recording, visible, replyIds], [, , previouslyVisible, previousIds]) => {
+  // 关闭评分时播放已生成的回复；随后由流式或轮询加载的新回复也在此排队，历史加载保持静音。
+  if (visible && !loading.value) {
+    const knownIds = new Set(previouslyVisible ? previousIds : [])
+    const newIds = replyIds.filter((id) => !knownIds.has(id))
+    pendingSpeechIds = [...new Set([...pendingSpeechIds, ...newIds])]
+  }
   if (busy || recording || !visible) return
   const ids = pendingSpeechIds
   const generation = speechGeneration
@@ -541,11 +545,10 @@ async function pollGrading() {
 }
 function startGradingPolling() { if (gradingPollTimer) return; void pollGrading(); gradingPollTimer = setInterval(() => { void pollGrading() }, 2000) }
 function stopGradingPolling() { gradingPollGeneration += 1; if (gradingPollTimer) clearInterval(gradingPollTimer); gradingPollTimer = undefined }
-async function acknowledgeGradingResult() { if (!grading.value) return; try { await acknowledgeGrading(sessionId); await loadSessionData() } catch (error) { errorMessage.value = error instanceof Error ? error.message : String(error) } }
+async function acknowledgeGradingResult() { if (!grading.value) return; try { grading.value = await acknowledgeGrading(sessionId) } catch (error) { errorMessage.value = error instanceof Error ? error.message : String(error) } }
 async function retryGradingResult() {
   if (cancelling.value || !session.value) return
   gradingRetrying.value = true
-  gradingDismissed.value = false
   const request = beginAIRequest()
   try {
     const nextGrading = await retryGrading(sessionId, request.runId, request.controller.signal)
@@ -674,19 +677,10 @@ async function stopCurrentRun() {
 }
 
 async function refreshTimeline() {
-  const knownIds = new Set(timeline.value.map((item) => item.id))
   const generation = aiRequestGeneration
   const refreshedTimeline = await fetchLearningTimeline(sessionId)
   if (generation !== aiRequestGeneration) return
   timeline.value = refreshedTimeline
-  const ids = refreshedTimeline.filter((item) => canShowTeachingContent.value && !knownIds.has(item.id) && isSpokenReply(item))
-    .map((item) => item.id)
-  if (submitting.value) {
-    pendingSpeechIds = ids
-  } else if (ids.length && !voiceRecording.value) {
-    await nextTick()
-    void teacherSpeechRef.value?.playReply(ids)
-  }
 }
 
 function timelineTitle(item: LearningTimelineItem) {
@@ -1234,7 +1228,7 @@ async function respondToSolution(understood: boolean) {
         <section v-if="question" class="question-content" aria-label="题目">
           <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </section>
-        <FirstExplanationGrading :grading="grading" :retrying="gradingRetrying" :submission-text="firstGradingSubmissionText" :preview-fields="gradingPreviewFields" :stream-run-id="gradingStreamRunId" @open="gradingDismissed = false" @close="gradingDismissed = true" @retry="retryGradingResult" @acknowledge="acknowledgeGradingResult" />
+        <FirstExplanationGrading :grading="grading" :retrying="gradingRetrying" :submission-text="firstGradingSubmissionText" :preview-fields="gradingPreviewFields" :stream-run-id="gradingStreamRunId" @close="gradingDismissed = true" @retry="retryGradingResult" @acknowledge="acknowledgeGradingResult" />
         <section v-if="canShowTeachingContent && teachingPreviews.length" class="session-section stream-preview" aria-label="老师回复正在生成" aria-live="polite" aria-busy="true">
           <h2>老师回复</h2><p class="stream-preview__status" role="status">正在生成，完成后确认内容。</p>
           <p v-for="preview in teachingPreviews" :key="preview.key" class="stream-preview__text">{{ preview.text }}</p>
@@ -1248,7 +1242,7 @@ async function respondToSolution(understood: boolean) {
             <div class="feedback-next-step"><span id="next-step-speech" class="speech-anchor" /><p><strong>下一步：</strong>{{ nextStepText }}</p></div>
           </div>
         </section>
-        <div v-if="speechControlsTarget === '#latest-reply-speech'" class="speech-content-heading"><span id="latest-reply-speech" class="speech-anchor" /><span>老师回复</span></div>
+        <div v-if="speechControlsTarget === '#latest-reply-speech'" class="speech-content-heading"><span id="latest-reply-speech" class="speech-anchor" /></div>
           <section class="session-section input-section" aria-label="当前输入与主操作">
             <el-segmented
               v-model="activeSegment"

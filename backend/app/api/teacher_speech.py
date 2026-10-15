@@ -10,7 +10,6 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.auth import CurrentUser, DatabaseSession
-from app.models.first_explanation_grading import FirstExplanationGrading
 from app.models.question import Question
 from app.models.session import Session
 from app.models.tts_voice import TTSSpeechSettings, TTSVoice
@@ -201,20 +200,7 @@ def stream_teacher_speech(
     database_session: DatabaseSession,
     current_user: CurrentUser,
 ) -> StreamingResponse:
-    session, text = speech_source(session_id, speech_input, database_session, current_user)
-    # 预热允许在评分期间运行；直接请求播放也必须遵守前端相同的确认门槛。
-    from sqlalchemy import select
-
-    grading = database_session.scalar(
-        select(FirstExplanationGrading)
-        .where(FirstExplanationGrading.session_id == session.id)
-        .order_by(FirstExplanationGrading.id.desc())
-        .limit(1)
-    )
-    if grading is not None and (
-        grading.acknowledged_at is None or grading.evaluation_status not in {"SUCCEEDED", "FAILED"}
-    ):
-        raise HTTPException(403, "请先确认首次评分结果再播放教师回复")
+    _, text = speech_source(session_id, speech_input, database_session, current_user)
     try:
         chunks = request.app.state.teacher_speech_service.stream(
             text, selected_voice(database_session, current_user.id)
