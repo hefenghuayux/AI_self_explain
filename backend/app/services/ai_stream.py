@@ -204,7 +204,7 @@ def visible_path(purpose: str, path: tuple) -> bool:
             and isinstance(path[1], int)
             and path[2] == "question"
         )
-    if purpose == "GUIDED_ANSWER_ASSESSMENT":
+    if purpose in {"GUIDED_ANSWER_ASSESSMENT", "INDEPENDENT_DOUBT"}:
         return path == ("content",)
     if purpose == "AI_MASTERY_CHECK":
         return (

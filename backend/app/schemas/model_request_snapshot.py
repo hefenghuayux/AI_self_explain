@@ -48,6 +48,7 @@ class ModelRequestSnapshot(BaseModel):
         "AI_EVALUATION",
         "AI_TEACHING",
         "AI_SUPPORT",
+        "INDEPENDENT_DOUBT",
         "GUIDED_ANSWER_ASSESSMENT",
         "AI_MASTERY_CHECK",
         "MASTERY_CHECK_ASSESSMENT",

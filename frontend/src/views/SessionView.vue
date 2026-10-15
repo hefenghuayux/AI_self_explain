@@ -3,7 +3,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 
 import {
-  askDoubt,
   cancelCurrentRun,
   continueExplaining,
   createSession,
@@ -18,7 +17,8 @@ import {
   submitSolutionUnderstanding,
 } from "../api/sessions"
 import { acknowledgeGrading, fetchGrading, retryGrading, submitGradedStepAttempt } from "../api/grading"
-import { registerAIStreamListener, subscribeAIRun, type AIRunSnapshot } from "../api/ai-stream"
+import { fetchIndependentDoubts, startIndependentDoubt, type IndependentDoubt } from "../api/doubts"
+import { AIStreamError, registerAIStreamListener, subscribeAIRun, type AIRunSnapshot } from "../api/ai-stream"
 import {
   fetchSessionSteps,
   submitStepAttempt,
@@ -104,6 +104,9 @@ const formulaEditorRef = ref<InstanceType<typeof FormulaEditor>>()
 const guidedAnswerText = ref<Record<string, string>>({})
 const masteryAnswerText = ref<Record<string, string>>({})
 const doubtDraft = ref("")
+const independentDoubts = ref<IndependentDoubt[]>([])
+const doubtHistoryError = ref("")
+const doubtControllers = new Map<string, AbortController>()
 const appealDraft = ref("")
 const loading = ref(true)
 const submitting = ref(false)
@@ -529,6 +532,7 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  if (session.value && !pageDetached) await loadIndependentDoubts()
 })
 
 async function pollGrading() {
@@ -697,11 +701,10 @@ function timelineItemClass(item: LearningTimelineItem) {
 }
 
 function canUseSegment(segment: SegmentKey) {
-  if (segment === "selfExplain") return Boolean(session.value)
+  if (segment === "selfExplain" || segment === "doubt") return Boolean(session.value)
   if (!session.value || submitting.value || cancelling.value || runPending.value) return false
   if (segment === "guidedAnswers") return showGuidedAnswers.value
   if (segment === "masteryCheck") return session.value.status === "IN_PROGRESS" && session.value.flowStage === "WAIT_MASTERY_CHECK"
-  if (segment === "doubt") return canSubmitStudentInterruption()
   return hasAppealableAiResponse() && canSubmitStudentInterruption()
 }
 
@@ -716,6 +719,7 @@ const segmentOptions = computed(() => segmentEntries
   })))
 
 function syncActiveSegmentWithStage() {
+  if (activeSegment.value === "doubt") return
   if (showGuidedAnswers.value) {
     activeSegment.value = "guidedAnswers"
   } else if (session.value?.status === "IN_PROGRESS" && session.value.flowStage === "WAIT_MASTERY_CHECK") {
@@ -910,16 +914,6 @@ function stopVoiceRecorder(voiceKey: string) {
   }
 }
 
-async function startDoubtVoiceRecording() {
-  if (!session.value || submitting.value) return
-  if (session.value.flowStage === "WAIT_INITIAL_CHOICE") {
-    await chooseInitialChoice("HAS_QUESTION")
-    await nextTick()
-  }
-  if (!canSubmitStudentInterruption()) return
-  await doubtVoiceRecorderRef.value?.start()
-}
-
 function appendTranscript(currentText: string, transcript: string) {
   const trimmedCurrentText = currentText.trimEnd()
   return trimmedCurrentText ? `${trimmedCurrentText}\n${transcript}` : transcript
@@ -993,6 +987,8 @@ onBeforeUnmount(() => {
   activeAiRequest.value = null
   detachStreamListener?.()
   request?.controller.abort()
+  doubtControllers.forEach((controller) => controller.abort())
+  doubtControllers.clear()
   stopGradingPolling()
   stopTeacherSpeech()
   stepVoiceRecorderRef.value?.stop()
@@ -1002,44 +998,60 @@ onBeforeUnmount(() => {
   guidedVoiceRecorderRefs.value.forEach((recorder) => recorder.stop())
 })
 
-async function submitDoubt() {
-  if (!session.value || cancelling.value) return
-  if (!doubtDraft.value.trim()) {
-    errorMessage.value = "请先输入你的疑问"
-    return
-  }
-  submitting.value = true
-  errorMessage.value = ""
-  let request: ReturnType<typeof beginAIRequest> | undefined
+async function loadIndependentDoubts() {
+  doubtHistoryError.value = ""
   try {
-    if (session.value.flowStage === "WAIT_INITIAL_CHOICE") {
-      session.value = await submitInitialChoice(sessionId, "HAS_QUESTION", session.value.version)
+    const rows = await fetchIndependentDoubts(sessionId)
+    if (pageDetached) return
+    const localIds = new Set(independentDoubts.value.map((row) => row.runId))
+    independentDoubts.value = [...rows.filter((row) => !localIds.has(row.runId)), ...independentDoubts.value]
+    for (const row of rows) {
+      if (row.status === "RUNNING" && !doubtControllers.has(row.runId)) void followIndependentDoubt(row.runId)
     }
-    const voiceAttemptId = getVoiceAttemptId("DOUBT")
-    request = beginAIRequest()
-    const nextSession = await askDoubt(
-      sessionId,
-      session.value.currentDraft,
-      doubtDraft.value,
-      session.value.version,
-      voiceAttemptId,
-      request.runId,
-      request.controller.signal,
-    )
-    if (!isActiveAIRequest(request)) return
-    session.value = nextSession
-    clearVoiceAttemptId("DOUBT")
-    syncActiveSegmentWithStage()
-    await refreshTimeline()
   } catch (error) {
-    if (request && !isActiveAIRequest(request)) return
-    if (await handleAIRequestFailure(error)) {
-      clearVoiceAttemptId("DOUBT")
-    } else {
-      errorMessage.value = error instanceof Error ? error.message : String(error)
+    doubtHistoryError.value = error instanceof Error ? error.message : String(error)
+  }
+}
+
+async function followIndependentDoubt(runId: string) {
+  const controller = new AbortController()
+  doubtControllers.set(runId, controller)
+  try {
+    const result = await subscribeAIRun<{ content: string }>(sessionId, runId, { signal: controller.signal })
+    if (pageDetached) return
+    const row = independentDoubts.value.find((item) => item.runId === runId)
+    if (row) { row.status = "SUCCEEDED"; row.result = result; row.error = null }
+  } catch (error) {
+    if (controller.signal.aborted || pageDetached) return
+    const row = independentDoubts.value.find((item) => item.runId === runId)
+    if (row) {
+      row.status = error instanceof AIStreamError && error.code === "AI_RUN_CANCELLED" ? "CANCELLED" : "FAILED"
+      row.error = { message: error instanceof Error ? error.message : String(error), code: error instanceof AIStreamError ? error.code ?? "" : "AI_SERVICE_UNAVAILABLE", status: error instanceof AIStreamError ? error.status : 503 }
     }
   } finally {
-    if (!request || isActiveAIRequest(request)) { activeAiRequest.value = null; submitting.value = false }
+    doubtControllers.delete(runId)
+  }
+}
+
+async function submitDoubt(retryQuestion?: string) {
+  if (!session.value) return
+  const text = retryQuestion ?? doubtDraft.value
+  if (!text.trim()) return
+  const runId = crypto.randomUUID()
+  independentDoubts.value.push({ runId, status: "RUNNING", question: text, result: null, error: null })
+  // 独立答疑不占用主流程请求，接收成功后才清空仍未编辑的原草稿。
+  try {
+    await startIndependentDoubt(sessionId, runId, text, currentStepContent.value || session.value.currentDraft)
+    if (pageDetached) return
+    if (retryQuestion === undefined && doubtDraft.value === text) doubtDraft.value = ""
+    void followIndependentDoubt(runId)
+  } catch (error) {
+    if (pageDetached) return
+    const row = independentDoubts.value.find((item) => item.runId === runId)
+    if (row) {
+      row.status = "FAILED"
+      row.error = { message: error instanceof Error ? error.message : String(error), code: error instanceof SessionApiError ? error.code ?? "" : "", status: error instanceof SessionApiError ? error.status : 503 }
+    }
   }
 }
 
@@ -1398,16 +1410,14 @@ async function respondToSolution(understood: boolean) {
                   type="textarea"
                   :rows="5"
                   placeholder="请输入你的疑问点"
-                  :disabled="submitting"
                 />
                 <div class="actions">
                     <el-button
                       data-testid="submit-doubt"
                       type="primary"
-                      :loading="submitting"
-                      :disabled="submitting || cancelling || runPending || voiceRecording || !canSubmitStudentInterruption()"
-                      @click="submitDoubt"
-                    >提交</el-button>
+                      :disabled="!doubtDraft.trim()"
+                      @click="submitDoubt()"
+                    >发送</el-button>
                   <VoiceRecorder
                     v-if="canSubmitStudentInterruption()"
                     ref="doubtVoiceRecorderRef"
@@ -1424,6 +1434,21 @@ async function respondToSolution(understood: boolean) {
                     @busy-change="handleVoiceBusyChange('doubt', $event)"
                     @error="errorMessage = $event"
                   />
+                </div>
+                <div v-if="doubtHistoryError" class="actions" role="alert">
+                  <span>{{ doubtHistoryError }}</span>
+                  <el-button @click="loadIndependentDoubts">重新加载答疑记录</el-button>
+                </div>
+                <div v-if="independentDoubts.length" class="doubt-history" aria-label="答疑记录" aria-live="polite">
+                  <article v-for="item in independentDoubts" :key="item.runId" class="doubt-thread" :data-testid="`doubt-${item.runId}`">
+                    <p class="conversation-content"><strong>我的疑问：</strong>{{ item.question }}</p>
+                    <p v-if="item.status === 'RUNNING'" class="recording-help" role="status">正在回答…</p>
+                    <p v-else-if="item.result" class="conversation-content"><strong>老师回复：</strong>{{ item.result.content }}</p>
+                    <template v-else>
+                      <p role="alert">{{ item.error?.code === 'AI_SERVICE_UNAVAILABLE' ? 'AI服务调用失败，请稍后再试' : item.error?.message || 'AI服务调用失败，请稍后再试' }}</p>
+                      <el-button data-testid="retry-doubt" @click="submitDoubt(item.question)">重试发送</el-button>
+                    </template>
+                  </article>
                 </div>
               </div>
               <div v-show="activeSegment === 'appeal'" class="dialog-pane">
@@ -1578,6 +1603,8 @@ h2 { font-size: var(--font-size-lg); }
 .guided-question + .guided-question { margin-top: var(--space-4); }
 .guided-question p { margin: 0 0 var(--space-2); color: var(--color-text-primary); font-weight: 600; }
 .guided-question .voice-recorder { margin-top: 0; }
+.doubt-history { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
+.doubt-thread { padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
 .mastery-check-hint { margin: 0 0 var(--space-4); color: var(--color-text-secondary); font-weight: 400; }
 .mastery-answer { margin: 0 0 var(--space-2); color: var(--color-text-secondary); font-weight: 400; }
 .mastery-result { margin: var(--space-2) 0 0; font-weight: 400; }

@@ -37,7 +37,7 @@ Preserve numbers, formulas, terminology, and necessary student quotations accura
 Do not infer mastery or add outside knowledge. Do not evaluate current input or generate teaching.
 Exclude system instructions, question materials, task instructions, schemas, business state,
 counters, thresholds, and next actions. Output JSON only, without code fences or extra fields.
-Example JSON: {"summary":"Markdown summary with the four required headings"}
+Example JSON: {{"summary":"Markdown summary with the four required headings"}}
 """
 
 
@@ -116,7 +116,15 @@ class ContextCompactor:
             if current_round != round_number:
                 raise CompactionError("CONTEXT_COMPACTION_SOURCE_CHANGED")
             current = load_history(db, session, exclude_attempt_id=exclude_attempt_id)
-            if current.fingerprint != selection.fingerprint:
+            # A doubt can finish while the summary is generated. Its new trailing
+            # exchange stays after the saved source boundary and needs no rewrite.
+            appended_only = (
+                current.groups[:len(view.groups)] == view.groups
+                and current.summary == view.summary
+                and current.memory_event_id == view.memory_event_id
+                and current.unresolved_interaction_ids == view.unresolved_interaction_ids
+            )
+            if current.fingerprint != selection.fingerprint and not appended_only:
                 raise CompactionError("CONTEXT_COMPACTION_SOURCE_CHANGED")
             EventStore(db).append(
                 session_id,

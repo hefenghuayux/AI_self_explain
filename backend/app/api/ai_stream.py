@@ -35,6 +35,7 @@ from app.services.ai_run import AIRunCancelled, begin_run, bind_run, cancel_run,
 from app.services.ai_stream import StreamContext, current_stream, terminal_snapshot
 from app.services.context_compaction import CompactionError
 from app.services.context_runtime import RequestContext, current_context
+from app.services.independent_doubt import IndependentDoubtInput, accept_doubt, answer_doubt
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sessions", tags=["ai-stream"])
@@ -58,6 +59,7 @@ class AIRunInput(BaseModel):
         "graded-step-attempts",
         "request-support",
         "ask-doubt",
+        "independent-doubt",
         "guided-answers",
         "appeal",
         "full-solution-understanding",
@@ -238,6 +240,31 @@ async def _execute(
             del runtime.locks[session_id]
 
 
+async def _execute_doubt(app, session_id: int, run_id: str) -> None:
+    registry = app.state.ai_stream_registry
+    stream_token = current_stream.set(StreamContext(registry, run_id, session_id))
+    try:
+        try:
+            result = await asyncio.to_thread(answer_doubt, app, session_id, run_id)
+        except Exception as error:
+            logger.exception("独立答疑失败 session=%s run=%s", session_id, run_id)
+            detail = _stream_error(error)
+            snapshot = registry.snapshot(run_id)
+            with app.state.database_session_factory() as db:
+                record = db.scalar(select(AIRun).where(AIRun.id == run_id).with_for_update())
+                record.status = "FAILED"
+                record.checkpoints = {
+                    **record.checkpoints,
+                    "stream": terminal_snapshot(snapshot, error=detail),
+                }
+                db.commit()
+            registry.finish(run_id, error=detail)
+        else:
+            registry.finish(run_id, result=result)
+    finally:
+        current_stream.reset(stream_token)
+
+
 @router.post("/{session_id}/ai-runs", status_code=202)
 async def submit_ai_run(
     session_id: int,
@@ -256,6 +283,17 @@ async def submit_ai_run(
         snapshot = request.app.state.ai_stream_registry.snapshot(run_id)
         if snapshot is None:
             raise HTTPException(status_code=409, detail="AI 运行标识已使用")
+        return {"runId": run_id}
+    if run_input.operation == "independent-doubt":
+        try:
+            payload = IndependentDoubtInput.model_validate(run_input.input)
+        except ValidationError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        accept_doubt(database_session, session, run_id, payload, request.app.state.settings)
+        request.app.state.ai_stream_registry.create(run_id, session_id)
+        task = asyncio.create_task(_execute_doubt(request.app, session_id, run_id))
+        request.app.state.ai_stream_tasks.add(task)
+        task.add_done_callback(request.app.state.ai_stream_tasks.discard)
         return {"runId": run_id}
     _, schema, _ = OPERATIONS[run_input.operation]
     try:
@@ -298,6 +336,36 @@ async def submit_ai_run(
     request.app.state.ai_stream_tasks.add(task)
     task.add_done_callback(request.app.state.ai_stream_tasks.discard)
     return {"runId": run_id}
+
+
+@router.get("/{session_id}/independent-doubts")
+def list_independent_doubts(
+    session_id: int,
+    request: Request,
+    database_session: DatabaseSession,
+    current_user: CurrentUser,
+):
+    sessions.get_session_or_404(SessionRepository(database_session), session_id, current_user)
+    records = database_session.scalars(
+        select(AIRun).where(AIRun.session_id == session_id)
+        .order_by(AIRun.created_at, AIRun.id)
+    )
+    result = []
+    for record in records:
+        if record.snapshot.get("operation") != "independent-doubt":
+            continue
+        snapshot = request.app.state.ai_stream_registry.snapshot(record.id)
+        result.append({
+            "runId": record.id,
+            "status": snapshot["status"] if snapshot else "FAILED",
+            "question": record.snapshot["input"]["doubtText"],
+            "result": snapshot.get("result") if snapshot else None,
+            "error": snapshot.get("error") if snapshot else {
+                "code": "AI_RUN_INTERRUPTED", "status": 503,
+                "message": "服务重启，本次生成已中断，请重新提交。",
+            },
+        })
+    return result
 
 
 @router.get("/{session_id}/ai-runs/{run_id}/stream")
@@ -352,7 +420,7 @@ def recover_interrupted_streams(app) -> None:
         return
     with runtime.database_session_factory() as db:
         records = list(db.scalars(
-            select(AIRun).where(AIRun.status.in_(["ACTIVE", "COMPLETED", "CANCELLED"]))
+            select(AIRun).where(AIRun.status.in_(["ACTIVE", "COMPLETED", "CANCELLED", "FAILED"]))
         ))
         pending = [
             (record.id, record.session_id, record.status, record.checkpoints.get("stream"))
@@ -365,6 +433,27 @@ def recover_interrupted_streams(app) -> None:
             app.state.ai_stream_registry.finish(run_id, cancelled=True)
             continue
         with runtime.database_session_factory() as db:
+            record = db.get(AIRun, run_id)
+            if record.snapshot.get("operation") == "independent-doubt":
+                if snapshot and snapshot["status"] != "RUNNING":
+                    record.status = "COMPLETED" if snapshot["status"] == "SUCCEEDED" else "FAILED"
+                else:
+                    record.status = "FAILED"
+                    if snapshot is None:
+                        # A crash may occur after acceptance and before stream registration.
+                        snapshot = {
+                            "runId": run_id, "status": "RUNNING", "revision": 0,
+                            "channels": {}, "error": None, "result": None,
+                        }
+                    record.checkpoints = {
+                        **record.checkpoints,
+                        "stream": terminal_snapshot(snapshot, error={
+                            "code": "AI_RUN_INTERRUPTED", "status": 503,
+                            "message": "服务重启，本次生成已中断，请重新提交。",
+                        }),
+                    }
+                db.commit()
+                continue
             session = db.get(Session, session_id)
             if snapshot and snapshot["status"] != "RUNNING":
                 # Result persistence won the crash race: preserve it and release the session.

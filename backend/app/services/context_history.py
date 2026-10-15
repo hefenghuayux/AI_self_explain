@@ -119,14 +119,16 @@ def load_history(
         )
     )
     # 自讲的顺序锚点是提交时写入的 user.message 事件；支持事件用自身 created_seq。
+    session_events = list(database_session.scalars(
+        select(SessionEvent).where(
+            SessionEvent.session_id == session.id,
+            SessionEvent.event_type.in_(["user.message", "model.responded", "context.added"]),
+        )
+        .order_by(SessionEvent.seq).execution_options(populate_existing=True)
+    ))
     submission_seqs = {
         event.run_id: event.seq
-        for event in database_session.scalars(
-            select(SessionEvent).where(
-                SessionEvent.session_id == session.id,
-                SessionEvent.event_type == "user.message",
-            )
-        )
+        for event in session_events if event.event_type == "user.message"
     }
     attempt_seqs = {
         attempt.id: seq
@@ -140,6 +142,47 @@ def load_history(
         attempt_seqs=attempt_seqs,
     )["events"]
     groups = group_history(events)
+    doubt_events = [
+        event for event in session_events
+        if event.event_type == "context.added"
+        and event.data.get("source") == "independent_doubt"
+        and isinstance(event.data.get("content"), dict)
+        and event.data["content"].get("round") == session.round
+    ]
+    if doubt_events:
+        # Order complete exchanges by their saved response, not by request start.
+        # Keep each question with its answer so compaction cannot separate them.
+        response_seqs = {
+            event.run_id: event.seq for event in session_events
+            if event.event_type == "model.responded" and event.data.get("validation") == "valid"
+        }
+        anchors = {
+            f"attempt:{attempt.id}": response_seqs.get(
+                session_run_id(session.id, attempt.id), attempt_seqs.get(attempt.id, -1)
+            )
+            for attempt in attempts
+        }
+        anchors.update({
+            f"support:{support.id}": support.created_seq + 0.5
+            for support in supports if support.created_seq is not None
+        })
+        ordered_groups = [
+            (max(anchors.get(str(item["interactionId"]), -1) for item in group), group)
+            for group in groups
+        ]
+        for event in doubt_events:
+            content = event.data["content"]
+            interaction_id = f"doubt:{event.run_id}"
+            ordered_groups.append((event.seq, [
+                {"actor": "student", "kind": "doubt", "content": content["question"],
+                 "interactionId": interaction_id},
+                {"actor": "teacher", "kind": "doubt_answer", "content": content["answer"],
+                 "interactionId": f"{interaction_id}:answer", "replyTo": interaction_id},
+            ]))
+        ordered_groups.sort(key=lambda item: item[0])
+        groups = [group for _, group in ordered_groups]
+        for seq, event in enumerate(event for group in groups for event in group):
+            event["seq"] = seq
     unresolved_ids = frozenset(
         f"support:{support.id}"
         for support in supports

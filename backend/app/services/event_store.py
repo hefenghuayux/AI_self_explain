@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session as DatabaseSession
 
 from app.models.session import Session
@@ -45,12 +45,17 @@ class EventStore:
         parent_event_id: str | None = None,
     ) -> SessionEvent:
         self._acquire_sqlite_write_lock()
-        if self.database_session.get(Session, session_id) is None:
+        # Parallel doubt replies share the sequence allocator with the teaching run.
+        # Hold this row only for the event transaction, never for model generation.
+        if self.database_session.scalar(
+            select(Session.id).where(Session.id == session_id).with_for_update()
+        ) is None:
             raise SessionNotFoundError(f"会话不存在：{session_id}")
 
         validated_data = self._validate_data(event_type, data)
         last_seq = self.database_session.scalar(
-            select(func.max(SessionEvent.seq)).where(SessionEvent.session_id == session_id)
+            select(SessionEvent.seq).where(SessionEvent.session_id == session_id)
+            .order_by(SessionEvent.seq.desc()).limit(1).with_for_update()
         )
         next_seq = 0 if last_seq is None else last_seq + 1
 
@@ -98,9 +103,14 @@ class EventStore:
 
     def latest_seq(self, session_id: int) -> int | None:
         """返回会话当前最大的事件序号；会话还没有任何事件时返回 None。"""
-        self._require_session(session_id)
+        self._acquire_sqlite_write_lock()
+        if self.database_session.scalar(
+            select(Session.id).where(Session.id == session_id).with_for_update()
+        ) is None:
+            raise SessionNotFoundError(f"会话不存在：{session_id}")
         return self.database_session.scalar(
-            select(func.max(SessionEvent.seq)).where(SessionEvent.session_id == session_id)
+            select(SessionEvent.seq).where(SessionEvent.session_id == session_id)
+            .order_by(SessionEvent.seq.desc()).limit(1).with_for_update()
         )
 
     def get_event(self, session_id: int, seq: int) -> SessionEvent:
