@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRouter } from "vue-router"
 
 import { authUser, isAuthenticated, logout } from "./stores/auth"
@@ -10,6 +10,7 @@ const router = useRouter()
 const menuRef = ref<HTMLDetailsElement>()
 const menuOpen = ref(false)
 const settingsVisible = ref(false)
+const voicePickerVisible = ref(false)
 const voices = ref<TtsVoice[]>([])
 const selectedVoiceId = ref<number | null>(null)
 const savedVoiceId = ref<number | null>(null)
@@ -18,8 +19,26 @@ const voicesLoaded = ref(false)
 const voiceSaving = ref(false)
 const voiceError = ref("")
 const voiceSuccess = ref("")
+const educationStageFilter = ref("")
+const subjectFilter = ref("")
+const genderFilter = ref("")
+const nameFilter = ref("")
 let settingsGeneration = 0
 let voicesController: AbortController | undefined
+
+const educationStageOptions = computed(() => [...new Set(voices.value.map((voice) => voice.educationStage).filter((value): value is string => Boolean(value)))])
+const subjectOptions = computed(() => [...new Set(voices.value.map((voice) => voice.subject).filter((value): value is string => Boolean(value)))])
+const genderOptions = computed(() => [...new Set(voices.value.map((voice) => voice.gender).filter((value): value is string => Boolean(value)))])
+const filteredVoices = computed(() => {
+  const nameQuery = nameFilter.value.trim().toLocaleLowerCase()
+  return voices.value.filter((voice) => (
+    (!educationStageFilter.value || voice.educationStage === educationStageFilter.value)
+    && (!subjectFilter.value || voice.subject === subjectFilter.value)
+    && (!genderFilter.value || voice.gender === genderFilter.value)
+    && (!nameQuery || voice.name.toLocaleLowerCase().includes(nameQuery))
+  ))
+})
+const selectedVoice = computed(() => voices.value.find((voice) => voice.id === selectedVoiceId.value))
 
 function closeMenu() {
   if (menuRef.value) menuRef.value.open = false
@@ -47,6 +66,11 @@ function openSettings() {
   void loadVoices()
 }
 
+function openVoicePicker() {
+  voicePickerVisible.value = true
+  if (!voicesLoaded.value && !voicesLoading.value) void loadVoices()
+}
+
 async function loadVoices() {
   voicesController?.abort()
   const controller = new AbortController()
@@ -63,6 +87,10 @@ async function loadVoices() {
     selectedVoiceId.value = settings.selectedVoiceId
     savedVoiceId.value = settings.selectedVoiceId
     voicesLoaded.value = true
+    if (selectedVoiceId.value === null && settings.voices[0]) {
+      selectedVoiceId.value = settings.voices[0].id
+      void saveVoice()
+    }
   } catch (error) {
     if (generation !== settingsGeneration) return
     voiceError.value = error instanceof Error ? error.message : String(error)
@@ -97,17 +125,24 @@ async function saveVoice() {
 
 watch(settingsVisible, (visible) => {
   if (visible) return
+  voicePickerVisible.value = false
   settingsGeneration += 1
   voicesController?.abort()
   voiceSaving.value = false
 })
 watch(() => authUser.value?.id, () => {
   settingsVisible.value = false
+  voicePickerVisible.value = false
   notifyTeacherSpeechVoiceChanged()
 })
 
 function updateAutoPlay(event: Event) {
   setTeacherSpeechAutoPlay((event.target as HTMLInputElement).checked)
+}
+
+function selectVoice(voiceId: number) {
+  selectedVoiceId.value = voiceId
+  voiceSuccess.value = ""
 }
 
 onMounted(() => {
@@ -169,18 +204,62 @@ async function signOut() {
       自动播放老师回复
     </label>
     <div class="voice-setting">
-      <label for="personal-tts-voice">我的老师音色</label>
-      <p id="voice-setting-help">仅对当前账号生效。选择并保存后，再播放老师回复。</p>
-      <select id="personal-tts-voice" v-model="selectedVoiceId" data-testid="personal-tts-voice" aria-describedby="voice-setting-help" :disabled="voicesLoading || voiceSaving || !voicesLoaded" @change="voiceSuccess = ''">
-        <option :value="null">未选择音色（无法生成语音）</option>
-        <option v-for="voice in voices" :key="voice.id" :value="voice.id">{{ voice.displayName }}</option>
-      </select>
+      <div class="voice-setting-heading">
+        <div>
+          <strong>我的老师音色</strong>
+          <p id="voice-setting-help">仅对当前账号生效。选择并保存后，再播放老师回复。</p>
+        </div>
+        <el-button data-testid="open-tts-voice-picker" :disabled="voicesLoading || voiceSaving" @click="openVoicePicker">设置音色</el-button>
+      </div>
+      <p v-if="selectedVoice">当前选择：{{ selectedVoice.name }}<span v-if="selectedVoice.remark"> · {{ selectedVoice.remark }}</span></p>
+      <p v-else>尚未选择音色</p>
       <p v-if="voicesLoading" role="status">正在加载音色…</p>
       <p v-if="voiceError" class="voice-error" role="alert">{{ voiceError }}</p>
       <p v-if="voiceSuccess" role="status">{{ voiceSuccess }}</p>
       <el-button v-if="!voicesLoaded && !voicesLoading" data-testid="reload-tts-voices" @click="loadVoices">重新加载音色</el-button>
-      <el-button v-else type="primary" data-testid="save-tts-voice" :loading="voiceSaving" :disabled="voicesLoading || !voicesLoaded || selectedVoiceId === savedVoiceId" @click="saveVoice">保存个人音色</el-button>
     </div>
+  </el-dialog>
+  <el-dialog v-model="voicePickerVisible" title="选择老师音色" width="min(680px, calc(100vw - 32px))" :close-on-click-modal="!voiceSaving" :close-on-press-escape="!voiceSaving" :show-close="!voiceSaving">
+    <div class="voice-filters" aria-label="音色筛选">
+      <select v-model="educationStageFilter" data-testid="tts-voice-stage-filter" aria-label="按学段筛选">
+        <option value="">全部学段</option>
+        <option v-for="stage in educationStageOptions" :key="stage" :value="stage">{{ stage }}</option>
+      </select>
+      <select v-model="subjectFilter" data-testid="tts-voice-subject-filter" aria-label="按学科筛选">
+        <option value="">全部学科</option>
+        <option v-for="subject in subjectOptions" :key="subject" :value="subject">{{ subject }}</option>
+      </select>
+      <select v-model="genderFilter" data-testid="tts-voice-gender-filter" aria-label="按性别筛选">
+        <option value="">全部性别</option>
+        <option v-for="gender in genderOptions" :key="gender" :value="gender">{{ gender }}</option>
+      </select>
+      <input v-model="nameFilter" data-testid="tts-voice-name-filter" aria-label="按名字筛选" placeholder="输入名字筛选" />
+    </div>
+    <div v-if="voicesLoading" class="voice-picker-status" role="status">正在加载音色…</div>
+    <div v-else-if="filteredVoices.length" class="voice-options" role="listbox" aria-label="可选音色">
+      <button
+        v-for="voice in filteredVoices"
+        :key="voice.id"
+        type="button"
+        class="voice-option"
+        :class="{ 'voice-option-selected': voice.id === selectedVoiceId }"
+        :aria-selected="voice.id === selectedVoiceId"
+        role="option"
+        :disabled="voiceSaving"
+        @click="selectVoice(voice.id)"
+      >
+        <span class="voice-option-name">{{ voice.name }}</span>
+        <span v-if="voice.remark" class="voice-option-remark">{{ voice.remark }}</span>
+      </button>
+    </div>
+    <p v-else class="voice-picker-status">没有符合条件的音色</p>
+    <p v-if="voiceError" class="voice-error" role="alert">{{ voiceError }}</p>
+    <p v-if="voiceSuccess" role="status">{{ voiceSuccess }}</p>
+    <template #footer>
+      <el-button @click="voicePickerVisible = false">取消</el-button>
+      <el-button v-if="!voicesLoaded && !voicesLoading" data-testid="reload-tts-voices" @click="loadVoices">重新加载音色</el-button>
+      <el-button v-else type="primary" data-testid="save-tts-voice" :loading="voiceSaving" :disabled="voicesLoading || !voicesLoaded || selectedVoiceId === savedVoiceId" @click="saveVoice">保存个人音色</el-button>
+    </template>
   </el-dialog>
   <RouterView :key="$route.fullPath" />
 </template>
@@ -372,11 +451,20 @@ nav {
 }
 
 .voice-setting { margin-top: var(--space-4); color: var(--color-text-primary); }
-.voice-setting label { font-weight: 600; }
+.voice-setting-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
 .voice-setting p { margin: var(--space-2) 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
-.voice-setting select { width: 100%; min-height: 44px; margin-bottom: var(--space-3); padding: var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-primary); background: var(--color-surface); }
-.voice-setting select:focus-visible { outline: 2px solid var(--color-brand-600); outline-offset: 2px; }
 .voice-setting .voice-error { color: var(--color-error-700); overflow-wrap: anywhere; }
+.voice-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); margin-bottom: var(--space-4); }
+.voice-filters select, .voice-filters input { width: 100%; min-height: 40px; padding: var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-primary); background: var(--color-surface); }
+.voice-filters input { grid-column: span 3; }
+.voice-filters select:focus-visible, .voice-filters input:focus-visible { outline: 2px solid var(--color-brand-600); outline-offset: 2px; }
+.voice-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: min(50vh, 420px); overflow: auto; gap: var(--space-2); padding: 2px; }
+.voice-option { display: flex; min-height: 64px; flex-direction: column; align-items: flex-start; justify-content: center; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-primary); background: var(--color-surface); cursor: pointer; text-align: left; }
+.voice-option:hover, .voice-option-selected { border-color: var(--color-brand-600); background: var(--color-brand-50); }
+.voice-option:focus-visible { outline: 2px solid var(--color-brand-600); outline-offset: 2px; }
+.voice-option-name { font-weight: 600; }
+.voice-option-remark { margin-top: 4px; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.voice-picker-status { margin: var(--space-4) 0; color: var(--color-text-secondary); text-align: center; }
 
 @media (max-width: 640px) {
   .header-inner {
@@ -396,6 +484,10 @@ nav {
     flex-wrap: wrap;
     justify-content: flex-end;
   }
+
+  .voice-filters { grid-template-columns: 1fr 1fr; }
+  .voice-filters input { grid-column: span 2; }
+  .voice-options { grid-template-columns: 1fr; }
 
 }
 </style>

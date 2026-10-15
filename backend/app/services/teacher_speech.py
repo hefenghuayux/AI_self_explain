@@ -71,12 +71,15 @@ class TeacherSpeechService:
             raise TeacherSpeechError("TTS_EMPTY_TEXT", "没有可朗读的文本", 422)
         if len(text) > MAX_SPEECH_CHARACTERS:
             raise TeacherSpeechError("TTS_TEXT_TOO_LONG", "朗读文本超过 20000 字符限额", 422)
+        runtime = voice.runtime_config
+        if runtime is None:
+            raise TeacherSpeechError("TTS_VOICE_MISSING", "当前教师音色运行配置不存在", 503)
         return {
-            "model": settings.tts_model.strip() or voice.model,
+            "model": settings.tts_model.strip() or runtime.model,
             "input": {
                 "text": text,
-                "voice": voice.voice_id,
-                "instruction": voice.instruction,
+                "voice": runtime.voice_id,
+                "instruction": runtime.instruction,
                 "format": "pcm",
                 "sample_rate": 24000,
             },
@@ -281,14 +284,17 @@ class TeacherSpeechService:
             raise TeacherSpeechError(
                 "TTS_TEXT_TOO_LONG", "朗读文本超过应用的 20000 字符限额，请分段后重试", 422
             )
+        runtime = voice.runtime_config
+        if runtime is None:
+            raise TeacherSpeechError("TTS_VOICE_MISSING", "当前教师音色运行配置不存在", 503)
         body = {
-            "model": settings.tts_model.strip() or voice.model,
+            "model": settings.tts_model.strip() or runtime.model,
             "input": {
                 "text": text,
-                "voice": voice.voice_id,
+                "voice": runtime.voice_id,
                 "format": "wav",
                 "sample_rate": 24000,
-                "instruction": voice.instruction,
+                "instruction": runtime.instruction,
             },
         }
         key = hashlib.sha256(

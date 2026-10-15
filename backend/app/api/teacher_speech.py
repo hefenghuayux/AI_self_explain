@@ -44,7 +44,7 @@ def selected_voice(database_session, user_id: int) -> TTSVoice:
     if selection is None or selection.voice_id is None:
         raise TeacherSpeechError("TTS_VOICE_NOT_SELECTED", "尚未选择教师音色，请在设置中选择", 503)
     voice = database_session.get(TTSVoice, selection.voice_id)
-    if voice is None:
+    if voice is None or voice.runtime_config is None:
         raise TeacherSpeechError("TTS_VOICE_MISSING", "当前教师音色记录不存在", 503)
     return voice
 

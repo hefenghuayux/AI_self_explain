@@ -12,11 +12,12 @@ class VoiceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: int
-    display_name: str = Field(serialization_alias="displayName")
-    model: str
+    education_stage: str | None = Field(default=None, serialization_alias="educationStage")
     subject: str | None
-    teacher: str | None
-    variant: str | None
+    name: str
+    remark: str | None
+    gender: str | None
+    voice_type: str = Field(serialization_alias="voiceType")
 
 
 class VoiceSettingsResponse(BaseModel):

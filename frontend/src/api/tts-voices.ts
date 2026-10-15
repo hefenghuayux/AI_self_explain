@@ -2,11 +2,12 @@ import { getAuthToken } from "../stores/auth"
 
 export interface TtsVoice {
   id: number
-  displayName: string
-  model: string
+  educationStage: string | null
   subject: string | null
-  teacher: string | null
-  variant: string | null
+  name: string
+  remark: string | null
+  gender: string | null
+  voiceType: string
 }
 
 export interface TtsVoiceSettings {

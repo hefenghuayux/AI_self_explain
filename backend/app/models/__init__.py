@@ -14,7 +14,7 @@ from app.models.session_event import SessionEvent
 from app.models.state_transition_event import StateTransitionEvent
 from app.models.student_submission import StudentSubmission
 from app.models.support_event import SupportEvent
-from app.models.tts_voice import TTSSpeechSettings, TTSVoice
+from app.models.tts_voice import TTSSpeechSettings, TTSVoice, TTSVoiceRuntimeConfig
 from app.models.user import User
 
 __all__ = [
@@ -36,5 +36,6 @@ __all__ = [
     "SupportEvent",
     "TTSSpeechSettings",
     "TTSVoice",
+    "TTSVoiceRuntimeConfig",
     "User",
 ]
