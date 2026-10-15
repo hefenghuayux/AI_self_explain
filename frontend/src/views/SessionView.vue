@@ -1380,7 +1380,7 @@ async function respondToSolution(understood: boolean) {
               <div v-show="activeSegment === 'masteryCheck'" class="dialog-pane">
                 <template v-if="canShowTeachingContent && session.masteryCheck?.questions?.length">
                   <div v-if="speechControlsTarget === '#mastery-speech'" class="speech-content-heading"><span id="mastery-speech" class="speech-anchor" /><span>掌握度核验</span></div>
-                  <p class="mastery-check-hint">本题不支持重新完整自讲。请回答下面的核验问题，确认你是否真的掌握。</p>
+                  <p class="mastery-check-hint">请回答下面的核验问题，确认你是否真的掌握。</p>
                   <div v-for="item in session.masteryCheck.questions" :key="item.id" class="guided-question">
                     <p>{{ item.question }}</p>
                     <el-input
@@ -1496,7 +1496,7 @@ async function respondToSolution(understood: boolean) {
           </section>
         <template v-if="!isTerminalSession() || teachingEvaluationPending">
           <section v-if="canShowTeachingContent && session.flowStage === 'AI_EVALUATING'" class="session-section"><h2>AI 正在评价</h2><p>请等待评价结果返回。</p></section>
-          <section v-else-if="canShowTeachingContent && session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2 class="speech-content-heading"><span id="solution-speech" class="speech-anchor" />完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析。本题不会再要求完整重讲，确认后直接进入掌握度核验。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" :disabled="cancelling" @click="respondToSolution(true)">我会了，进入掌握度核验</el-button><el-button :loading="submitting" :disabled="cancelling" @click="respondToSolution(false)">仍然不会</el-button></div></section>
+          <section v-else-if="canShowTeachingContent && session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2 class="speech-content-heading"><span id="solution-speech" class="speech-anchor" />完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析，确认后直接进入掌握度核验。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" :disabled="cancelling" @click="respondToSolution(true)">我会了，进入掌握度核验</el-button><el-button :loading="submitting" :disabled="cancelling" @click="respondToSolution(false)">仍然不会</el-button></div></section>
           <section v-else-if="canShowTeachingContent && session.flowStage === 'WAIT_MASTERY_CHECK'" class="session-section mastery-check-state">
             <h2>掌握度核验</h2>
             <p class="mastery-check-note">请到上方「掌握度核验」中回答下面的问题；全部通过即完成本题。</p>
