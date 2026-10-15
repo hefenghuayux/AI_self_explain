@@ -29,7 +29,15 @@ async function requestVoiceSettings(path: string, options?: RequestInit): Promis
       : typeof body.detail === "string" ? body.detail : body.detail?.message
     throw new Error(detail ?? `音色设置失败：HTTP ${response.status}`)
   }
-  return await response.json() as TtsVoiceSettings
+  const settings = await response.json() as TtsVoiceSettings
+  if (!Array.isArray(settings.voices) || settings.voices.some((voice) => (
+    !voice || typeof voice.name !== "string" || !voice.name.trim()
+    || !("educationStage" in voice) || !("remark" in voice)
+    || !("gender" in voice) || !("voiceType" in voice)
+  ))) {
+    throw new Error("音色数据格式与当前页面不匹配，请更新后端服务并完成数据库迁移后重试")
+  }
+  return settings
 }
 
 export function fetchTtsVoiceSettings(signal: AbortSignal): Promise<TtsVoiceSettings> {

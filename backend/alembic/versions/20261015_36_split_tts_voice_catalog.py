@@ -4,6 +4,7 @@ Revision ID: 20261015_36
 Revises: 20261015_35
 """
 
+import json
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -118,7 +119,11 @@ def upgrade() -> None:
                 source_file=row["source_file"],
                 source_start_seconds=row["source_start_seconds"],
                 source_end_seconds=row["source_end_seconds"],
-                source_evidence=row["source_evidence"],
+                source_evidence=(
+                    json.loads(row["source_evidence"])
+                    if isinstance(row["source_evidence"], str)
+                    else row["source_evidence"]
+                ),
             )
         )
         connection.execute(
