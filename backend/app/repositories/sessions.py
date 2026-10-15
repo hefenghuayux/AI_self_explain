@@ -173,10 +173,10 @@ class SessionRepository:
                 Session.lifecycle_status != "restarted",
                 Session.version > 0,
             )
-            .order_by(Session.updated_at.desc(), Session.id.desc())
+            .order_by(Session.created_at.desc(), Session.id.desc())
             .limit(limit)
         )
-        return list(self.database_session.scalars(statement))
+        return list(reversed(self.database_session.scalars(statement).all()))
 
     def pause(self, session: Session) -> Session:
         before_snapshot = session_snapshot(session)

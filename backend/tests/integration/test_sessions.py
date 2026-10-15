@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -174,6 +175,40 @@ def test_starting_same_question_resumes_and_restart_creates_a_fresh_session(
     assert rows[0]["lifecycle_status"] == "restarted"
     assert rows[1]["parent_id"] is None
     assert rows[1]["lifecycle_status"] == "active"
+
+
+def test_session_history_orders_by_creation_time_and_numbers_chronologically(
+    settings: Settings, monkeypatch
+) -> None:
+    with prepare_client(settings, monkeypatch) as client:
+        session_ids = [create_session(client, create_question(client))["id"] for _ in range(3)]
+
+        engine = create_engine(settings.database_url)
+        try:
+            with OrmSession(engine) as database_session:
+                sessions = database_session.scalars(
+                    select(Session).where(Session.id.in_(session_ids))
+                ).all()
+                sessions_by_id = {session.id: session for session in sessions}
+                timestamps = {
+                    session_ids[0]: (datetime(2026, 10, 1, 9, 0), datetime(2026, 10, 3, 9, 0)),
+                    session_ids[1]: (datetime(2026, 10, 2, 9, 0), datetime(2026, 10, 1, 9, 0)),
+                    session_ids[2]: (datetime(2026, 10, 3, 9, 0), datetime(2026, 10, 2, 9, 0)),
+                }
+                for session_id, (created_at, updated_at) in timestamps.items():
+                    session = sessions_by_id[session_id]
+                    session.created_at = created_at
+                    session.updated_at = updated_at
+                    session.version = 1
+                database_session.commit()
+        finally:
+            engine.dispose()
+
+        response = client.get("/api/sessions/history")
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == session_ids
+    assert [item["name"] for item in response.json()] == ["自讲1", "自讲2", "自讲3"]
 
 
 def test_user_cannot_read_another_users_session(settings: Settings, monkeypatch) -> None:
