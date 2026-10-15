@@ -34,7 +34,7 @@ export async function requestSessionApi<T>(path: string, options?: RequestInit):
   })
   new Headers(options?.headers).forEach((value, key) => headers.set(key, value))
   if (options?.method?.toUpperCase() === "POST"
-    && /^\/api\/sessions\/[^/]+\/(text-attempts|step-attempts|graded-step-attempts|request-support|ask-doubt|guided-answers|full-solution-understanding)$/.test(path)) {
+    && /^\/api\/sessions\/[^/]+\/(text-attempts|step-attempts|graded-step-attempts|request-support|ask-doubt|guided-answers|full-solution-understanding|mastery-check-answers)$/.test(path)) {
     headers.set("X-Teacher-Speech-Prewarm", String(teacherSpeechAutoPlay.value))
   }
   const streamOperation = /^\/api\/sessions\/([^/]+)\/(text-attempts|step-attempts|graded-step-attempts|request-support|ask-doubt|guided-answers|appeal|full-solution-understanding|mastery-check-answers|grading\/retry)$/.exec(path)

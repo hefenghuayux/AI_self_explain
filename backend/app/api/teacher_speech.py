@@ -17,7 +17,13 @@ from app.repositories.sessions import SessionRepository
 from app.services.teacher_speech import TeacherSpeechError
 
 router = APIRouter(prefix="/sessions", tags=["teacher-speech"])
-SPEECH_EVENT_TYPES = {"SUPPORT", "GUIDED_QUESTIONS", "FOLLOW_UP", "MASTERY_QUESTIONS"}
+SPEECH_EVENT_TYPES = {
+    "SUPPORT",
+    "GUIDED_QUESTIONS",
+    "FOLLOW_UP",
+    "MASTERY_QUESTIONS",
+    "MASTERY_RESULT",
+}
 TEACHING_ACTIONS = {"ASK_FOCUSED_QUESTION", "GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"}
 NUMBERED_SPEECH_EVENT_TYPES = {"GUIDED_QUESTIONS", "MASTERY_QUESTIONS"}
 logger = logging.getLogger(__name__)
@@ -32,7 +38,9 @@ def is_speech_item(item: dict) -> bool:
 
 
 def speech_item_text(item: dict) -> str:
-    """返回教师朗读文本，去掉问题列表专用的展示编号。"""
+    """核验结论只读反馈正文；问题列表去掉专用的展示编号。"""
+    if item["event_type"] == "MASTERY_RESULT":
+        return str(item["speech_content"])
     text = str(item["content"])
     if item["event_type"] not in NUMBERED_SPEECH_EVENT_TYPES:
         return text

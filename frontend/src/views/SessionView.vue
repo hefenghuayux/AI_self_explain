@@ -132,7 +132,7 @@ let speechGeneration = 0
 function isSpokenReply(item: LearningTimelineItem) {
   if (item.speaker !== "AI" || !item.content.trim()) return false
   if (item.eventType === "EVALUATION") return Boolean(item.action && item.action !== "COMPLETE")
-  return ["SUPPORT", "GUIDED_QUESTIONS", "FOLLOW_UP", "MASTERY_QUESTIONS"].includes(item.eventType)
+  return ["SUPPORT", "GUIDED_QUESTIONS", "FOLLOW_UP", "MASTERY_QUESTIONS", "MASTERY_RESULT"].includes(item.eventType)
 }
 
 // 手动播放定位最近一轮老师回复；初次加载历史只设置目标，不触发播放。
@@ -166,6 +166,7 @@ const showGuidedAnswers = computed(() => session.value?.status === "IN_PROGRESS"
 const visibleTimeline = computed(() => canShowTeachingContent.value ? timeline.value : timeline.value.filter((item) => item.speaker === "STUDENT"))
 const speechIsSolution = computed(() => Boolean(session.value?.solutionExposed && question.value?.fullSolution
   && canShowTeachingContent.value
+  && !masteryCheckCompleted()
   && (session.value.flowStage === "SHOWING_FULL_SOLUTION"
     || ["NEEDS_REVIEW", "STOPPED_LIMIT"].includes(session.value.status))))
 const currentReplySupport = computed(() => {
@@ -175,7 +176,7 @@ const currentReplySupport = computed(() => {
   if (previous && support?.id === previous.id && support.content === previous.content && support.followUpContent === previous.followUpContent) return null
   return support
 })
-const nextStepText = computed(() => speechIsSolution.value || !canShowTeachingContent.value ? ""
+const nextStepText = computed(() => speechIsSolution.value || masteryCheckCompleted() || !canShowTeachingContent.value ? ""
   : currentReplySupport.value?.followUpContent || currentReplySupport.value?.content || "")
 const teacherReplyPending = computed(() => (teacherReplyRequested.value && streamSnapshot.value?.status !== "SUCCEEDED") || teachingEvaluationPending.value)
 const teacherReplyBlocks = computed(() => {
@@ -212,6 +213,7 @@ const showTeacherReply = computed(() => teacherReplyPending.value || Boolean(ses
 const speechControlsTarget = computed(() => {
   if (activeSegment.value === "masteryCheck" && cancellableRunId.value) return "#mastery-check-speech-controls"
   if (teacherReplyPending.value) return undefined
+  if (canShowTeachingContent.value && masteryCheckCompleted()) return "#mastery-result-speech"
   if (nextStepText.value) return "#next-step-speech"
   if (speechIsSolution.value) return "#solution-speech"
   if (canShowTeachingContent.value && session.value?.masteryCheck?.questions?.length && !isTerminalSession()) return "#mastery-speech"
@@ -1120,18 +1122,6 @@ function masteryCheckCompleted() {
   return Boolean(session.value?.masteryCheck?.results?.length)
 }
 
-function masteryAnswerFor(questionId: string) {
-  return session.value?.masteryCheck?.answers?.find(
-    (answer) => answer.questionId === questionId,
-  )?.answer
-}
-
-function masteryResultFor(questionId: string) {
-  return session.value?.masteryCheck?.results?.find(
-    (result) => result.questionId === questionId,
-  )
-}
-
 async function submitMasteryAnswers() {
   const masteryCheck = session.value?.masteryCheck
   if (!session.value || !masteryCheck || cancelling.value) return
@@ -1302,7 +1292,10 @@ async function respondToSolution(understood: boolean) {
         <el-alert v-if="gradingPollError" :title="gradingPollError" type="error" :closable="false" show-icon />
         <section v-if="showTeacherReply" class="session-section feedback-section" data-testid="teacher-reply" aria-label="学习反馈">
           <TeacherReplyCard :pending="teacherReplyPending || !canShowTeachingContent" :blocks="teacherReplyBlocks">
-            <template #controls><span v-if="!teacherReplyPending && canShowTeachingContent && nextStepText" id="next-step-speech" class="speech-anchor" /></template>
+            <template #controls>
+              <span v-if="!teacherReplyPending && canShowTeachingContent && masteryCheckCompleted()" id="mastery-result-speech" class="speech-anchor" />
+              <span v-else-if="!teacherReplyPending && canShowTeachingContent && nextStepText" id="next-step-speech" class="speech-anchor" />
+            </template>
             <template v-if="!teacherReplyPending && canShowTeachingContent">
               <template v-if="session.flowStage === 'SHOWING_FULL_SOLUTION' && !isTerminalSession()">
                 <h2 class="speech-content-heading"><span id="solution-speech" class="speech-anchor" />完整解析</h2>
@@ -1314,12 +1307,7 @@ async function respondToSolution(understood: boolean) {
               <div v-else-if="session.status === 'NEEDS_REVIEW'" class="solution-state"><h2 class="speech-content-heading"><span v-if="speechIsSolution" id="solution-speech" class="speech-anchor" />本题已结束，仍有未解决问题</h2><p>{{ masteryOutcomeLabels.NEEDS_REVIEW }}</p><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></div>
               <div v-else-if="session.status === 'STOPPED_LIMIT'" class="solution-state"><h2 class="speech-content-heading"><span v-if="speechIsSolution" id="solution-speech" class="speech-anchor" />已达到本轮支持上限</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></div>
               <div v-if="session.masteryCheck?.results?.length" class="mastery-check-state">
-                <h2>掌握度核验结论</h2>
-                <div v-for="item in session.masteryCheck.questions" :key="item.id" class="guided-question">
-                  <p>{{ item.question }}</p>
-                  <p class="mastery-answer">你的回答：{{ masteryAnswerFor(item.id) ?? "未作答" }}</p>
-                  <p class="mastery-result" :class="masteryResultFor(item.id)?.passed ? 'is-positive' : 'is-attention'">{{ masteryResultFor(item.id)?.passed ? "通过" : "未通过" }}：{{ masteryResultFor(item.id)?.basis }}</p>
-                </div>
+                <p v-for="item in session.masteryCheck.results" :key="item.questionId" class="mastery-result" :class="item.passed ? 'is-positive' : 'is-attention'">{{ item.basis }}</p>
               </div>
             </template>
           </TeacherReplyCard>
@@ -1667,7 +1655,6 @@ h2 { font-size: var(--font-size-lg); }
 .doubt-history { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
 .doubt-thread { padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
 .mastery-check-hint { margin: 0 0 var(--space-4); color: var(--color-text-secondary); font-weight: 400; }
-.mastery-answer { margin: 0 0 var(--space-2); color: var(--color-text-secondary); font-weight: 400; }
 .mastery-result { margin: var(--space-2) 0 0; font-weight: 400; }
 .mastery-result.is-positive { color: var(--color-success, #15803d); }
 .mastery-result.is-attention { color: var(--color-warning, #b45309); }

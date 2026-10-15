@@ -497,6 +497,7 @@ class SessionRepository:
                     "content": _format_mastery_results_for_timeline(
                         mastery_check.questions, results
                     ),
+                    "speech_content": "\n".join(result.basis for result in results),
                     "correctness": None,
                     "completeness": None,
                     "action": "COMPLETE" if all(passed_by_id.values()) else None,

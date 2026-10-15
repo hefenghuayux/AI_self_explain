@@ -971,6 +971,7 @@ def respond_to_first_solution(
 
 
 @router.post("/{session_id}/mastery-check-answers", response_model=SessionResponse)
+@prewarm_teacher_reply
 def submit_mastery_check_answers(
     session_id: int,
     answers_input: MasteryCheckAnswersInput,
