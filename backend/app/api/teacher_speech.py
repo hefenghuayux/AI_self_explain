@@ -19,6 +19,7 @@ from app.services.teacher_speech import TeacherSpeechError
 router = APIRouter(prefix="/sessions", tags=["teacher-speech"])
 SPEECH_EVENT_TYPES = {"SUPPORT", "GUIDED_QUESTIONS", "FOLLOW_UP", "MASTERY_QUESTIONS"}
 TEACHING_ACTIONS = {"ASK_FOCUSED_QUESTION", "GIVE_HINT", "GIVE_CORRECTION", "CORRECT_AND_ASK"}
+NUMBERED_SPEECH_EVENT_TYPES = {"GUIDED_QUESTIONS", "MASTERY_QUESTIONS"}
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +29,14 @@ def is_speech_item(item: dict) -> bool:
         or item["event_type"] == "EVALUATION"
         and item["action"] in TEACHING_ACTIONS
     )
+
+
+def speech_item_text(item: dict) -> str:
+    """返回教师朗读文本，去掉问题列表专用的展示编号。"""
+    text = str(item["content"])
+    if item["event_type"] not in NUMBERED_SPEECH_EVENT_TYPES:
+        return text
+    return re.sub(r"(?m)^\s*\d+\s*[.．、](?:\s+|$)", "", text).strip()
 
 
 def selected_voice(database_session, user_id: int) -> TTSVoice:
@@ -64,7 +73,7 @@ def prewarm_teacher_reply(endpoint):
         ]
         if items:
             try:
-                text = "\n".join(str(item["content"]) for item in items)
+                text = "\n".join(speech_item_text(item) for item in items)
                 request.app.state.teacher_speech_service.prewarm(
                     text, selected_voice(db, session.user_id)
                 )
@@ -188,7 +197,7 @@ def speech_source(session_id, speech_input, database_session, current_user):
         for item in items:
             if not is_speech_item(item):
                 raise HTTPException(422, "请求的记录不属于可朗读的教师回复")
-        text = "\n".join(str(item["content"]) for item in items)
+        text = "\n".join(speech_item_text(item) for item in items)
     return session, text
 
 
