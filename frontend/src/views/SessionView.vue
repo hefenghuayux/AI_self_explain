@@ -210,6 +210,7 @@ const showTeacherReply = computed(() => teacherReplyPending.value || Boolean(ses
   || session.value.flowStage === "SHOWING_FULL_SOLUTION" || isTerminalSession()
 )))
 const speechControlsTarget = computed(() => {
+  if (activeSegment.value === "masteryCheck" && cancellableRunId.value) return "#mastery-check-speech-controls"
   if (teacherReplyPending.value) return undefined
   if (nextStepText.value) return "#next-step-speech"
   if (speechIsSolution.value) return "#solution-speech"
@@ -1295,7 +1296,7 @@ async function respondToSolution(understood: boolean) {
           <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </section>
         <FirstExplanationGrading :grading="grading" :retrying="gradingRetrying" :submission-text="firstGradingSubmissionText" :preview-fields="gradingPreviewFields" :stream-run-id="gradingStreamRunId" @close="gradingDismissed = true" @retry="retryGradingResult" @acknowledge="acknowledgeGradingResult" />
-        <div v-if="cancellableRunId && !['selfExplain', 'guidedAnswers'].includes(activeSegment)" class="actions cancel-run-actions">
+        <div v-if="cancellableRunId && !['selfExplain', 'guidedAnswers', 'masteryCheck'].includes(activeSegment)" class="actions cancel-run-actions">
           <el-button data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
         </div>
         <el-alert v-if="gradingPollError" :title="gradingPollError" type="error" :closable="false" show-icon />
@@ -1460,7 +1461,7 @@ async function respondToSolution(understood: boolean) {
                       :disabled="submitting || masteryCheckCompleted()"
                     />
                   </div>
-                  <div class="actions">
+                  <div class="actions mastery-check-actions">
                     <el-button
                       data-testid="submit-mastery-check"
                       type="primary"
@@ -1468,6 +1469,15 @@ async function respondToSolution(understood: boolean) {
                       :disabled="submitting || cancelling || runPending || masteryCheckCompleted() || session.flowStage !== 'WAIT_MASTERY_CHECK'"
                       @click="submitMasteryAnswers"
                     >提交核验回答</el-button>
+                    <el-button
+                      v-if="cancellableRunId"
+                      data-testid="cancel-current-run"
+                      type="danger"
+                      plain
+                      :loading="cancelling"
+                      @click="stopCurrentRun"
+                    >中断生成</el-button>
+                    <span id="mastery-check-speech-controls" class="speech-controls-target" />
                   </div>
                 </template>
                 <el-empty v-else description="暂无核验问题" />
