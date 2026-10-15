@@ -26,6 +26,7 @@ import {
 import FormulaEditor from "../components/FormulaEditor.vue"
 import VoiceRecorder from "../components/VoiceRecorder.vue"
 import TeacherSpeechPlayer from "../components/TeacherSpeechPlayer.vue"
+import TeacherReplyCard from "../components/TeacherReplyCard.vue"
 import { fetchQuestion } from "../api/questions"
 import { authUser } from "../stores/auth"
 import type {
@@ -83,14 +84,6 @@ const gradingPreviewFields = computed(() => {
   const channel = streamSnapshot.value.channels.FIRST_EXPLANATION_GRADING
   return channel && channel.status !== "FAILED" ? channel.fields : {}
 })
-const teachingPreviews = computed(() => {
-  if (streamSnapshot.value?.status !== "RUNNING") return []
-  return Object.entries(streamSnapshot.value.channels)
-    .filter(([purpose, channel]) => purpose !== "FIRST_EXPLANATION_GRADING" && channel.status !== "FAILED")
-    .flatMap(([purpose, channel]) => Object.entries(channel.fields)
-      .filter(([, text]) => text.trim())
-      .map(([field, text]) => ({ key: `${purpose}:${channel.generation}:${field}`, text })))
-})
 let gradingPollTimer: ReturnType<typeof setInterval> | undefined
 let gradingPollInFlight = false
 const gradingPollError = ref("")
@@ -105,6 +98,7 @@ const guidedAnswerText = ref<Record<string, string>>({})
 const masteryAnswerText = ref<Record<string, string>>({})
 const doubtDraft = ref("")
 const independentDoubts = ref<IndependentDoubt[]>([])
+const doubtPreviews = ref<Record<string, string>>({})
 const doubtHistoryError = ref("")
 const doubtControllers = new Map<string, AbortController>()
 const appealDraft = ref("")
@@ -116,6 +110,8 @@ let aiRequestGeneration = 0
 let gradingPollGeneration = 0
 // 自讲请求进行时允许编辑下一份草稿；准备步骤和失败刷新时仍锁定输入。
 const explanationSubmitting = ref(false)
+const teacherReplyRequested = ref(false)
+const previousReplySupport = ref<Session["latestSupport"]>()
 const errorMessage = ref("")
 const voiceRecording = ref(false)
 const activeVoiceKey = ref<string>()
@@ -172,9 +168,49 @@ const speechIsSolution = computed(() => Boolean(session.value?.solutionExposed &
   && canShowTeachingContent.value
   && (session.value.flowStage === "SHOWING_FULL_SOLUTION"
     || ["NEEDS_REVIEW", "STOPPED_LIMIT"].includes(session.value.status))))
-const nextStepText = computed(() => speechIsSolution.value ? ""
-  : canShowTeachingContent.value ? session.value?.latestSupport?.followUpContent || session.value?.latestSupport?.content || "" : "")
+const currentReplySupport = computed(() => {
+  // 新请求的会话快照可能仍携带上一轮反馈，当前回复区只展示新增或更新的内容。
+  const support = session.value?.latestSupport
+  const previous = previousReplySupport.value
+  if (previous && support?.id === previous.id && support.content === previous.content && support.followUpContent === previous.followUpContent) return null
+  return support
+})
+const nextStepText = computed(() => speechIsSolution.value || !canShowTeachingContent.value ? ""
+  : currentReplySupport.value?.followUpContent || currentReplySupport.value?.content || "")
+const teacherReplyPending = computed(() => (teacherReplyRequested.value && streamSnapshot.value?.status !== "SUCCEEDED") || teachingEvaluationPending.value)
+const teacherReplyBlocks = computed(() => {
+  if (!canShowTeachingContent.value) return []
+  if (teacherReplyPending.value) {
+    if (streamSnapshot.value?.status !== "RUNNING") return []
+    return Object.entries(streamSnapshot.value.channels).flatMap(([purpose, channel]) => {
+      if (channel.status === "FAILED") return []
+      return Object.entries(channel.fields).flatMap(([field, text]) => {
+        if (!text.trim()) return []
+        const question = /^questions\.(\d+)\.question$/.exec(field)
+        const basis = /^results\.(\d+)\.basis$/.exec(field)
+        let label: string
+        if (["AI_TEACHING", "AI_SUPPORT", "GUIDED_ANSWER_ASSESSMENT"].includes(purpose) && field === "content") label = "下一步"
+        else if (["AI_TEACHING", "AI_SUPPORT", "AI_MASTERY_CHECK"].includes(purpose) && question) label = `${purpose === "AI_MASTERY_CHECK" ? "核验问题" : "子问题"} ${Number(question[1]) + 1}`
+        else if (purpose === "MASTERY_CHECK_ASSESSMENT" && basis) label = `核验依据 ${Number(basis[1]) + 1}`
+        else return []
+        return [{ key: `${purpose}:${field}`, label, text }]
+      })
+    })
+  }
+  const blocks = nextStepText.value ? [{ key: "content", label: "下一步", text: nextStepText.value }] : []
+  if (session.value?.flowStage === "WAIT_GUIDED_ANSWERS") {
+    blocks.push(...(session.value.latestSupport?.guidedQuestions ?? []).map((item, index) => ({ key: item.id, label: `子问题 ${index + 1}`, text: item.question })))
+  } else if (session.value?.flowStage === "WAIT_MASTERY_CHECK" && !masteryCheckCompleted()) {
+    blocks.push(...(session.value.masteryCheck?.questions ?? []).map((item, index) => ({ key: item.id, label: `核验问题 ${index + 1}`, text: item.question })))
+  }
+  return blocks
+})
+const showTeacherReply = computed(() => teacherReplyPending.value || Boolean(session.value && (
+  currentReplySupport.value || session.value.masteryCheck?.questions?.length
+  || session.value.flowStage === "SHOWING_FULL_SOLUTION" || isTerminalSession()
+)))
 const speechControlsTarget = computed(() => {
+  if (teacherReplyPending.value) return undefined
   if (nextStepText.value) return "#next-step-speech"
   if (speechIsSolution.value) return "#solution-speech"
   if (canShowTeachingContent.value && session.value?.masteryCheck?.questions?.length && !isTerminalSession()) return "#mastery-speech"
@@ -581,7 +617,7 @@ function updateStreamPreview(snapshot: AIRunSnapshot) {
   else if (snapshot.status === "SUCCEEDED" && result && "report" in result) grading.value = result as Grading
 }
 
-function beginAIRequest(runId: string = crypto.randomUUID()) {
+function beginAIRequest(runId: string = crypto.randomUUID(), restoring = false) {
   const request = {
     runId,
     controller: new AbortController(),
@@ -591,6 +627,11 @@ function beginAIRequest(runId: string = crypto.randomUUID()) {
   detachStreamListener?.()
   streamSnapshot.value = null
   activeAiRequest.value = request
+  if (!gradingRetrying.value) {
+    // 恢复订阅时会话可能已包含本次最终回复，不能把它当作上一轮内容过滤。
+    previousReplySupport.value = restoring ? undefined : session.value?.latestSupport
+    teacherReplyRequested.value = true
+  }
   localStorage.setItem(pendingAIRunStorageKey, runId)
   detachStreamListener = registerAIStreamListener(sessionId, request.runId, updateStreamPreview)
   return request
@@ -598,6 +639,7 @@ function beginAIRequest(runId: string = crypto.randomUUID()) {
 
 watch(activeAiRequest, (request) => {
   if (request) return
+  teacherReplyRequested.value = false
   detachStreamListener?.(); detachStreamListener = undefined
   awaitingFirstGrading.value = false
   if (!pageDetached) {
@@ -607,7 +649,7 @@ watch(activeAiRequest, (request) => {
 }, { flush: "sync" })
 
 async function restoreAIStream(runId: string) {
-  const request = beginAIRequest(runId)
+  const request = beginAIRequest(runId, true)
   submitting.value = true
   try {
     await subscribeAIRun(sessionId, runId, { signal: request.controller.signal })
@@ -826,6 +868,8 @@ async function submitExplanation() {
   }
   submitting.value = true
   errorMessage.value = ""
+  teacherReplyRequested.value = true
+  streamSnapshot.value = null
   let draftContent = ""
   let request: ReturnType<typeof beginAIRequest> | undefined
   try {
@@ -869,6 +913,7 @@ async function submitExplanation() {
   } finally {
     if (!request || isActiveAIRequest(request)) {
       awaitingFirstGrading.value = false
+      teacherReplyRequested.value = false
       activeAiRequest.value = null
       explanationSubmitting.value = false
       submitting.value = false
@@ -1017,7 +1062,15 @@ async function followIndependentDoubt(runId: string) {
   const controller = new AbortController()
   doubtControllers.set(runId, controller)
   try {
-    const result = await subscribeAIRun<{ content: string }>(sessionId, runId, { signal: controller.signal })
+    const result = await subscribeAIRun<{ content: string }>(sessionId, runId, {
+      signal: controller.signal,
+      onSnapshot(snapshot) {
+        if (pageDetached || controller.signal.aborted || snapshot.runId !== runId) return
+        const channel = snapshot.channels.INDEPENDENT_DOUBT
+        doubtPreviews.value[runId] = snapshot.status === "RUNNING" && channel?.status !== "FAILED"
+          ? channel?.fields.content ?? "" : ""
+      },
+    })
     if (pageDetached) return
     const row = independentDoubts.value.find((item) => item.runId === runId)
     if (row) { row.status = "SUCCEEDED"; row.result = result; row.error = null }
@@ -1029,6 +1082,7 @@ async function followIndependentDoubt(runId: string) {
       row.error = { message: error instanceof Error ? error.message : String(error), code: error instanceof AIStreamError ? error.code ?? "" : "AI_SERVICE_UNAVAILABLE", status: error instanceof AIStreamError ? error.status : 503 }
     }
   } finally {
+    delete doubtPreviews.value[runId]
     doubtControllers.delete(runId)
   }
 }
@@ -1241,18 +1295,33 @@ async function respondToSolution(understood: boolean) {
           <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </section>
         <FirstExplanationGrading :grading="grading" :retrying="gradingRetrying" :submission-text="firstGradingSubmissionText" :preview-fields="gradingPreviewFields" :stream-run-id="gradingStreamRunId" @close="gradingDismissed = true" @retry="retryGradingResult" @acknowledge="acknowledgeGradingResult" />
-        <section v-if="canShowTeachingContent && teachingPreviews.length" class="session-section stream-preview" aria-label="老师回复正在生成" aria-live="polite" aria-busy="true">
-          <h2>老师回复</h2><p class="stream-preview__status" role="status">正在生成，完成后确认内容。</p>
-          <p v-for="preview in teachingPreviews" :key="preview.key" class="stream-preview__text">{{ preview.text }}</p>
-        </section>
         <div v-if="cancellableRunId && !['selfExplain', 'guidedAnswers'].includes(activeSegment)" class="actions cancel-run-actions">
           <el-button data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
         </div>
         <el-alert v-if="gradingPollError" :title="gradingPollError" type="error" :closable="false" show-icon />
-        <section v-if="canShowTeachingContent && nextStepText" class="session-section feedback-section" aria-label="学习反馈" aria-live="polite">
-          <div class="feedback-card">
-            <div class="feedback-next-step"><span id="next-step-speech" class="speech-anchor" /><p><strong>下一步：</strong>{{ nextStepText }}</p></div>
-          </div>
+        <section v-if="showTeacherReply" class="session-section feedback-section" data-testid="teacher-reply" aria-label="学习反馈">
+          <TeacherReplyCard :pending="teacherReplyPending || !canShowTeachingContent" :blocks="teacherReplyBlocks">
+            <template #controls><span v-if="!teacherReplyPending && canShowTeachingContent && nextStepText" id="next-step-speech" class="speech-anchor" /></template>
+            <template v-if="!teacherReplyPending && canShowTeachingContent">
+              <template v-if="session.flowStage === 'SHOWING_FULL_SOLUTION' && !isTerminalSession()">
+                <h2 class="speech-content-heading"><span id="solution-speech" class="speech-anchor" />完整解析</h2>
+                <div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" />
+                <p>请确认你是否已经理解解析，确认后直接进入掌握度核验。</p>
+                <div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" :disabled="cancelling" @click="respondToSolution(true)">我会了，进入掌握度核验</el-button><el-button :loading="submitting" :disabled="cancelling" @click="respondToSolution(false)">仍然不会</el-button></div>
+              </template>
+              <div v-else-if="session.status === 'COMPLETED'" class="completion-state"><h2>本轮自讲已完成</h2><p>{{ session.masteryCheck?.outcome === 'COMPLETED' ? masteryOutcomeLabels.COMPLETED : '你已经正确、完整地讲清了这道题。' }}</p></div>
+              <div v-else-if="session.status === 'NEEDS_REVIEW'" class="solution-state"><h2 class="speech-content-heading"><span v-if="speechIsSolution" id="solution-speech" class="speech-anchor" />本题已结束，仍有未解决问题</h2><p>{{ masteryOutcomeLabels.NEEDS_REVIEW }}</p><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></div>
+              <div v-else-if="session.status === 'STOPPED_LIMIT'" class="solution-state"><h2 class="speech-content-heading"><span v-if="speechIsSolution" id="solution-speech" class="speech-anchor" />已达到本轮支持上限</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></div>
+              <div v-if="session.masteryCheck?.results?.length" class="mastery-check-state">
+                <h2>掌握度核验结论</h2>
+                <div v-for="item in session.masteryCheck.questions" :key="item.id" class="guided-question">
+                  <p>{{ item.question }}</p>
+                  <p class="mastery-answer">你的回答：{{ masteryAnswerFor(item.id) ?? "未作答" }}</p>
+                  <p class="mastery-result" :class="masteryResultFor(item.id)?.passed ? 'is-positive' : 'is-attention'">{{ masteryResultFor(item.id)?.passed ? "通过" : "未通过" }}：{{ masteryResultFor(item.id)?.basis }}</p>
+                </div>
+              </div>
+            </template>
+          </TeacherReplyCard>
         </section>
         <div v-if="speechControlsTarget === '#latest-reply-speech'" class="speech-content-heading"><span id="latest-reply-speech" class="speech-anchor" /></div>
           <section class="session-section input-section" aria-label="当前输入与主操作">
@@ -1442,12 +1511,13 @@ async function respondToSolution(understood: boolean) {
                 <div v-if="independentDoubts.length" class="doubt-history" aria-label="答疑记录" aria-live="polite">
                   <article v-for="item in independentDoubts" :key="item.runId" class="doubt-thread" :data-testid="`doubt-${item.runId}`">
                     <p class="conversation-content"><strong>我的疑问：</strong>{{ item.question }}</p>
-                    <p v-if="item.status === 'RUNNING'" class="recording-help" role="status">正在回答…</p>
-                    <p v-else-if="item.result" class="conversation-content"><strong>老师回复：</strong>{{ item.result.content }}</p>
-                    <template v-else>
-                      <p role="alert">{{ item.error?.code === 'AI_SERVICE_UNAVAILABLE' ? 'AI服务调用失败，请稍后再试' : item.error?.message || 'AI服务调用失败，请稍后再试' }}</p>
-                      <el-button data-testid="retry-doubt" @click="submitDoubt(item.question)">重试发送</el-button>
-                    </template>
+                    <TeacherReplyCard
+                      :pending="item.status === 'RUNNING'"
+                      :blocks="item.result ? [{ key: 'content', text: item.result.content }] : doubtPreviews[item.runId] ? [{ key: 'content', text: doubtPreviews[item.runId] }] : []"
+                      :error="item.status === 'FAILED' || item.status === 'CANCELLED' ? (item.error?.code === 'AI_SERVICE_UNAVAILABLE' ? 'AI服务调用失败，请稍后再试' : item.error?.message || 'AI服务调用失败，请稍后再试') : undefined"
+                    >
+                      <el-button v-if="item.status === 'FAILED' || item.status === 'CANCELLED'" data-testid="retry-doubt" @click="submitDoubt(item.question)">重试发送</el-button>
+                    </TeacherReplyCard>
                   </article>
                 </div>
               </div>
@@ -1495,30 +1565,12 @@ async function respondToSolution(understood: boolean) {
             </div>
           </section>
         <template v-if="!isTerminalSession() || teachingEvaluationPending">
-          <section v-if="canShowTeachingContent && session.flowStage === 'AI_EVALUATING'" class="session-section"><h2>AI 正在评价</h2><p>请等待评价结果返回。</p></section>
-          <section v-else-if="canShowTeachingContent && session.flowStage === 'SHOWING_FULL_SOLUTION'" class="session-section"><h2 class="speech-content-heading"><span id="solution-speech" class="speech-anchor" />完整解析</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /><p>请确认你是否已经理解解析，确认后直接进入掌握度核验。</p><div class="actions"><el-button data-testid="understood-solution" type="primary" :loading="submitting" :disabled="cancelling" @click="respondToSolution(true)">我会了，进入掌握度核验</el-button><el-button :loading="submitting" :disabled="cancelling" @click="respondToSolution(false)">仍然不会</el-button></div></section>
-          <section v-else-if="canShowTeachingContent && session.flowStage === 'WAIT_MASTERY_CHECK'" class="session-section mastery-check-state">
+          <section v-if="!teacherReplyPending && canShowTeachingContent && session.flowStage === 'WAIT_MASTERY_CHECK'" class="session-section mastery-check-state">
             <h2>掌握度核验</h2>
             <p class="mastery-check-note">请到上方「掌握度核验」中回答下面的问题；全部通过即完成本题。</p>
           </section>
         </template>
         <section v-if="canShowTeachingContent && session.needHumanReason && session.status === 'IN_PROGRESS'" class="session-section"><el-alert title="已申请人工复核，你可以继续自讲。" type="warning" :closable="false" show-icon /></section>
-        <section v-if="canShowTeachingContent && session.status === 'COMPLETED'" class="session-section completion-state"><h2>本轮自讲已完成</h2><p>{{ session.masteryCheck?.outcome === 'COMPLETED' ? masteryOutcomeLabels.COMPLETED : '你已经正确、完整地讲清了这道题。' }}</p></section>
-        <section v-else-if="canShowTeachingContent && session.status === 'NEEDS_REVIEW'" class="session-section solution-state"><h2 class="speech-content-heading"><span v-if="speechIsSolution" id="solution-speech" class="speech-anchor" />本题已结束，仍有未解决问题</h2><p>{{ masteryOutcomeLabels.NEEDS_REVIEW }}</p><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
-        <section v-else-if="canShowTeachingContent && session.status === 'STOPPED_LIMIT'" class="session-section solution-state"><h2 class="speech-content-heading"><span v-if="speechIsSolution" id="solution-speech" class="speech-anchor" />已达到本轮支持上限</h2><div v-if="question?.fullSolution" class="question-rich-text" v-html="sanitizeQuestionHtml(question.fullSolution)" /></section>
-        <section v-if="canShowTeachingContent && session.masteryCheck?.results?.length" class="session-section mastery-check-state">
-          <h2>掌握度核验结论</h2>
-          <div v-for="item in session.masteryCheck.questions" :key="item.id" class="guided-question">
-            <p>{{ item.question }}</p>
-            <p class="mastery-answer">你的回答：{{ masteryAnswerFor(item.id) ?? "未作答" }}</p>
-            <p
-              class="mastery-result"
-              :class="masteryResultFor(item.id)?.passed ? 'is-positive' : 'is-attention'"
-            >
-              {{ masteryResultFor(item.id)?.passed ? "通过" : "未通过" }}：{{ masteryResultFor(item.id)?.basis }}
-            </p>
-          </div>
-        </section>
         <TeacherSpeechPlayer
           v-if="canShowTeachingContent"
           ref="teacherSpeechRef"
@@ -1562,7 +1614,6 @@ async function respondToSolution(understood: boolean) {
 </template>
 
 <style scoped>
-.stream-preview__text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75}.stream-preview__status{color:var(--color-text-secondary);font-size:var(--font-size-sm)}
 .session-page { max-width: 1040px; margin: 0 auto; padding: var(--space-6) var(--space-6) var(--space-12); }
 .session-shell { min-width: 0; }
 .page-actions { display: flex; flex-direction: column; }
@@ -1633,10 +1684,7 @@ h2 { font-size: var(--font-size-lg); }
 }
 .step-content-input:disabled { cursor: not-allowed; opacity: 0.65; }
 :deep(.student-math-error) { color: var(--color-error-700); background: var(--color-error-100); text-decoration: underline wavy; }
-.feedback-card { border: 1px solid var(--color-brand-100); border-left: 3px solid var(--color-brand-600); border-radius: var(--radius-lg); background: var(--color-brand-50); }
-.feedback-next-step { padding: var(--space-3); overflow-wrap: anywhere; }
-.feedback-next-step, .speech-content-heading { display: flex; align-items: flex-start; gap: var(--space-2); }
-.feedback-next-step p { margin: 0; min-width: 0; }
+.speech-content-heading { display: flex; align-items: flex-start; gap: var(--space-2); }
 .speech-anchor { display: inline-flex; flex-shrink: 0; }
 .speech-content-heading { align-items: center; margin-bottom: var(--space-3); font-weight: 600; }
 .conversation-scroll {
