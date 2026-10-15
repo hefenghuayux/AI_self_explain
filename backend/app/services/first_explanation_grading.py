@@ -147,12 +147,6 @@ def run_grading(
         record.error_message = None
         db.commit()
         stream_validated("FIRST_EXPLANATION_GRADING")
-        context = current_stream.get()
-        if context is not None:
-            context.registry.update_result(
-                context.run_id,
-                {"grading": to_grading_response(record).model_dump(mode="json", by_alias=True)},
-            )
     except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as error:
         stream_failed("FIRST_EXPLANATION_GRADING")
         record.status = "FAILED"
@@ -167,6 +161,18 @@ def run_grading(
         record.status = "FAILED"
         record.error_message = f"评分服务失败：{error}"
         db.commit()
+
+    # 两种终态都推送已落库结果；评分失败不阻断并行的自讲评价。
+    context = current_stream.get()
+    if context is not None:
+        snapshot = context.registry.snapshot(context.run_id)
+        context.registry.update_result(
+            context.run_id,
+            {
+                **(snapshot["result"] or {}),
+                "grading": to_grading_response(record).model_dump(mode="json", by_alias=True),
+            },
+        )
 
 
 def run_parallel_tasks(

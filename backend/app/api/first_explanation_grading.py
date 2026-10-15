@@ -161,7 +161,8 @@ async def submit_graded_step_attempt(
             context.run_id, initial.model_dump(mode="json", by_alias=True)
         )
         await task
-        database_session.expire_all()
+        # 后台写入已独立提交；结束旧读事务，避免可重复读继续返回提交前的快照。
+        database_session.rollback()
         database_session.refresh(session)
         database_session.refresh(grading)
     return FirstExplanationSubmissionResponse(
@@ -210,7 +211,8 @@ async def retry_grading(
     )
     if getattr(request.state, "stream_managed", False):
         await task
-        database_session.expire_all()
+        # 刷新 ORM 对象不会更新可重复读事务的数据库快照。
+        database_session.rollback()
         database_session.refresh(record)
     return to_grading_response(record)
 
