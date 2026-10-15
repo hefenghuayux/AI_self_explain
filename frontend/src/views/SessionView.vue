@@ -212,6 +212,7 @@ const showTeacherReply = computed(() => teacherReplyPending.value || Boolean(ses
 )))
 const speechControlsTarget = computed(() => {
   if (activeSegment.value === "masteryCheck" && cancellableRunId.value) return "#mastery-check-speech-controls"
+  if (activeSegment.value === "doubt") return "#doubt-speech-controls"
   if (teacherReplyPending.value) return undefined
   if (canShowTeachingContent.value && masteryCheckCompleted()) return "#mastery-result-speech"
   if (nextStepText.value) return "#next-step-speech"
@@ -1286,7 +1287,7 @@ async function respondToSolution(understood: boolean) {
           <div data-testid="question-content" class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </section>
         <FirstExplanationGrading :grading="grading" :retrying="gradingRetrying" :submission-text="firstGradingSubmissionText" :preview-fields="gradingPreviewFields" :stream-run-id="gradingStreamRunId" @close="gradingDismissed = true" @retry="retryGradingResult" @acknowledge="acknowledgeGradingResult" />
-        <div v-if="cancellableRunId && !['selfExplain', 'guidedAnswers', 'masteryCheck'].includes(activeSegment)" class="actions cancel-run-actions">
+        <div v-if="cancellableRunId && !['selfExplain', 'guidedAnswers', 'masteryCheck', 'doubt'].includes(activeSegment)" class="actions cancel-run-actions">
           <el-button data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
         </div>
         <el-alert v-if="gradingPollError" :title="gradingPollError" type="error" :closable="false" show-icon />
@@ -1478,13 +1479,23 @@ async function respondToSolution(understood: boolean) {
                   :rows="5"
                   placeholder="请输入你的疑问点"
                 />
-                <div class="actions">
-                    <el-button
-                      data-testid="submit-doubt"
-                      type="primary"
-                      :disabled="!doubtDraft.trim()"
-                      @click="submitDoubt()"
-                    >发送</el-button>
+                <div class="step-actions doubt-actions">
+                  <el-button
+                    data-testid="submit-doubt"
+                    type="primary"
+                    :loading="submitting"
+                    :disabled="!doubtDraft.trim() || submitting || cancelling || voiceRecording"
+                    @click="submitDoubt()"
+                  >发送</el-button>
+                  <el-button
+                    v-if="cancellableRunId"
+                    data-testid="cancel-current-run"
+                    type="danger"
+                    plain
+                    :loading="cancelling"
+                    @click="stopCurrentRun"
+                  >中断生成</el-button>
+                  <span id="doubt-speech-controls" class="speech-controls-target" />
                   <VoiceRecorder
                     v-if="canSubmitStudentInterruption()"
                     ref="doubtVoiceRecorderRef"
