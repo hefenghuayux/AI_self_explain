@@ -866,7 +866,12 @@ class SessionRepository:
         self.database_session.add(attempt)
         self.database_session.flush()
         if voice_target == "SELF_EXPLANATION_EXPLAIN" and target_step is not None:
-            target_step.explain_transcript = asr_transcript
+            previous_transcript = target_step.explain_transcript or ""
+            target_step.explain_transcript = (
+                f"{previous_transcript}\n{asr_transcript}"
+                if previous_transcript
+                else asr_transcript
+            )
         relative_path: str | None = None
         try:
             relative_path = audio_storage.finalize_capture(

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref } from "vue"
 
 import { getAuthToken } from "../stores/auth"
 import type { VoiceInputTarget } from "../types/session"
+import InputActionButton from "./InputActionButton.vue"
 
 const props = withDefaults(defineProps<{
   sessionId: string
@@ -12,6 +13,8 @@ const props = withDefaults(defineProps<{
   startTestId?: string
   stopTestId?: string
   label?: string
+  stopLabel?: string
+  iconButton?: boolean
   inline?: boolean
   disabled?: boolean
   prepareStart?: () => Promise<boolean> | boolean
@@ -33,13 +36,20 @@ type VoiceState = "idle" | "connecting" | "recording" | "transcribing" | "comple
 const state = ref<VoiceState>("idle")
 const recording = computed(() => state.value === "recording")
 const busy = computed(() => ["connecting", "recording", "transcribing"].includes(state.value))
+const buttonLabel = computed(() => {
+  if (props.iconButton || props.stopLabel) {
+    if (state.value === "connecting") return "正在连接"
+    if (state.value === "transcribing") return props.stopLabel ? "保存中" : "正在保存转写"
+  }
+  return recording.value ? (props.stopLabel ?? `停止${props.label}`) : props.label
+})
 const statusText = computed(() => ({
   idle: "",
   connecting: "正在准备录音并连接…",
-  recording: "正在录音，点击按钮停止。",
+  recording: props.target === "SELF_EXPLANATION_EXPLAIN" ? "正在自讲，点击暂停自讲保存本段。" : "正在录音，点击按钮停止。",
   transcribing: "正在完成转写，请稍候…",
   completed: props.target === "SELF_EXPLANATION_EXPLAIN"
-    ? "讲解转写已保存，提交自讲时一并使用。"
+    ? "本段讲解已保存，可继续自讲，提交时一并使用。"
     : "转写完成，请检查输入内容。",
   failed: "录音未完成，可重新尝试。",
 })[state.value])
@@ -226,18 +236,26 @@ defineExpose({ start, stop })
 </script>
 
 <template>
-  <section class="voice-recorder" :class="{ 'is-inline': inline }">
+  <section class="voice-recorder" :class="{ 'is-inline': inline, 'is-toolbar': inline && (iconButton || stopLabel) }">
     <div v-if="!inline" class="voice-heading">
       <span class="recording-indicator" :class="{ 'is-recording': recording }" aria-hidden="true"></span>
       <div><h3>{{ recording ? "正在录音" : "实时语音输入" }}</h3><p>句末转写会追加到输入框，确认前不会进入 AI 评价。</p></div>
     </div>
     <div class="actions">
+      <InputActionButton v-if="iconButton" :icon="recording ? 'stop' : 'microphone'" :label="buttonLabel"
+        :data-testid="recording ? stopTestId : startTestId" :type="recording ? 'danger' : undefined"
+        :disabled="!recording && (disabled || busy)" :loading="busy && !recording"
+        @click="recording ? stop() : start()" />
       <el-button
+        v-else
+        class="record-button"
         :data-testid="recording ? stopTestId : startTestId"
         :type="recording ? 'danger' : undefined"
         :disabled="!recording && (disabled || busy)"
+        :loading="Boolean(stopLabel) && busy && !recording"
+        :aria-pressed="recording"
         @click="recording ? stop() : start()"
-      >{{ recording ? `停止${label}` : label }}</el-button>
+      >{{ buttonLabel }}</el-button>
     </div>
     <p v-if="statusText" class="voice-status" role="status">{{ statusText }}</p>
     <p v-if="previewText" class="transcript-preview" aria-live="polite">正在转写：{{ previewText }}</p>
@@ -255,5 +273,8 @@ defineExpose({ start, stop })
 .actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
 .voice-recorder.is-inline { margin-top: 0; padding: 0; border: 0; background: transparent; }
 .voice-recorder.is-inline .actions { margin-top: 0; }
+.voice-recorder.is-toolbar, .voice-recorder.is-toolbar .actions { display: contents; }
+.voice-recorder.is-toolbar .record-button { width: 96px; height: 44px; flex: 0 0 96px; margin: 0; padding: 0; }
+.voice-recorder.is-toolbar .voice-status, .voice-recorder.is-toolbar .transcript-preview { order: 1; flex: 1 0 100%; min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 640px) { .actions .el-button { width: 100%; } }
 </style>

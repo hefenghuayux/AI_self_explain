@@ -5,7 +5,17 @@ import "mathlive/fonts.css"
 import type { MathfieldElement } from "mathlive"
 import { renderStudentTextHtml } from "../utils/studentTextHtml"
 
-const props = defineProps<{ modelValue: string; disabled: boolean }>()
+const props = withDefaults(defineProps<{
+  modelValue: string
+  disabled: boolean
+  testId?: string
+  placeholder?: string
+  label?: string
+}>(), {
+  testId: "current-step-content",
+  placeholder: "输入关键步骤或解题过程",
+  label: "关键步骤或解题过程输入",
+})
 const emit = defineEmits<{ "update:modelValue": [value: string] }>()
 const editorRef = ref<HTMLDivElement>()
 let savedRange: Range | null = null
@@ -186,8 +196,8 @@ defineExpose({ open })
 
 <template>
   <div ref="editorRef" class="step-content-input" :contenteditable="!disabled"
-    :aria-disabled="disabled" data-testid="current-step-content" data-placeholder="输入关键步骤或解题过程"
-    aria-label="关键步骤或解题过程输入" role="textbox" aria-multiline="true"
+    :aria-disabled="disabled" :data-testid="testId" :data-placeholder="placeholder"
+    :aria-label="label" role="textbox" aria-multiline="true"
     @input="updateValue" @click="handleClick" @paste="handlePaste"
     @keyup="rememberSelection" @mouseup="rememberSelection" />
 </template>

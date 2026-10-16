@@ -24,6 +24,7 @@ import {
   submitStepAttempt,
 } from "../api/session-steps"
 import FormulaEditor from "../components/FormulaEditor.vue"
+import StudentInputActions from "../components/StudentInputActions.vue"
 import VoiceRecorder from "../components/VoiceRecorder.vue"
 import TeacherSpeechPlayer from "../components/TeacherSpeechPlayer.vue"
 import TeacherReplyCard from "../components/TeacherReplyCard.vue"
@@ -94,6 +95,8 @@ const currentStepTranscript = ref("")
 // 上次成功提交时自讲框里的内容，用于在当前会话内回填，方便学生直接修改后重讲。
 const lastSubmittedSelfExplanation = ref("")
 const formulaEditorRef = ref<InstanceType<typeof FormulaEditor>>()
+const doubtFormulaEditorRef = ref<InstanceType<typeof FormulaEditor>>()
+const guidedFormulaEditorRefs = ref<Record<string, InstanceType<typeof FormulaEditor>>>({})
 const guidedAnswerText = ref<Record<string, string>>({})
 const masteryAnswerText = ref<Record<string, string>>({})
 const doubtDraft = ref("")
@@ -214,6 +217,9 @@ const showTeacherReply = computed(() => teacherReplyPending.value || Boolean(ses
 const speechControlsTarget = computed(() => {
   if (activeSegment.value === "masteryCheck" && cancellableRunId.value) return "#mastery-check-speech-controls"
   if (activeSegment.value === "doubt") return "#doubt-speech-controls"
+  if (activeSegment.value === "selfExplain") return "#self-explain-speech-controls"
+  if (activeSegment.value === "guidedAnswers" && showGuidedAnswers.value
+    && session.value?.latestSupport?.guidedQuestions?.length) return "#guided-answer-speech-controls"
   if (teacherReplyPending.value) return undefined
   if (canShowTeachingContent.value && masteryCheckCompleted()) return "#mastery-result-speech"
   if (nextStepText.value) return "#next-step-speech"
@@ -1334,21 +1340,18 @@ async function respondToSolution(understood: boolean) {
                     v-model="currentStepContent"
                     :disabled="selfExplanationEditingDisabled || activeSegment !== 'selfExplain'"
                   />
-                  <p class="recording-help">步骤录音转写到输入框；讲解录音随本次自讲提交。</p>
-                  <div class="step-actions self-explain-actions">
-                    <el-button
-                      data-testid="insert-formula"
-                      :disabled="selfExplanationEditingDisabled || voiceRecording"
-                      @click="openFormulaEditor"
-                    >插入公式</el-button>
-                    <el-button
-                      data-testid="submit-explanation"
-                      type="primary"
-                      :disabled="!canSubmitSelfExplanation || voiceRecording"
-                      :loading="submitting"
-                      @click="submitExplanation"
-                    >提交</el-button>
-                    <el-button v-if="cancellableRunId" data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
+                  <p class="recording-help">语音输入写入步骤；开始自讲录入讲解，暂停后可继续，提交时一并使用。</p>
+                  <StudentInputActions
+                    class="self-explain-actions"
+                    submit-test-id="submit-explanation"
+                    formula-test-id="insert-formula"
+                    :submit-disabled="!canSubmitSelfExplanation || voiceRecording"
+                    :formula-disabled="selfExplanationEditingDisabled || voiceRecording"
+                    :loading="submitting"
+                    @submit="submitExplanation"
+                    @formula="openFormulaEditor"
+                  >
+                    <template #before>
                     <VoiceRecorder
                       ref="explainVoiceRecorderRef"
                       :session-id="sessionId"
@@ -1356,7 +1359,8 @@ async function respondToSolution(understood: boolean) {
                       target="SELF_EXPLANATION_EXPLAIN"
                       start-test-id="record-explain"
                       stop-test-id="stop-record-explain"
-                      label="讲解录音"
+                      label="开始自讲"
+                      stop-label="暂停自讲"
                       inline
                       :disabled="selfExplanationReadOnly || submitting
                         || teachingEvaluationPending
@@ -1366,6 +1370,8 @@ async function respondToSolution(understood: boolean) {
                       @busy-change="handleVoiceBusyChange('explain', $event)"
                       @error="errorMessage = $event"
                     />
+                    </template>
+                    <template #voice>
                     <VoiceRecorder
                       ref="stepVoiceRecorderRef"
                       :session-id="sessionId"
@@ -1373,7 +1379,8 @@ async function respondToSolution(understood: boolean) {
                       target="SELF_EXPLANATION_STEP"
                       start-test-id="record-step"
                       stop-test-id="stop-record-step"
-                      label="步骤录音"
+                      label="语音输入"
+                      icon-button
                       inline
                       :disabled="selfExplanationReadOnly || submitting
                         || teachingEvaluationPending
@@ -1384,40 +1391,40 @@ async function respondToSolution(understood: boolean) {
                       @busy-change="handleVoiceBusyChange('step', $event)"
                       @error="errorMessage = $event"
                     />
-                  </div>
+                    </template>
+                    <template #after>
+                      <el-button v-if="cancellableRunId" data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
+                      <span id="self-explain-speech-controls" class="speech-controls-target" />
+                    </template>
+                  </StudentInputActions>
               </div>
               <div v-show="activeSegment === 'guidedAnswers'" class="dialog-pane">
                 <template v-if="showGuidedAnswers && session.latestSupport?.guidedQuestions?.length">
                   <div v-if="speechControlsTarget === '#guided-speech'" class="speech-content-heading"><span id="guided-speech" class="speech-anchor" /><span>子问题</span></div>
-                  <div v-for="item in session.latestSupport.guidedQuestions" :key="item.id" class="guided-question">
+                  <div v-for="(item, index) in session.latestSupport.guidedQuestions" :key="item.id" class="guided-question">
                     <p>{{ item.question }}</p>
-                    <el-input
-                      v-model="guidedAnswerText[item.id]"
-                      :data-testid="`guided-answer-${item.id}`"
-                      type="textarea"
-                      :rows="5"
-                      :disabled="submitting || guidedAnswerSubmitted(item.id)"
+                    <FormulaEditor
+                      :ref="(editor) => { if (editor) guidedFormulaEditorRefs[item.id] = editor as InstanceType<typeof FormulaEditor>; else delete guidedFormulaEditorRefs[item.id] }"
+                      :model-value="guidedAnswerText[item.id] ?? ''"
+                      :test-id="`guided-answer-${item.id}`"
+                      :label="`回答子问题 ${index + 1}`"
+                      placeholder="请输入你的回答"
+                      :disabled="submitting || guidedAnswerSubmitted(item.id) || activeSegment !== 'guidedAnswers'"
+                      @update:model-value="guidedAnswerText[item.id] = $event"
                     />
-                    <div class="actions">
-                      <el-button
-                        :data-testid="`submit-guided-answer-${item.id}`"
-                        type="primary"
+                    <StudentInputActions
+                        :submit-test-id="`submit-guided-answer-${item.id}`"
+                        :formula-test-id="`insert-formula-guided-${item.id}`"
                         :loading="submitting"
-                        :disabled="cancelling || runPending || guidedAnswerSubmitted(item.id)
+                        :submit-disabled="submitting || cancelling || runPending || guidedAnswerSubmitted(item.id)
                           || voiceRecording
                           || session.flowStage !== 'WAIT_GUIDED_ANSWERS'"
-                        @click="submitGuidedQuestionAnswer(item.id)"
-                      >提交</el-button>
-                      <el-button
-                        v-if="cancellableRunId"
-                        data-testid="cancel-current-run"
-                        type="danger"
-                        plain
-                        :loading="cancelling"
-                        @click="stopCurrentRun"
-                      >中断生成</el-button>
+                        :formula-disabled="submitting || voiceRecording || guidedAnswerSubmitted(item.id)"
+                        @submit="submitGuidedQuestionAnswer(item.id)"
+                        @formula="guidedFormulaEditorRefs[item.id]?.open()"
+                    >
+                      <template #voice>
                       <VoiceRecorder
-                        v-if="session.flowStage === 'WAIT_GUIDED_ANSWERS' && !guidedAnswerSubmitted(item.id)"
                         ref="guidedVoiceRecorderRefs"
                         :session-id="sessionId"
                         :version="session.version"
@@ -1426,16 +1433,24 @@ async function respondToSolution(understood: boolean) {
                         :target-id="item.id"
                         :start-test-id="`start-voice-guided-${item.id}`"
                         :stop-test-id="`stop-voice-guided-${item.id}`"
+                        label="语音输入"
+                        icon-button
                         inline
                         :disabled="submitting
                           || guidedAnswerSubmitted(item.id)
+                          || session.flowStage !== 'WAIT_GUIDED_ANSWERS'
                           || (voiceRecording && activeVoiceKey !== `guided-${item.id}`)"
                         @final-transcript="appendGuidedTranscript(item.id, $event)"
                         @completed="handleVoiceCompleted('GUIDED_ANSWER', item.id, $event)"
                         @busy-change="handleVoiceBusyChange(`guided-${item.id}`, $event)"
                         @error="errorMessage = $event"
                       />
-                    </div>
+                      </template>
+                      <template #after>
+                        <el-button v-if="cancellableRunId" data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
+                        <span v-if="index === 0" id="guided-answer-speech-controls" class="speech-controls-target" />
+                      </template>
+                    </StudentInputActions>
                   </div>
                 </template>
                 <el-empty v-else description="暂无子问题" />
@@ -1477,32 +1492,26 @@ async function respondToSolution(understood: boolean) {
                 <el-empty v-else description="暂无核验问题" />
               </div>
               <div v-show="activeSegment === 'doubt'" class="dialog-pane">
-                <el-input
+                <FormulaEditor
+                  ref="doubtFormulaEditorRef"
                   v-model="doubtDraft"
-                  data-testid="doubt-draft"
-                  type="textarea"
-                  :rows="5"
+                  test-id="doubt-draft"
+                  label="你的疑问"
                   placeholder="请输入你的疑问点"
+                  :disabled="activeSegment !== 'doubt'"
                 />
-                <div class="step-actions doubt-actions">
-                  <el-button
-                    data-testid="submit-doubt"
-                    type="primary"
+                <StudentInputActions
+                    class="doubt-actions"
+                    submit-test-id="submit-doubt"
+                    formula-test-id="insert-formula-doubt"
                     :loading="doubtSubmitting"
-                    :disabled="!doubtDraft.trim() || doubtSubmitting || submitting || cancelling || voiceRecording"
-                    @click="submitDoubt()"
-                  >发送</el-button>
-                  <el-button
-                    v-if="cancellableRunId"
-                    data-testid="cancel-current-run"
-                    type="danger"
-                    plain
-                    :loading="cancelling"
-                    @click="stopCurrentRun"
-                  >中断生成</el-button>
-                  <span id="doubt-speech-controls" class="speech-controls-target" />
+                    :submit-disabled="!doubtDraft.trim() || doubtSubmitting || submitting || cancelling || voiceRecording"
+                    :formula-disabled="voiceRecording"
+                    @submit="submitDoubt()"
+                    @formula="doubtFormulaEditorRef?.open()"
+                >
+                  <template #voice>
                   <VoiceRecorder
-                    v-if="canSubmitStudentInterruption()"
                     ref="doubtVoiceRecorderRef"
                     :session-id="sessionId"
                     :version="session.version"
@@ -1510,21 +1519,28 @@ async function respondToSolution(understood: boolean) {
                     :prepare-start="prepareReplyRecording"
                     start-test-id="start-voice-doubt"
                     stop-test-id="stop-voice-doubt"
+                    label="语音输入"
+                    icon-button
                     inline
-                    :disabled="submitting || (voiceRecording && activeVoiceKey !== 'doubt')"
+                    :disabled="submitting || !canSubmitStudentInterruption() || (voiceRecording && activeVoiceKey !== 'doubt')"
                     @final-transcript="doubtDraft = appendTranscript(doubtDraft, $event)"
                     @completed="handleVoiceCompleted('DOUBT', undefined, $event)"
                     @busy-change="handleVoiceBusyChange('doubt', $event)"
                     @error="errorMessage = $event"
                   />
-                </div>
+                  </template>
+                  <template #after>
+                    <el-button v-if="cancellableRunId" data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
+                    <span id="doubt-speech-controls" class="speech-controls-target" />
+                  </template>
+                </StudentInputActions>
                 <div v-if="doubtHistoryError" class="actions" role="alert">
                   <span>{{ doubtHistoryError }}</span>
                   <el-button @click="loadIndependentDoubts">重新加载答疑记录</el-button>
                 </div>
                 <div v-if="independentDoubts.length" class="doubt-history" aria-label="答疑记录" aria-live="polite">
                   <article v-for="item in independentDoubts" :key="item.runId" class="doubt-thread" :data-testid="`doubt-${item.runId}`">
-                    <p class="conversation-content"><strong>我的疑问：</strong>{{ item.question }}</p>
+                    <p class="conversation-content"><strong>我的疑问：</strong><span v-html="renderStudentTextHtml(item.question)" /></p>
                     <TeacherReplyCard
                       :pending="item.status === 'RUNNING'"
                       :blocks="item.result ? [{ key: 'content', text: item.result.content }] : doubtPreviews[item.runId] ? [{ key: 'content', text: doubtPreviews[item.runId] }] : []"
@@ -1606,7 +1622,7 @@ async function respondToSolution(understood: boolean) {
                   <time>{{ new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false }) }}</time>
                 </div>
                 <p
-                  v-if="item.speaker === 'STUDENT' && item.submissionType === 'SELF_EXPLANATION'"
+                  v-if="item.speaker === 'STUDENT' && ['SELF_EXPLANATION', 'GUIDED_ANSWER'].includes(item.submissionType ?? '')"
                   data-testid="timeline-content"
                   class="conversation-content"
                   v-html="renderStudentTextHtml(item.content)"
