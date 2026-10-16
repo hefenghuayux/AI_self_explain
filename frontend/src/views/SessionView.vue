@@ -97,6 +97,7 @@ const lastSubmittedSelfExplanation = ref("")
 const formulaEditorRef = ref<InstanceType<typeof FormulaEditor>>()
 const doubtFormulaEditorRef = ref<InstanceType<typeof FormulaEditor>>()
 const guidedFormulaEditorRefs = ref<Record<string, InstanceType<typeof FormulaEditor>>>({})
+const masteryFormulaEditorRefs = ref<Record<string, InstanceType<typeof FormulaEditor>>>({})
 const guidedAnswerText = ref<Record<string, string>>({})
 const masteryAnswerText = ref<Record<string, string>>({})
 const doubtDraft = ref("")
@@ -124,6 +125,7 @@ const doubtVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 const stepVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 const explainVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 const guidedVoiceRecorderRefs = ref<InstanceType<typeof VoiceRecorder>[]>([])
+const masteryVoiceRecorderRefs = ref<InstanceType<typeof VoiceRecorder>[]>([])
 const appealVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 const historyDrawerVisible = ref(false)
 const historyItems = ref<SessionHistoryItem[]>([])
@@ -215,7 +217,8 @@ const showTeacherReply = computed(() => teacherReplyPending.value || Boolean(ses
   || session.value.flowStage === "SHOWING_FULL_SOLUTION" || isTerminalSession()
 )))
 const speechControlsTarget = computed(() => {
-  if (activeSegment.value === "masteryCheck" && cancellableRunId.value) return "#mastery-check-speech-controls"
+  if (activeSegment.value === "masteryCheck" && canShowTeachingContent.value
+    && session.value?.masteryCheck?.questions?.length) return "#mastery-check-speech-controls"
   if (activeSegment.value === "doubt") return "#doubt-speech-controls"
   if (activeSegment.value === "selfExplain") return "#self-explain-speech-controls"
   if (activeSegment.value === "guidedAnswers" && showGuidedAnswers.value
@@ -967,6 +970,8 @@ function stopVoiceRecorder(voiceKey: string) {
     appealVoiceRecorderRef.value?.stop()
   } else if (voiceKey.startsWith("guided-")) {
     guidedVoiceRecorderRefs.value.forEach((recorder) => recorder.stop())
+  } else if (voiceKey.startsWith("mastery-")) {
+    masteryVoiceRecorderRefs.value.forEach((recorder) => recorder.stop())
   }
 }
 
@@ -1052,6 +1057,7 @@ onBeforeUnmount(() => {
   doubtVoiceRecorderRef.value?.stop()
   appealVoiceRecorderRef.value?.stop()
   guidedVoiceRecorderRefs.value.forEach((recorder) => recorder.stop())
+  masteryVoiceRecorderRefs.value.forEach((recorder) => recorder.stop())
 })
 
 async function loadIndependentDoubts() {
@@ -1135,7 +1141,7 @@ function masteryCheckCompleted() {
 
 async function submitMasteryAnswers() {
   const masteryCheck = session.value?.masteryCheck
-  if (!session.value || !masteryCheck || cancelling.value) return
+  if (!session.value || !masteryCheck || cancelling.value || voiceRecording.value) return
   const answers: GuidedAnswer[] = []
   for (const masteryQuestion of masteryCheck.questions) {
     const answer = masteryAnswerText.value[masteryQuestion.id]?.trim() ?? ""
@@ -1458,35 +1464,53 @@ async function respondToSolution(understood: boolean) {
               <div v-show="activeSegment === 'masteryCheck'" class="dialog-pane">
                 <template v-if="canShowTeachingContent && session.masteryCheck?.questions?.length">
                   <div v-if="speechControlsTarget === '#mastery-speech'" class="speech-content-heading"><span id="mastery-speech" class="speech-anchor" /><span>掌握度核验</span></div>
-                  <p class="mastery-check-hint">请回答下面的核验问题，确认你是否真的掌握。</p>
                   <div v-for="(item, index) in session.masteryCheck.questions" :key="item.id" class="guided-question">
-                    <el-input
-                      v-model="masteryAnswerText[item.id]"
-                      :data-testid="`mastery-answer-${item.id}`"
-                      :aria-label="`回答第 ${index + 1} 个核验问题`"
+                    <FormulaEditor
+                      :ref="(editor) => { if (editor) masteryFormulaEditorRefs[item.id] = editor as InstanceType<typeof FormulaEditor>; else delete masteryFormulaEditorRefs[item.id] }"
+                      :model-value="masteryAnswerText[item.id] ?? ''"
+                      :test-id="`mastery-answer-${item.id}`"
+                      :label="`回答第 ${index + 1} 个核验问题`"
                       placeholder="请回答上方老师回复中的核验问题"
-                      type="textarea"
-                      :rows="5"
-                      :disabled="submitting || masteryCheckCompleted()"
+                      :disabled="submitting || masteryCheckCompleted() || activeSegment !== 'masteryCheck'"
+                      @update:model-value="masteryAnswerText[item.id] = $event"
                     />
-                  </div>
-                  <div class="actions mastery-check-actions">
-                    <el-button
-                      data-testid="submit-mastery-check"
-                      type="primary"
+                    <StudentInputActions
+                      class="mastery-check-actions"
+                      :submit-test-id="index === 0 ? 'submit-mastery-check' : `submit-mastery-check-${item.id}`"
+                      :formula-test-id="`insert-formula-mastery-${item.id}`"
                       :loading="submitting"
-                      :disabled="submitting || cancelling || runPending || masteryCheckCompleted() || session.flowStage !== 'WAIT_MASTERY_CHECK'"
-                      @click="submitMasteryAnswers"
-                    >提交核验回答</el-button>
-                    <el-button
-                      v-if="cancellableRunId"
-                      data-testid="cancel-current-run"
-                      type="danger"
-                      plain
-                      :loading="cancelling"
-                      @click="stopCurrentRun"
-                    >中断生成</el-button>
-                    <span id="mastery-check-speech-controls" class="speech-controls-target" />
+                      :submit-disabled="submitting || cancelling || runPending || voiceRecording || masteryCheckCompleted() || session.flowStage !== 'WAIT_MASTERY_CHECK'"
+                      :formula-disabled="submitting || voiceRecording || masteryCheckCompleted()"
+                      @submit="submitMasteryAnswers"
+                      @formula="masteryFormulaEditorRefs[item.id]?.open()"
+                    >
+                      <template #voice>
+                        <VoiceRecorder
+                          ref="masteryVoiceRecorderRefs"
+                          :session-id="sessionId"
+                          :version="session.version"
+                          target="MASTERY_ANSWER"
+                          :target-id="item.id"
+                          :prepare-start="prepareReplyRecording"
+                          :start-test-id="`start-voice-mastery-${item.id}`"
+                          :stop-test-id="`stop-voice-mastery-${item.id}`"
+                          label="语音输入"
+                          icon-button
+                          inline
+                          :disabled="submitting || cancelling || runPending || masteryCheckCompleted()
+                            || session.flowStage !== 'WAIT_MASTERY_CHECK'
+                            || (voiceRecording && activeVoiceKey !== `mastery-${item.id}`)"
+                          @final-transcript="masteryAnswerText[item.id] = appendTranscript(masteryAnswerText[item.id] ?? '', $event)"
+                          @completed="handleVoiceCompleted('MASTERY_ANSWER', item.id, $event)"
+                          @busy-change="handleVoiceBusyChange(`mastery-${item.id}`, $event)"
+                          @error="errorMessage = $event"
+                        />
+                      </template>
+                      <template #after>
+                        <el-button v-if="cancellableRunId" data-testid="cancel-current-run" type="danger" plain :loading="cancelling" @click="stopCurrentRun">中断生成</el-button>
+                        <span v-if="index === 0" id="mastery-check-speech-controls" class="speech-controls-target" />
+                      </template>
+                    </StudentInputActions>
                   </div>
                 </template>
                 <el-empty v-else description="暂无核验问题" />
@@ -1622,7 +1646,7 @@ async function respondToSolution(understood: boolean) {
                   <time>{{ new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false }) }}</time>
                 </div>
                 <p
-                  v-if="item.speaker === 'STUDENT' && ['SELF_EXPLANATION', 'GUIDED_ANSWER'].includes(item.submissionType ?? '')"
+                  v-if="item.speaker === 'STUDENT' && ['SELF_EXPLANATION', 'GUIDED_ANSWER', 'MASTERY_ANSWER'].includes(item.submissionType ?? '')"
                   data-testid="timeline-content"
                   class="conversation-content"
                   v-html="renderStudentTextHtml(item.content)"
@@ -1680,7 +1704,6 @@ h2 { font-size: var(--font-size-lg); }
 .guided-question .voice-recorder { margin-top: 0; }
 .doubt-history { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
 .doubt-thread { padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
-.mastery-check-hint { margin: 0 0 var(--space-4); color: var(--color-text-secondary); font-weight: 400; }
 .mastery-result { margin: var(--space-2) 0 0; font-weight: 400; }
 .mastery-result.is-positive { color: var(--color-success, #15803d); }
 .mastery-result.is-attention { color: var(--color-warning, #b45309); }

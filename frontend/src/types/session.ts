@@ -4,6 +4,7 @@ export type VoiceInputTarget =
   | "SELF_EXPLANATION_STEP"
   | "SELF_EXPLANATION_EXPLAIN"
   | "GUIDED_ANSWER"
+  | "MASTERY_ANSWER"
   | "DOUBT"
   | "APPEAL"
 

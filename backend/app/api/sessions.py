@@ -1136,6 +1136,7 @@ async def stream_voice_input(
             "SELF_EXPLANATION_STEP": frozenset({FLOW_STAGE_CAPTURING_INPUT}),
             "SELF_EXPLANATION_EXPLAIN": frozenset({FLOW_STAGE_CAPTURING_INPUT}),
             "GUIDED_ANSWER": frozenset({FLOW_STAGE_WAIT_GUIDED_ANSWERS}),
+            "MASTERY_ANSWER": frozenset({FLOW_STAGE_WAIT_MASTERY_CHECK}),
             "DOUBT": STUDENT_INTERRUPTION_FLOW_STAGES,
             "APPEAL": STUDENT_INTERRUPTION_FLOW_STAGES,
         }[target]
@@ -1169,6 +1170,19 @@ async def stream_voice_input(
             )
             if target_id is None or target_id not in guided_question_ids:
                 await reject_voice_stream(websocket, "语音输入对应的子问题不存在或已经提交")
+                return
+        elif target == "MASTERY_ANSWER":
+            mastery_check = repository.get_latest_mastery_check(session.id)
+            mastery_question_ids = (
+                {str(item["id"]) for item in mastery_check.questions if "id" in item}
+                if mastery_check is not None
+                and not mastery_check.is_completed
+                and mastery_check.completed_at is None
+                and not mastery_check.answers
+                else set()
+            )
+            if target_id is None or target_id not in mastery_question_ids:
+                await reject_voice_stream(websocket, "语音输入对应的核验问题不存在或已经提交")
                 return
         elif target_id is not None:
             await reject_voice_stream(websocket, "当前语音输入目标不能携带 targetId")
