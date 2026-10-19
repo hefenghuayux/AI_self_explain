@@ -48,6 +48,11 @@ jobs:
           uv lock --check --project backend
           uv sync --frozen --extra dev --project backend
 
+      - name: Validate deployment scripts
+        run: |
+          python -m py_compile ljg_docs/ci-cd-deployment/quick_deploy.py ljg_docs/ci-cd-deployment/quick_deploy_server.py
+          uv run --frozen --no-sync --project backend python -m ruff check ljg_docs/ci-cd-deployment/quick_deploy.py ljg_docs/ci-cd-deployment/quick_deploy_server.py
+
       - name: Check backend
         run: |
           uv run --frozen --no-sync --project backend python -m pytest backend/tests
@@ -75,155 +80,69 @@ jobs:
           pnpm --dir frontend typecheck
           pnpm --dir frontend build
 
-  publish:
+  deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-
-      - name: Validate registry configuration
-        shell: bash
-        env:
-          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
-          ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
-          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
-        run: |
-          set -euo pipefail
-          for variable in ACR_REGISTRY ACR_NAMESPACE ACR_USERNAME ACR_PASSWORD; do
-            if [ -z "${!variable}" ]; then
-              echo "Missing required secret: $variable" >&2
-              exit 1
-            fi
-          done
-          if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "Image tag must be a full 40-character commit SHA" >&2
-            exit 1
-          fi
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.ACR_REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          push: true
-          tags: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/ai-self-explain-backend:${{ github.sha }}
-
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: frontend/Dockerfile
-          push: true
-          tags: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/ai-self-explain-frontend:${{ github.sha }}
-
-  deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: publish
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment: production
+    timeout-minutes: 45
     concurrency:
       group: production-deploy
       cancel-in-progress: false
+    env:
+      DEPLOY_HOST: "182.92.219.177"
+      DEPLOY_USER: devuser
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Deploy commit archive to ECS
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check latest main commit
+        id: latest
         shell: bash
         env:
-          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_COMMIT: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
+          DEPLOY_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
           main_commit=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
           if [ "$DEPLOY_COMMIT" != "$main_commit" ]; then
             echo "Skipping deployment: this commit is no longer the main branch head."
-            exit 0
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
           fi
-          for variable in DEPLOY_SSH_PRIVATE_KEY DEPLOY_KNOWN_HOSTS DEPLOY_HOST DEPLOY_PATH DEPLOY_USER; do
+
+      - name: Deploy pushed commit to AI self-explanation server
+        if: steps.latest.outputs.deploy == 'true'
+        shell: bash
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for variable in DEPLOY_SSH_PRIVATE_KEY DEPLOY_KNOWN_HOSTS; do
             if [ -z "${!variable}" ]; then
-              echo "Missing required secret: $variable" >&2
+              echo "Missing required repository secret: $variable" >&2
               exit 1
             fi
           done
-          if [[ ! "$DEPLOY_PATH" =~ ^/[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)*/?$ ]]; then
-            echo "DEPLOY_PATH must be an absolute path containing only letters, digits, /, _ and -" >&2
-            exit 1
-          fi
-          DEPLOY_PATH="${DEPLOY_PATH%/}"
-          if [[ ! "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || [[ ! "$DEPLOY_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]; then
-            echo "DEPLOY_HOST or DEPLOY_USER contains unsafe characters" >&2
-            exit 1
-          fi
-          if [[ ! "$DEPLOY_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "DEPLOY_COMMIT must be a full 40-character commit SHA" >&2
-            exit 1
-          fi
-
-          git archive --format=tar --output="$RUNNER_TEMP/deployment.tar" "$DEPLOY_COMMIT" \
-            docker-compose.prod.yml deploy/Caddyfile deploy/deploy.sh
-
           ssh_dir="$RUNNER_TEMP/deploy-ssh"
           install -m 700 -d "$ssh_dir"
           trap 'rm -f "$ssh_dir/key" "$ssh_dir/known_hosts"' EXIT
           printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$ssh_dir/key"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
           chmod 600 "$ssh_dir/key" "$ssh_dir/known_hosts"
-          ssh_options=(-i "$ssh_dir/key" -o IdentitiesOnly=yes -o BatchMode=yes
-            -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3
-            -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts"
-            -o GlobalKnownHostsFile=/dev/null)
-          target="${DEPLOY_USER}@${DEPLOY_HOST}"
-
-          ssh "${ssh_options[@]}" "$target" "sh -s -- '$DEPLOY_PATH' '$DEPLOY_COMMIT'" <<'REMOTE'
-          set -eu
-          deploy_root=$1
-          deploy_commit=$2
-          canonical_root=$(realpath -e -- "$deploy_root" 2>/dev/null) || {
-            echo "DEPLOY_PATH must be an existing directory" >&2
-            exit 1
-          }
-          if [ "$canonical_root" != "$deploy_root" ] || [ ! -d "$deploy_root" ]; then
-            echo "DEPLOY_PATH must be canonical and must not contain symlinks" >&2
-            exit 1
-          fi
-          shared_env="$deploy_root/shared/.env.production"
-          if [ ! -f "$shared_env" ] || [ ! -r "$shared_env" ]; then
-            echo "Missing or unreadable shared/.env.production; existing services are unchanged" >&2
-            exit 1
-          fi
-          release_path="$deploy_root/releases/$deploy_commit"
-          if [ -L "$deploy_root/releases" ] || [ -L "$release_path" ] || [ -L "$release_path/deploy" ]; then
-            echo "Release directories must not be symlinks" >&2
-            exit 1
-          fi
-          mkdir -p -- "$release_path"
-          if [ "$(realpath -e -- "$release_path")" != "$release_path" ]; then
-            echo "Release path escapes the deployment directory" >&2
-            exit 1
-          fi
-          ln -sfnT -- "$shared_env" "$release_path/.env.production"
-          REMOTE
-
-          release_path="$DEPLOY_PATH/releases/$DEPLOY_COMMIT"
-          ssh "${ssh_options[@]}" "$target" \
-            "tar -xf - --no-same-owner --no-same-permissions -C '$release_path' && cd '$release_path' && IMAGE_TAG='$DEPLOY_COMMIT' sh deploy/deploy.sh" \
-            < "$RUNNER_TEMP/deployment.tar"
+          python ljg_docs/ci-cd-deployment/quick_deploy.py \
+            --server "$DEPLOY_HOST" --user "$DEPLOY_USER" \
+            --key "$ssh_dir/key" --known-hosts "$ssh_dir/known_hosts" \
+            --commit "$DEPLOY_COMMIT" | tee "$RUNNER_TEMP/deployment.log"
+          release=$(sed -n 's/^DEPLOYMENT_SUCCEEDED //p' "$RUNNER_TEMP/deployment.log" | tail -n 1)
+          test -n "$release"
+          printf 'Commit: `%s`\n\nServer: `%s@%s`\n\nRelease: `%s`\n' \
+            "$DEPLOY_COMMIT" "$DEPLOY_USER" "$DEPLOY_HOST" "$release" >> "$GITHUB_STEP_SUMMARY"
