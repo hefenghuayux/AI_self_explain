@@ -28,7 +28,7 @@ try:
     engine = create_engine(settings.database_url, connect_args={'connect_timeout': 5})
     with engine.connect() as connection:
         actual = set(MigrationContext.configure(connection).get_current_heads())
-except Exception as error:
+except Exception as error:  # noqa: BLE001
     raise SystemExit('Database schema check failed: ' + type(error).__name__) from None
 finally:
     if engine is not None:
@@ -227,7 +227,7 @@ def wait_healthy(images):
             verify_images(images)
             health()
             return
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001
             last_error = type(error).__name__
             time.sleep(2)
     raise RuntimeError("Release health timeout: " + str(last_error))
@@ -392,7 +392,7 @@ def deploy(release_name):
                         json.dumps(record, indent=2)
                     )
                     log("ROLLBACK_HEALTHY " + str(previous))
-                except BaseException as rollback_error:
+                except BaseException as rollback_error:  # noqa: BLE001
                     raise RuntimeError(
                         "Deployment failed ({!r}); rollback also failed ({!r}); inspect {}".format(
                             original_error, rollback_error, staging
