@@ -135,7 +135,6 @@ onMounted(async () => {
     <div class="page-header">
       <div>
         <h1>题目列表</h1>
-        <p>选择一道题目，开始用自己的语言讲清解题过程。</p>
       </div>
       <RouterLink v-if="authUser?.role === 'TEACHER'" to="/questions/new">
         <el-button type="primary">录入题目</el-button>
@@ -290,7 +289,6 @@ h1 {
   font-size: var(--font-size-2xl);
   line-height: 1.35;
 }
-.page-header p { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
 
 .page-alert,
 .list-toolbar,
@@ -301,7 +299,7 @@ h1 {
 .list-filters { display: flex; flex: 1; gap: var(--space-3); }
 .list-filters > * { flex: 1 1 0; min-width: 0; }
 .list-filters :deep(.el-select) { margin-right: 0; }
-.list-filters :deep(.el-select__wrapper) { width: 100%; }
+.list-filters :deep(.el-select__wrapper) { width: 100%; min-height: 40px; }
 .question-pagination { justify-content: flex-end; margin-top: var(--space-6); }
 .question-table { border-top: 1px solid var(--color-border); }
 .question-table :deep(.question-content-cell .cell) { overflow: hidden; display: -webkit-box; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }

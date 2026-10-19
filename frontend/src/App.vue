@@ -169,7 +169,6 @@ async function signOut() {
         <span class="brand-mark" aria-hidden="true">讲</span>
         <span class="brand-copy">
           <strong>AI 自讲</strong>
-          <small>学习闭环 Demo</small>
         </span>
       </RouterLink>
       <nav aria-label="主导航">
@@ -315,12 +314,6 @@ async function signOut() {
 
 .brand-copy strong {
   font-size: var(--font-size-lg);
-}
-
-.brand-copy small {
-  margin-top: 2px;
-  color: var(--color-text-muted);
-  font-size: 12px;
 }
 
 nav {
@@ -488,7 +481,6 @@ nav {
     gap: var(--space-2);
   }
 
-  .brand-copy small,
   .user-name,
   nav {
     display: none;
