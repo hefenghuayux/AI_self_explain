@@ -79,6 +79,7 @@ class TeacherSpeechService:
             "input": {
                 "text": text,
                 "voice": runtime.voice_id,
+                "language_hints": ["zh"],
                 "instruction": runtime.instruction,
                 "format": "pcm",
                 "sample_rate": 24000,
@@ -292,6 +293,7 @@ class TeacherSpeechService:
             "input": {
                 "text": text,
                 "voice": runtime.voice_id,
+                "language_hints": ["zh"],
                 "format": "wav",
                 "sample_rate": 24000,
                 "instruction": runtime.instruction,
