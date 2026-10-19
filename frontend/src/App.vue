@@ -187,6 +187,7 @@ async function signOut() {
             菜单
           </summary>
           <div class="account-menu-panel" role="menu" aria-label="会话与账户菜单" @click="handleMenuClick">
+            <RouterLink class="mobile-question-list" role="menuitem" to="/">题目列表</RouterLink>
             <!-- 页面级操作由各视图 Teleport 到此容器，与「退出登录」同处下拉菜单。 -->
             <div id="app-header-actions" class="header-actions" />
             <el-button class="logout-button" text role="menuitem" @click="signOut">退出登录</el-button>
@@ -428,6 +429,19 @@ nav {
   box-shadow: var(--shadow-sm);
 }
 
+.mobile-question-list {
+  display: none;
+  min-height: 44px;
+  align-items: center;
+  padding: 0 var(--space-3);
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.mobile-question-list.router-link-exact-active {
+  color: var(--color-brand-700);
+}
+
 .logout-button {
   width: 100%;
   min-height: 44px;
@@ -478,6 +492,11 @@ nav {
   .user-name,
   nav {
     display: none;
+  }
+
+  .mobile-question-list {
+    display: inline-flex;
+    width: 100%;
   }
 
   .account-area {
