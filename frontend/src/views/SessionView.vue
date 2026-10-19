@@ -91,7 +91,6 @@ const gradingPollError = ref("")
 const activeSegment = ref<SegmentKey>("selfExplain")
 const currentStepId = ref<number | null>(null)
 const currentStepContent = ref("")
-const currentStepTranscript = ref("")
 // 上次成功提交时自讲框里的内容，用于在当前会话内回填，方便学生直接修改后重讲。
 const lastSubmittedSelfExplanation = ref("")
 const formulaEditorRef = ref<InstanceType<typeof FormulaEditor>>()
@@ -123,7 +122,6 @@ const activeVoiceKey = ref<string>()
 const voiceAttemptIds = ref<Record<string, number>>({})
 const doubtVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 const stepVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
-const explainVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
 const guidedVoiceRecorderRefs = ref<InstanceType<typeof VoiceRecorder>[]>([])
 const masteryVoiceRecorderRefs = ref<InstanceType<typeof VoiceRecorder>[]>([])
 const appealVoiceRecorderRef = ref<InstanceType<typeof VoiceRecorder>>()
@@ -445,13 +443,11 @@ watch(
 
 function clearStepState() {
   currentStepId.value = null
-  currentStepTranscript.value = ""
 }
 
 function applyStepsResponse(response: StepsResponse) {
   currentStepId.value = response.currentStepId
   currentStepContent.value = response.step?.stepContent ?? ""
-  currentStepTranscript.value = response.step?.explainTranscript ?? ""
   if (session.value) {
     session.value = {
       ...session.value,
@@ -558,12 +554,10 @@ async function handleAIRequestFailure(error: unknown, draftContent = "") {
   }
   const draftStepId = currentStepId.value
   const localStepContent = currentStepContent.value
-  const localStepTranscript = currentStepTranscript.value
   try {
     await loadSessionData()
     if (session.value?.flowStage === "CAPTURING_INPUT" && currentStepId.value === draftStepId) {
       currentStepContent.value = localStepContent
-      currentStepTranscript.value = localStepTranscript
     }
   } catch (refreshError) {
     console.error("AI 服务调用失败后刷新会话失败", refreshError)
@@ -710,7 +704,6 @@ async function stopCurrentRun() {
   stopTeacherSpeech()
   if (previousStage) session.value = { ...previousSession, flowStage: previousStage }
   const currentDraft = currentStepContent.value
-  const currentTranscript = currentStepTranscript.value
   try {
     session.value = await cancelCurrentRun(sessionId, runId)
     requestToAbort?.controller.abort()
@@ -731,7 +724,6 @@ async function stopCurrentRun() {
     }
   } finally {
     currentStepContent.value = currentDraft
-    currentStepTranscript.value = currentTranscript
     cancelling.value = false
   }
 }
@@ -849,7 +841,7 @@ async function chooseInitialChoice(choice: InitialChoice) {
 }
 
 function hasStepEvidence() {
-  return Boolean(currentStepContent.value.trim() || currentStepTranscript.value.trim())
+  return Boolean(currentStepContent.value.trim())
 }
 
 function openFormulaEditor() {
@@ -891,7 +883,7 @@ async function submitExplanation() {
     draftContent = currentStepContent.value
     explanationSubmitting.value = true
     if (currentStepId.value === null || !hasStepEvidence()) {
-      errorMessage.value = "关键步骤和讲解不能同时为空"
+      errorMessage.value = "关键步骤不能为空"
       return
     }
     request = beginAIRequest()
@@ -955,15 +947,9 @@ async function prepareStepVoice() {
   }
 }
 
-async function prepareExplainVoice() {
-  return prepareStepVoice()
-}
-
 function stopVoiceRecorder(voiceKey: string) {
   if (voiceKey === "step") {
     stepVoiceRecorderRef.value?.stop()
-  } else if (voiceKey === "explain") {
-    explainVoiceRecorderRef.value?.stop()
   } else if (voiceKey === "doubt") {
     doubtVoiceRecorderRef.value?.stop()
   } else if (voiceKey === "appeal") {
@@ -1053,7 +1039,6 @@ onBeforeUnmount(() => {
   stopGradingPolling()
   stopTeacherSpeech()
   stepVoiceRecorderRef.value?.stop()
-  explainVoiceRecorderRef.value?.stop()
   doubtVoiceRecorderRef.value?.stop()
   appealVoiceRecorderRef.value?.stop()
   guidedVoiceRecorderRefs.value.forEach((recorder) => recorder.stop())
@@ -1346,7 +1331,6 @@ async function respondToSolution(understood: boolean) {
                     v-model="currentStepContent"
                     :disabled="selfExplanationEditingDisabled || activeSegment !== 'selfExplain'"
                   />
-                  <p class="recording-help">语音输入写入步骤；开始自讲录入讲解，暂停后可继续，提交时一并使用。</p>
                   <StudentInputActions
                     class="self-explain-actions"
                     submit-test-id="submit-explanation"
@@ -1357,26 +1341,6 @@ async function respondToSolution(understood: boolean) {
                     @submit="submitExplanation"
                     @formula="openFormulaEditor"
                   >
-                    <template #before>
-                    <VoiceRecorder
-                      ref="explainVoiceRecorderRef"
-                      :session-id="sessionId"
-                      :version="session.version"
-                      target="SELF_EXPLANATION_EXPLAIN"
-                      start-test-id="record-explain"
-                      stop-test-id="stop-record-explain"
-                      label="开始自讲"
-                      stop-label="暂停自讲"
-                      inline
-                      :disabled="selfExplanationReadOnly || submitting
-                        || teachingEvaluationPending
-                        || (voiceRecording && activeVoiceKey !== 'explain')"
-                      :prepare-start="prepareExplainVoice"
-                      @completed="handleVoiceCompleted('SELF_EXPLANATION_EXPLAIN', undefined, $event)"
-                      @busy-change="handleVoiceBusyChange('explain', $event)"
-                      @error="errorMessage = $event"
-                    />
-                    </template>
                     <template #voice>
                     <VoiceRecorder
                       ref="stepVoiceRecorderRef"
@@ -1708,7 +1672,6 @@ h2 { font-size: var(--font-size-lg); }
 .mastery-result.is-positive { color: var(--color-success, #15803d); }
 .mastery-result.is-attention { color: var(--color-warning, #b45309); }
 .step-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); }
-.session-section .recording-help { margin: var(--space-2) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .step-content-input {
   display: block;
   box-sizing: border-box;

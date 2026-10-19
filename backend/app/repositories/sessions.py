@@ -632,8 +632,8 @@ class SessionRepository:
             raise ValueError("当前步骤位置已变化，请刷新后重试")
         current_step = self.get_editable_step(session, current_step_id)
         current_step.step_content = current_step_content
-        if not self._has_step_evidence(current_step.step_content, current_step.explain_transcript):
-            raise ValueError("提交前关键步骤和讲解不能同时为空")
+        if not self._has_step_evidence(current_step.step_content):
+            raise ValueError("提交前关键步骤不能为空")
         explanation = {
             "stepContent": current_step.step_content or "",
             "explainTranscript": current_step.explain_transcript or "",
@@ -1677,8 +1677,8 @@ class SessionRepository:
         session.version = expected_version + 1
 
     @staticmethod
-    def _has_step_evidence(step_content: str | None, explain_transcript: str | None) -> bool:
-        return bool((step_content or "").strip() or (explain_transcript or "").strip())
+    def _has_step_evidence(step_content: str | None) -> bool:
+        return bool((step_content or "").strip())
 
     @staticmethod
     def _step_projection(step: ExplanationStep) -> str:

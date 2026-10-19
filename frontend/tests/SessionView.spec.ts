@@ -214,7 +214,6 @@ describe("SessionView", () => {
     await flushPromises()
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.get('[data-testid="record-explain"]').attributes("disabled")).toBeDefined()
     expect(wrapper.get('[data-testid="record-step"]').attributes("disabled")).toBeDefined()
 
     resolveStepAttempt(createSession({ flowStage: "WAIT_STUDENT_ACTION", version: 3 }))
@@ -222,15 +221,14 @@ describe("SessionView", () => {
     await flushPromises()
   })
 
-  it("shows step and explanation recording entries without voice guidance text", async () => {
+  it("shows only the real-time key-step voice entry", async () => {
     fetchSession.mockResolvedValue(createSession())
     const wrapper = await mountSessionView()
 
-    expect(wrapper.get('[data-testid="record-explain"]').attributes("disabled")).toBeUndefined()
+    expect(wrapper.find('[data-testid="record-explain"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="record-step"]').attributes("disabled")).toBeUndefined()
-    expect(wrapper.text()).not.toContain("使用语音自讲")
-    expect(wrapper.text()).not.toContain("实时语音输入")
-    expect(wrapper.text()).not.toContain("确认语音转写")
+    expect(wrapper.text()).not.toContain("开始自讲")
+    expect(wrapper.text()).not.toContain("语音输入写入步骤")
   })
 
   it("uses the server step content instead of a legacy self-explanation draft", async () => {
@@ -259,7 +257,7 @@ describe("SessionView", () => {
     await wrapper.get('[data-testid="submit-explanation"]').trigger("click")
     await flushPromises()
     expect(submitStepAttempt).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain("关键步骤和讲解不能同时为空")
+    expect(wrapper.text()).toContain("关键步骤不能为空")
   })
 
   it("keeps the submitted explanation in the input box and remembers it for this session", async () => {
@@ -531,7 +529,6 @@ describe("SessionView", () => {
     const wrapper = await mountSessionView()
 
     expect(wrapper.findAllComponents(VoiceRecorder).map((recorder) => recorder.props("target"))).toEqual([
-      "SELF_EXPLANATION_EXPLAIN",
       "SELF_EXPLANATION_STEP",
       "DOUBT",
     ])
@@ -657,7 +654,7 @@ describe("SessionView", () => {
     expect(wrapper.text()).toContain("下一步：请重新检查两个数相加的结果。")
     expect(wrapper.find('[data-testid="request-support"]').exists()).toBe(false)
     expect(wrapper.get(".self-explain-actions").get('[data-testid="submit-explanation"]')).toBeTruthy()
-    expect(wrapper.get(".self-explain-actions").find('[data-testid="record-explain"]').exists()).toBe(true)
+    expect(wrapper.get(".self-explain-actions").find('[data-testid="record-explain"]').exists()).toBe(false)
     expect(wrapper.get(".self-explain-actions").find('[data-testid="record-step"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="dialog-segmented"]').text()).not.toContain("AI说错了")
     expect(wrapper.html().indexOf("下一步：请重新检查两个数相加的结果。")).toBeLessThan(
