@@ -50,8 +50,8 @@ jobs:
 
       - name: Validate deployment scripts
         run: |
-          python -m py_compile ljg_docs/ci-cd-deployment/quick_deploy.py ljg_docs/ci-cd-deployment/quick_deploy_server.py
-          uv run --frozen --no-sync --project backend python -m ruff check ljg_docs/ci-cd-deployment/quick_deploy.py ljg_docs/ci-cd-deployment/quick_deploy_server.py
+          python -m py_compile deploy/quick_deploy.py deploy/quick_deploy_server.py
+          uv run --frozen --no-sync --project backend python -m ruff check deploy/quick_deploy.py deploy/quick_deploy_server.py
 
       - name: Check backend
         run: |
@@ -138,7 +138,7 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$ssh_dir/key"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
           chmod 600 "$ssh_dir/key" "$ssh_dir/known_hosts"
-          python ljg_docs/ci-cd-deployment/quick_deploy.py \
+          python deploy/quick_deploy.py \
             --server "$DEPLOY_HOST" --user "$DEPLOY_USER" \
             --key "$ssh_dir/key" --known-hosts "$ssh_dir/known_hosts" \
             --commit "$DEPLOY_COMMIT" | tee "$RUNNER_TEMP/deployment.log"

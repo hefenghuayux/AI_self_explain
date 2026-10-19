@@ -1,11 +1,7 @@
 .env
 .env.*
 !.env.example
-ljg_docs/*
-!ljg_docs/ci-cd-deployment/
-ljg_docs/ci-cd-deployment/*
-!ljg_docs/ci-cd-deployment/quick_deploy.py
-!ljg_docs/ci-cd-deployment/quick_deploy_server.py
+ljg_docs/
 .deploy-last-successful-tag
 .deploy.lock
 .venv/
