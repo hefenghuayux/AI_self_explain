@@ -21,8 +21,7 @@ async function submit() {
   errorMessage.value = ""
   try {
     await login(username.value, password.value, rememberLogin.value)
-    const redirect = typeof route.query.redirect === "string" ? route.query.redirect : "/"
-    await router.push(redirect.startsWith("/") ? redirect : "/")
+    await router.replace("/")
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {

@@ -1,7 +1,6 @@
-import { createRouter, createWebHistory, START_LOCATION } from "vue-router"
+import { createRouter, createWebHistory } from "vue-router"
 
 import { authUser, initializeAuth } from "../stores/auth"
-import { fetchSessionHistory } from "../api/sessions"
 
 const LoginView = () => import("../views/LoginView.vue")
 const QuestionDetailView = () => import("../views/QuestionDetailView.vue")
@@ -31,19 +30,10 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach(async (to, from) => {
+router.beforeEach(async (to) => {
   if (to.meta.public) return true
   const authenticated = await initializeAuth()
-  if (!authenticated) return { name: "login", query: { redirect: to.fullPath } }
-  if (
-    to.name === "question-list"
-    && (from === START_LOCATION || from.name === "login")
-  ) {
-    const history = await fetchSessionHistory()
-    if (history.length > 0) {
-      return { name: "session", params: { sessionId: history[0].id } }
-    }
-  }
+  if (!authenticated) return { name: "login" }
   if (to.meta.teacherOnly && authUser.value?.role !== "TEACHER") {
     return { name: "question-list" }
   }
