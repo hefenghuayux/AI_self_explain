@@ -2,7 +2,6 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
 import re
 import shutil
 import signal
@@ -10,7 +9,7 @@ import subprocess
 import tarfile
 import time
 import urllib.request
-
+from pathlib import Path, PurePosixPath
 
 ROOT = Path("/srv/ai-self-explain")
 OUTPUT_BROKEN = False
@@ -394,9 +393,7 @@ def deploy(release_name):
                     log("ROLLBACK_HEALTHY " + str(previous))
                 except BaseException as rollback_error:  # noqa: BLE001
                     raise RuntimeError(
-                        "Deployment failed ({!r}); rollback also failed ({!r}); inspect {}".format(
-                            original_error, rollback_error, staging
-                        )
+                        f"Deployment failed ({original_error!r}); rollback also failed ({rollback_error!r}); inspect {staging}"
                     ) from original_error
             raise
 

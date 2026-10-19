@@ -1,17 +1,16 @@
 import argparse
-from contextlib import ExitStack
-from datetime import datetime, timezone
 import hashlib
 import io
 import json
 import os
-from pathlib import Path, PurePosixPath
 import re
 import shlex
 import shutil
 import subprocess
 import tarfile
-
+from contextlib import ExitStack
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
 
 SOURCE_PATHS = (
     ".dockerignore",
