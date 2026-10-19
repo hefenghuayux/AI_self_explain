@@ -1,0 +1,1148 @@
+# 千问AI平台文档
+
+> 千问AI平台提供通义千问大语言模型及多模态 AI 的 API 访问服务，涵盖文本生成、视觉理解、图像生成、视频生成、语音识别、语音合成、语音对话、向量化及重排序等能力，支持 OpenAI 兼容和 DashScope 两种接入方式。
+
+## Token Plan
+
+- [Token Plan 概述](https://platform.qianwenai.com/docs/token-plan/overview.md): Token Plan 是千问AI平台推出的 AI 大模型订阅服务，以 Credits 统一计量，支持多种 AI 编程和智能体工具。提供个人版和团队版两个版本，满足从个人开发者到企业团队的不同需求。
+- [Token Plan 个人版](https://platform.qianwenai.com/docs/token-plan/personal/token-plan-personal-overview.md): Token Plan 个人版是面向个人开发者的 AI 大模型订阅服务，以 Credits 统一计量，支持文本、多模态模型及模型内置工具，Standard 与 Pro 套餐附赠 Harness 权益，适配主流 AI 编程和智能体工具。
+- [快速开始](https://platform.qianwenai.com/docs/token-plan/personal/token-plan-personal-quickstart.md): 三步完成 Token Plan 个人版订阅和接入
+- [Harness 权益](https://platform.qianwenai.com/docs/token-plan/personal/token-plan-harness-benefits.md): Token Plan 个人版 Standard 与 Pro 套餐附赠 Harness 权益，覆盖自研工具的每月免费额度与后付费折扣，使用千问AI平台 API Key 调用，不占用套餐 Credits。
+- [接入 Harness 工具](https://platform.qianwenai.com/docs/token-plan/best-practices/built-in-tools.md): 接入 Token Plan 个人版 Harness 权益提供的自研工具，并示例联网搜索增强版 MCP 的接入流程。
+- [常见问题](https://platform.qianwenai.com/docs/token-plan/personal/token-plan-personal-faq.md): Token Plan 个人版的额度、购买、订阅和接入常见问题。
+- [Token Plan 团队版](https://platform.qianwenai.com/docs/token-plan/team/token-plan-team-overview.md): AI 大模型订阅服务
+- [快速开始](https://platform.qianwenai.com/docs/token-plan/team/token-plan-team-quickstart.md): 三步完成 Token Plan 团队版订阅和接入
+- [团队管理](https://platform.qianwenai.com/docs/token-plan/team/team-management.md): 在 Token Plan 管理平台中添加和管理团队成员、分配和回收席位、配置 SSO 登录、监控 Credits 用量。
+- [常见问题](https://platform.qianwenai.com/docs/token-plan/team/token-plan-team-faq.md): Token Plan 团队版常见问题汇总，涵盖购买、使用、计量和性能相关的问题解答。
+
+## 进阶接入
+
+- [接入决策模型](https://platform.qianwenai.com/docs/token-plan/best-practices/decision-model.md): 通过 AI 工具的扩展机制接入 decision-model-preview 决策模型：以评论自动审核为例，一次请求并行判定多条内容，返回 choice、probabilities、confidence，按置信度自动放行、隐藏或转人工。
+- [接入多模态生成模型](https://platform.qianwenai.com/docs/token-plan/best-practices/multimodal-generation.md): Token Plan 中的图像生成、视频生成、语音合成模型需通过工具的扩展机制（Skill、Slash Command 或 Agent）接入
+- [添加视觉理解能力](https://platform.qianwenai.com/docs/token-plan/best-practices/add-vision-skill.md): 为编程模型添加视觉能力
+
+## 玩法攻略
+
+- [玩法攻略概述](https://platform.qianwenai.com/docs/token-plan/playbooks/overview.md): Token Plan 40 个实测玩法攻略索引，覆盖 AI Coding、内容创作、资料与数据处理、生活娱乐、求职职场五大场景，每个玩法提供完整的提示词示例和实测产出。
+- [AI Coding · 给现有系统加功能](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-ai-coding-feature.md): 一句话描述需求，AI 读入现有代码增量加功能不动老逻辑。
+- [Qoder 搭个人小工具](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-qoder-tool.md): 在 Qoder 里对话式搭记账、单词卡等个人小应用，零基础也能上手。
+- [一句话生成可玩小游戏](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-mini-game.md): 一句话描述玩法，模型直接生成可运行的单文件小游戏，打开即玩。
+- [AI 代码安全审计 · 定位到修复](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-code-security.md): 把代码交给模型做安全审计，逐条给出漏洞、风险等级与可替换的修复代码。
+- [文档驱动开发 · 一份文档换一个系统](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-doc-driven-dev.md): 写一份《技术文档》讲清功能与验收标准，模型一次性交付可运行系统，门槛从会写代码变成会写需求。
+- [代码调研 · 摸清陌生项目架构](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-code-survey.md): 两轮法读懂大型仓库：先喂骨架出架构地图，再按点名文件补全文出调用链。
+- [界面体检 · 截图挑毛病与定位报错](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-ui-review.md): 把界面截图交给视觉理解模型，按四个维度逐项挑刺并打分；页面报错、图片加载不出来也可截图配代码一起定位。
+- [截图变代码 · 数据看板照结构还原](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-screenshot-to-code.md): 上传数据看板截图，Qwen3.8-Flash 视觉理解照结构还原，图表用纯 CSS 绘制、数字照抄，产出零外部依赖的单文件 HTML。
+- [命令预检 · 执行前先过一道风险检查](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-cmd-guard.md): 输入待执行的命令清单，Qwen3.8-Flash 逐条判风险等级、给放行或拦截建议与更安全的替代写法，输出固定 5 字段 JSON。
+- [提交信息 · 一上午的改动自动拆 commit](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-commit-writer.md): 输入未提交的 git diff，Qwen3.8-Flash 自动拆成多条 commit，写出符合 Conventional Commits 的标题正文并标注破坏性改动。
+- [代码评审 · PR 合并前先过一遍 diff](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-code-review.md): 输入本次 PR diff，Qwen3.8-Flash 给出能不能合的结论与 blocking / suggestion / nit 三级意见，每条附具体后果与改法。
+- [儿童趣味动物视频生成](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-kids-animal-video.md): 一个动物词生成儿童童话与三拍脚本，再文生视频出 5 秒动画。
+- [睡前故事配音](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-bedtime-story-tts.md): 语音合成模型把童话文本念成温柔人声，输出睡前故事音频。
+- [个人 IP 头像 / 表情包](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-ip-avatar-sticker.md): 一句话描述形象，文生图出头像，再用参考图编辑出角色一致的表情包。
+- [小红书封面图 / 文案一次出](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-redbook-cover.md): 文本模型写标题正文与标签，文生图出竖版封面并把标题渲染进画面。
+- [短剧脚本 · 把干货稿改成能拍的分镜](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-drama-script.md): 深度思考模型把干货稿改成 60 秒口播脚本，按 JSON 逐镜输出。
+- [商品图变展示视频 · 静图秒变主图短视频](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-product-video.md): 一张商品图，让产品不动、只有光影流转，生成主图展示短视频。
+- [让人物动起来 · 图生视频精准控运动](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-motion-control.md): 把运动写成可测量的数字，让图生视频真正走位而不原地踏步。
+- [人物一致性换装组照 · 锁住这张脸，只换衣服和场景](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-outfit-change.md): 把身份锁定写在第一句，只让模型改服装场景，批量出同一个人的不同造型。
+- [表格分析 · 脏数据出结论](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-sheet-analysis.md): 不把整表塞给模型，只发表头与样本让它写清洗分析脚本，数据留在本地跑。
+- [网页提数 · 指定字段抓成表](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-web-extract.md): 网页抓取工具拿正文全文，按指定字段对齐成表，比联网搜索更老实。
+- [合同体检 · 挑出对我不利的条款](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-contract-review.md): 让模型把关联条款串起来看，挑出对己方不利的组合型风险。
+- [票据 / 文档识别归档](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-invoice-ocr.md): 视觉理解读图，OCR 提取字段成 JSON 并给出归档文件名。
+- [跨境选品 · 识图定价](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-cross-border.md): 识图认商品，再算利润、做合规质检，识图与推理串成一条链。
+- [长文 / 论文 / 合同秒读问答](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-doc-qa.md): 长上下文吃下整篇文档，先出中文速读再逐条追问回原文。
+- [个人知识库问答 · RAG 三段式](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-knowledge-rag.md): 把公司制度、个人笔记做成能问的知识库，用大白话就能问出正确那一条。
+- [周报汇总 · 五封邮件汇成四列进度表](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-weekly-report.md): 输入五封成员汇报邮件，Qwen3.8-Flash 按成员、任务、进度、风险四列汇总成一张进度表，并挑出原文没明说的阻塞。
+- [长图变数据 · 促销图抽字段 + 文案风险初筛](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-poster-audit.md): 上传促销长图，Qwen3.8-Flash 视觉理解抽出商品、价格、券与规则字段，输出固定字段 JSON，并对图上文案做一遍投放前的风险初筛。
+- [视频摘要 · 按时间线拆片段](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-video-digest.md): 上传视频，Qwen3.8-Flash 视觉理解按时间线拆成片段并逐段摘要，附时间戳、总体摘要与片段数量统计。
+- [老照片修复上色 / 证件照换装](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-old-photo.md): 用参考图编辑去划痕、上色、换装，人物长相保持不变。
+- [OpenClaw 个人任务管家](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-openclaw-agent.md): 一句话交办，OpenClaw 自动编排文本、图片生成与联网搜索，端到端办成一件事。
+- [一句话规划周末出游 · 多步 Agent](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-weekend-planner.md): 一句话交办，模型一次调用里自主编排联网、算账、排程，跑完多步出游规划。
+- [父母用药管家 · 服药 / 开药双提醒](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-med-reminder.md): 把真实困境连同界面要求一起写进提示词，模型产出一个能长期用的用药管家网页。
+- [居家安全 · 拍张照排查隐患](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-home-hazard.md): 给家里拍张照交给视觉理解模型，连空间关系一起看，三段式排查隐患。
+- [时光影像信 · 把想说的话做成会动、能听的一封信](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-photo-letter.md): 把零散心里话润色成信、念成语音、配上会动的分镜，合成一支短片。
+- [简历诊断 · 按 JD 改写](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-resume-doctor.md): 对着 JD 先诊断简历差距，再用 STAR 法则重写经历。
+- [AI 面试教练 · 出题追问打分](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-interview-coach.md): 模型扮演面试官出题、追问、打分，帮你逐轮复盘提分。
+- [三维 CAD 建模 · 出 STEP/STL 文件](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-cad-3d.md): 一句话描述零件，模型生成建模脚本，本地 CAD 内核执行后产出 STEP/STL 文件。
+- [教育社群故事化群日报](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-group-daily-report.md): 文本模型把群聊素材转成 story.json，本地离线渲染成 HTML 与 PNG 长图。
+- [交互式教育解题 · 一题变讲解网页](https://platform.qianwenai.com/docs/token-plan/playbooks/token-plan-playbook-edu-solver.md): 一道题变成分步讲解 + 可拖动验证的单文件交互网页。
+
+## 快速入门
+
+- [基于千问AI平台构建应用](https://platform.qianwenai.com/docs/developer-guides/getting-started/introduction.md): 千问AI平台提供文本、视觉、语音及图像视频生成的 AI 模型，兼容 OpenAI SDK，支持函数调用与结构化输出，快速构建智能体应用。
+- [首次调用千问API](https://platform.qianwenai.com/docs/developer-guides/getting-started/first-api-call.md): 本文引导您完成千问模型的首次API调用
+- [选择模型](https://platform.qianwenai.com/docs/developer-guides/getting-started/model-selection.md): 根据使用场景选择合适的模型
+- [计费说明](https://platform.qianwenai.com/docs/developer-guides/getting-started/pricing.md): API 按量计费说明
+- [模型价格](https://platform.qianwenai.com/docs/developer-guides/getting-started/model-prices.md): 全量模型单价一览：文本、图像、视频、语音、向量化等各类模型的计费单价。
+- [最新模型：Qwen3.8-Flash](https://platform.qianwenai.com/docs/developer-guides/getting-started/latest-model.md): 了解千问最新模型 Qwen3.8-Flash 的架构创新、能力、规格与接入方式
+
+## 模型
+
+- [文本生成模型](https://platform.qianwenai.com/docs/developer-guides/getting-started/text-generation-models.md): 选择适用于 AI 智能体、聊天机器人、文档处理等场景的模型。
+- [文本生成](https://platform.qianwenai.com/docs/developer-guides/text-generation/quickstart.md): 发起第一次文本生成调用
+- [前缀续写](https://platform.qianwenai.com/docs/developer-guides/text-generation/partial-mode.md): 从指定前缀继续生成内容
+- [长上下文（Qwen-Long）](https://platform.qianwenai.com/docs/developer-guides/text-generation/qwen-long.md): 1000万Token上下文窗口，通过文件上传和引用机制处理超长文档
+- [机器翻译（Qwen-MT）](https://platform.qianwenai.com/docs/developer-guides/text-generation/qwen-mt.md): 支持 92 种语言及术语干预
+- [角色扮演（Qwen-Character）](https://platform.qianwenai.com/docs/developer-guides/text-generation/role-playing.md): NPC 与虚拟角色
+- [数据挖掘（Qwen-Doc）](https://platform.qianwenai.com/docs/developer-guides/text-generation/document-understanding.md): 使用 Qwen-Doc-Turbo 模型从文档中提取结构化数据，支持信息抽取、内容审核、分类打标和摘要生成。
+- [深入研究 (Qwen-Deep-Research)](https://platform.qianwenai.com/docs/developer-guides/text-generation/deep-research.md): 自动化多步研究与网络搜索
+- [对话分析（Tongyi-Xiaomi-Analysis）](https://platform.qianwenai.com/docs/developer-guides/text-generation/dialogue-analysis.md): 通义晓蜜对话分析专注于对话信息抽取、场景分类、满意度判定等分析需求，擅长处理复杂业务逻辑的质检规则，支持自定义分析标准，具备强大的多轮对话理解和语义推理能力。
+- [GUI-Plus 界面交互](https://platform.qianwenai.com/docs/developer-guides/text-generation/gui-interaction.md): GUI-Plus 模型基于屏幕截图和自然语言指令解析用户意图，转换为标准化的 GUI 操作
+- [意图理解（Tongyi-Intent-Detect）](https://platform.qianwenai.com/docs/developer-guides/text-generation/intent-detect.md): tongyi-intent-detect-v3 能够在百毫秒级时间内快速、准确地解析用户意图，并选择合适的工具来解决用户的问题。
+- [视觉理解模型](https://platform.qianwenai.com/docs/developer-guides/getting-started/vision-models.md): 选择适合图像分析、视频理解、OCR等场景的模型。
+- [分析图像与视频](https://platform.qianwenai.com/docs/developer-guides/multimodal/vision.md): 基于视觉输入生成内容
+- [文字提取](https://platform.qianwenai.com/docs/developer-guides/multimodal/ocr.md): 文档和表格的 OCR 识别
+- [图像生成模型](https://platform.qianwenai.com/docs/developer-guides/getting-started/image-models.md): 选择适合文生图、图片编辑等场景的模型。
+- [文生图](https://platform.qianwenai.com/docs/developer-guides/image-generation/text-to-image.md): 根据文本提示词生成图像。
+- [图像编辑](https://platform.qianwenai.com/docs/developer-guides/image-generation/image-editing.md): 通过文本指令修改图片
+- [图像编辑 - 万相2.7/2.6/2.5](https://platform.qianwenai.com/docs/developer-guides/image-generation/wan-image-editing.md): 万相图像编辑模型系列支持多图输入与多图输出，通过文本指令实现图像编辑、多图融合、主体特征保持、目标检测与分割等能力。
+- [万相2.1 通用图像编辑](https://platform.qianwenai.com/docs/developer-guides/image-generation/wan21-image-editing.md): 使用万相-通用图像编辑模型，通过文本指令实现扩图、去水印、风格迁移、指令编辑、局部重绘等多种图像编辑任务。
+- [涂鸦作画](https://platform.qianwenai.com/docs/developer-guides/image-generation/sketch-to-image.md): 根据手绘图加上任意文字描述，使用万相-涂鸦作画模型，即可轻松完成涂鸦作画。
+- [图像局部重绘](https://platform.qianwenai.com/docs/developer-guides/image-generation/image-inpainting.md): 使用wanx-x-painting模型，根据原始图片、涂抹图和文本描述进行图像局部重绘
+- [虚拟模特生成](https://platform.qianwenai.com/docs/developer-guides/image-generation/virtual-model.md): 万相-虚拟模特模型支持在保持真人实拍模特站姿不变的前提下，对拍摄背景图、模特进行替换，快速生成更多模特拍摄图。
+- [鞋靴模特](https://platform.qianwenai.com/docs/developer-guides/image-generation/shoe-model.md): 输入模特模板图和鞋靴多视角图片，AI自动完成鞋靴试穿重绘生成。
+- [创意海报生成](https://platform.qianwenai.com/docs/developer-guides/image-generation/creative-poster.md): 根据文字描述自动生成海报背景和文字排版，支持多种海报风格。
+- [人物实例分割](https://platform.qianwenai.com/docs/developer-guides/image-generation/person-instance-segmentation.md): 识别图像中的不同人物对象，并画出每个对象边界的像素级掩码。
+- [图像擦除补全](https://platform.qianwenai.com/docs/developer-guides/image-generation/image-erase-completion.md): 输入原图、待擦除区域掩码图像以及保留区域掩码图像，可以在保留原图背景的同时擦除指定图像区域。
+- [视频生成模型](https://platform.qianwenai.com/docs/developer-guides/getting-started/video-models.md): 选择文生视频、图生视频、角色动画等场景的模型。
+- [万相3.0 视频生成](https://platform.qianwenai.com/docs/developer-guides/video-generation/wan30-video.md): wan3.0 系列是 All-in-One 视频生成模型，支持文生视频、图生视频、全模态参考、视频编辑与延长，单次最长 30 秒、30fps、原生有声输出。
+- [文生视频](https://platform.qianwenai.com/docs/developer-guides/video-generation/text-to-video.md): 万相文生视频模型支持文本、图像、音频多模态输入生成视频。wan3.0-video 支持最长 30 秒、自适应宽高比、智能时长、480P/720P/1080P 分辨率、音频开关与参考音频。
+- [图生视频：首帧](https://platform.qianwenai.com/docs/developer-guides/video-generation/image-to-video.md): 基于单张图片生成视频
+- [图生视频：首尾帧](https://platform.qianwenai.com/docs/developer-guides/video-generation/image-to-video-first-last.md): 根据两帧图片生成过渡视频
+- [参考视频生成](https://platform.qianwenai.com/docs/developer-guides/video-generation/reference-video.md): 复刻动作与外观
+- [通用视频编辑](https://platform.qianwenai.com/docs/developer-guides/video-generation/video-editing.md): 重绘、延展与编辑
+- [Tripo 3D模型生成](https://platform.qianwenai.com/docs/developer-guides/3d-generation/text-image-to-3d.md): 通过千问AI平台调用 Tripo 模型，支持三种生成模式：文生3D模型、单图生3D模型和多图生3D模型。
+- [HappyOyster使用指南](https://platform.qianwenai.com/docs/developer-guides/getting-started/world-model/happyoyster-guide.md): HappyOyster 世界模型使用指南：Adventure（世界探索）模式的能力说明、效果展示与提示词编写方法。
+- [语音合成模型](https://platform.qianwenai.com/docs/developer-guides/speech/tts-models.md): 选择适合语音合成、声音克隆和声音设计的模型。
+- [实时语音合成](https://platform.qianwenai.com/docs/developer-guides/speech/realtime-streaming.md): 实时语音合成将文本实时转换为自然语音，支持流式输入与输出，具备声音复刻、声音设计及精细化音频控制能力，适用于语音助手、有声读物、智能客服等场景。
+- [非实时语音合成](https://platform.qianwenai.com/docs/developer-guides/speech/tts.md)
+- [声音复刻](https://platform.qianwenai.com/docs/developer-guides/speech/voice-cloning.md): 根据音频样本创建自定义音色，用于语音合成或实时语音对话。
+- [声音设计](https://platform.qianwenai.com/docs/developer-guides/speech/voice-design.md): 通过文本描述创建自定义音色，无需音频样本，支持 CosyVoice 和 Qwen-Audio-TTS 模型。
+- [SSML 与 LaTeX](https://platform.qianwenai.com/docs/developer-guides/speech/ssml.md): 通过 SSML 控制语速、停顿、发音等语音特征，或将 LaTeX 公式转换为自然语音
+- [Qwen-Audio-TTS音色列表](https://platform.qianwenai.com/docs/developer-guides/speech/voice-list/qwen-audio-tts.md): 查看 Qwen-Audio-TTS 各模型的系统音色，试听音色效果，并下载基础音色列表和试听音频。
+- [CosyVoice 音色列表](https://platform.qianwenai.com/docs/developer-guides/speech/voice-list/cosyvoice.md): 系统预置音色列表
+- [Qwen3-TTS 音色列表](https://platform.qianwenai.com/docs/developer-guides/speech/voice-list/qwen-tts.md): Qwen3-TTS 实时与非实时语音合成支持的音色
+- [音频生成](https://platform.qianwenai.com/docs/developer-guides/speech/audio-generation.md): 通过文本描述和参考音频，一次生成语音、音效与环境音，构建多人对话、播客等完整声音场景。本文介绍效果示例及提示词写法。
+- [音乐生成](https://platform.qianwenai.com/docs/developer-guides/speech/music-generation.md): Fun-Music 支持通过提示词描述音乐风格和场景，或提供自定义歌词，生成带有男声或女声的中文/英文完整歌曲，也支持生成纯音乐。
+- [语音识别模型](https://platform.qianwenai.com/docs/developer-guides/speech/speech-to-text-models.md): 选择适合实时字幕、音频转写等场景的语音识别模型。
+- [实时语音识别](https://platform.qianwenai.com/docs/developer-guides/speech/asr-realtime.md): 实时语音识别服务接收音频流并实时转写为带标点的文本，适用于直播字幕、在线会议、语音聊天、智能助手等场景。
+- [录音文件转写](https://platform.qianwenai.com/docs/developer-guides/speech/asr.md): 将音视频文件转为文字
+- [提升识别准确率](https://platform.qianwenai.com/docs/developer-guides/speech/improve-recognition-accuracy.md): 千问AI平台语音识别提供预编译热词、即时热词和上下文增强三种方式，提升专业术语、产品名称等特定词汇的识别准确率。本文介绍三种方式的适用范围与使用方法。
+- [语音到语音模型](https://platform.qianwenai.com/docs/developer-guides/speech/s2s-models.md): 为'语音输入 → 语音输出'场景（语音对话、语音翻译、同声传译等）选择模型。
+- [Qwen-Audio 实时语音对话](https://platform.qianwenai.com/docs/developer-guides/speech/qwen-audio-realtime.md): Qwen-Audio 是端到端实时语音交互大模型，支持低延迟语音对话，适用于语音助手、智能客服、AI 伴侣等场景。
+- [实时语音/音视频翻译-千问](https://platform.qianwenai.com/docs/developer-guides/speech/realtime-translation.md): 本文介绍千问实时语音/音视频翻译模型的能力、支持的模型和接入方式。模型可结合音频与图像输入进行实时翻译，输出目标语种的文本或语音，适用于实时语音交流和视频翻译等场景。
+- [音视频文件翻译-千问](https://platform.qianwenai.com/docs/developer-guides/speech/file-translation.md): 千问3-LiveTranslate-Flash 是音视频翻译模型，支持 18 种语言（包括中文、英文、俄文、法文等）互译，可结合视觉上下文提升翻译准确性，并输出文本与语音。
+- [全模态模型](https://platform.qianwenai.com/docs/developer-guides/speech/omni-models.md): 为多模态理解、音视频分析、语音对话、内容审核、语音翻译等全模态场景选择模型。
+- [实时音视频理解](https://platform.qianwenai.com/docs/developer-guides/speech/realtime-multimodal-speech.md): 通过 WebSocket 或 WebRTC 接入 Qwen-Omni 系列模型，实现音频和视频的低延迟实时对话。
+- [音视频文件理解](https://platform.qianwenai.com/docs/developer-guides/speech/multimodal-speech.md): 文本+图像/音频输入
+- [音色列表](https://platform.qianwenai.com/docs/developer-guides/speech/omni-voice-list.md): Qwen-Omni 和 Qwen-LiveTranslate 模型支持的音色、试听、voice 参数值及语言范围。
+- [向量与重排模型](https://platform.qianwenai.com/docs/developer-guides/getting-started/embedding-models.md): 选择适用于语义搜索、RAG 检索、跨模态匹配和重排序的模型。
+- [文本与多模态向量化](https://platform.qianwenai.com/docs/developer-guides/embeddings/embedding.md): 向量化模型可将文本、图像、视频等数据转换为数值向量，用于语义搜索、推荐、聚类、分类、异常检测等下游任务。
+- [重排序](https://platform.qianwenai.com/docs/developer-guides/embeddings/reranking.md): 提升搜索精准度
+- [函数调用](https://platform.qianwenai.com/docs/developer-guides/tool-calling/function-calling.md): 将模型连接到外部工具
+- [联网搜索](https://platform.qianwenai.com/docs/developer-guides/tool-calling/web-search.md): 让模型响应基于实时网络数据——查询天气、股票价格、近期新闻等训练数据截止日期后的内容。
+- [网页抓取](https://platform.qianwenai.com/docs/developer-guides/tool-calling/web-scraping.md): 抓取 URL 内容作为上下文
+- [代码解释器](https://platform.qianwenai.com/docs/developer-guides/tool-calling/code-interpreter.md): 在沙箱中运行 Python 代码
+- [图片搜索](https://platform.qianwenai.com/docs/developer-guides/tool-calling/image-search.md): 通过 Responses API 搜索图片
+- [PDF理解](https://platform.qianwenai.com/docs/developer-guides/tool-calling/pdf-understanding.md): PDF文件通过VL模型解析
+- [MCP](https://platform.qianwenai.com/docs/developer-guides/tool-calling/mcp.md): 在对话中使用外部工具
+- [结构化输出](https://platform.qianwenai.com/docs/developer-guides/text-generation/structured-output.md): 让模型稳定返回合法 JSON，并可通过 JSON Schema 精确约束输出结构
+- [思考模式](https://platform.qianwenai.com/docs/developer-guides/text-generation/thinking.md): 通过逐步推理解决复杂任务
+- [批量调用](https://platform.qianwenai.com/docs/developer-guides/text-generation/batch.md): 异步批量处理请求，费用低至实时调用的 50%
+- [批量推理](https://platform.qianwenai.com/docs/developer-guides/text-generation/batch-chat.md): 同步等待结果的批量对话接口，费用低至实时调用的 50%
+- [DeepSeek-千问AI平台](https://platform.qianwenai.com/docs/developer-guides/third-party-models/deepseek.md): 通过OpenAI兼容接口或DashScope SDK调用千问AI平台提供的DeepSeek系列模型。
+- [DeepSeek-硅基流动](https://platform.qianwenai.com/docs/developer-guides/third-party-models/deepseek-siliconflow.md): 本文档介绍如何在千问AI平台平台通过OpenAI兼容接口或DashScope SDK调用硅基流动提供的DeepSeek系列模型。
+- [DeepSeek-快手万擎](https://platform.qianwenai.com/docs/developer-guides/third-party-models/deepseek-kuaishou.md): 本文档介绍如何在千问AI平台平台调用快手万擎直供的 DeepSeek 系列模型推理服务。
+- [Kimi-千问AI平台](https://platform.qianwenai.com/docs/developer-guides/third-party-models/kimi.md): 本文档介绍如何调用千问AI平台部署的 Kimi 模型推理服务。
+- [Kimi-月之暗面](https://platform.qianwenai.com/docs/developer-guides/third-party-models/kimi-moonshot.md): 本文档介绍如何在千问AI平台平台调用月之暗面（Moonshot AI）直供的模型推理服务。
+- [GLM-千问AI平台](https://platform.qianwenai.com/docs/developer-guides/third-party-models/glm.md): 通过API调用 GLM 系列模型进行对话。
+- [GLM-智谱](https://platform.qianwenai.com/docs/developer-guides/third-party-models/glm-zhipu.md): 本文档介绍如何在千问AI平台平台调用智谱（ZHIPU AI）直供的模型推理服务。
+- [MiMo-小米](https://platform.qianwenai.com/docs/developer-guides/third-party-models/mimo.md): 通过API调用小米直供的 MiMo 系列模型进行对话。
+- [MiniMax-千问AI平台](https://platform.qianwenai.com/docs/developer-guides/third-party-models/minimax.md): 本文档介绍如何调用千问AI平台部署的 MiniMax 模型推理服务。
+- [MiniMax-稀宇科技](https://platform.qianwenai.com/docs/developer-guides/third-party-models/minimax-minimaxi.md): 本文档介绍如何在千问AI平台平台调用稀宇科技（简称MiniMax）直供的模型推理服务。
+- [Stepfun-阶跃星辰](https://platform.qianwenai.com/docs/developer-guides/third-party-models/stepfun.md): 本文档介绍如何在千问AI平台调用阶跃星辰（Stepfun）直供的 Step 系列模型推理服务。
+- [Unisound-千问AI平台](https://platform.qianwenai.com/docs/developer-guides/third-party-models/unisound.md): 本文档介绍如何调用千问AI平台部署的云知声 U2 系列模型推理服务。
+- [Vidu视频生成Prompt指南](https://platform.qianwenai.com/docs/developer-guides/third-party-models/vidu-prompt-guide.md): 本文涵盖从提示词公式、关键词词典到进阶案例的完整实践方法。
+
+## 运行与扩展
+
+- [Prime 模式](https://platform.qianwenai.com/docs/developer-guides/run-and-scale/prime-mode.md): Prime 模式为对输出速度敏感的场景提供更高的 TPS，适用于 AI 编程助手、Agent 多步推理、实时对话等场景。
+- [多轮对话](https://platform.qianwenai.com/docs/developer-guides/run-and-scale/multi-turn.md): 管理对话上下文
+- [上下文缓存](https://platform.qianwenai.com/docs/developer-guides/run-and-scale/context-cache.md): 通过前缀复用降低成本
+- [流式输出](https://platform.qianwenai.com/docs/developer-guides/run-and-scale/streaming.md): 逐 token 实时接收模型生成的文本。
+
+## 实践教程
+
+- [模型调优](https://platform.qianwenai.com/docs/developer-guides/accuracy-tuning/overview.md): 在千问AI平台上提升文本、图像、视频、语音和视觉模型的输出准确性与一致性
+- [文本生成微调](https://platform.qianwenai.com/docs/developer-guides/accuracy-tuning/text-generation.md): 设计高效的提示词
+- [图像生成微调](https://platform.qianwenai.com/docs/developer-guides/accuracy-tuning/image-generation.md): 提升 Wan 图像生成效果
+- [视频生成微调](https://platform.qianwenai.com/docs/developer-guides/accuracy-tuning/video-generation.md): 优化视频生成提示词的方法与技巧
+- [语音识别最佳实践](https://platform.qianwenai.com/docs/developer-guides/accuracy-tuning/speech-recognition.md): 通过音频质量优化、词汇定制和后处理纠错，提升语音识别准确率。
+- [显式缓存最佳实践](https://platform.qianwenai.com/docs/developer-guides/accuracy-tuning/explicit-cache-best-practice.md): 显式缓存通过在请求中添加缓存标记，确保相同输入内容确定性命中缓存，从而显著降低成本和延迟。
+- [延迟优化](https://platform.qianwenai.com/docs/developer-guides/run-and-scale/latency-optimization.md): 降低千问AI平台文本、图像、视频和语音模型的响应延迟
+- [成本优化](https://platform.qianwenai.com/docs/developer-guides/run-and-scale/cost-optimization.md): 在保证输出质量的同时，降低文本、图像、视频和语音 API 调用费用
+- [安全](https://platform.qianwenai.com/docs/developer-guides/run-and-scale/safety.md): 覆盖所有模态的内容审核、输入/输出防护与负责任的 AI 实践
+- [异步任务管理](https://platform.qianwenai.com/docs/developer-guides/run-and-scale/async-task-management.md): 千问AI平台的两种异步模式：Task API 用于媒体生成，Batch API 用于大规模文本处理
+- [通过WebRTC使用qwen3.8-omni-flash-realtime实现实时通话](https://platform.qianwenai.com/docs/developer-guides/tutorials/realtime/webrtc-omni-realtime.md): 通过 WebRTC 协议使用 qwen3.8-omni-flash-realtime 模型实现实时通话
+- [通过AOQ使用qwen3.8-omni-flash-realtime实现实时通话](https://platform.qianwenai.com/docs/developer-guides/tutorials/realtime/aoq-omni-realtime.md): 通过 AOQ 协议使用 qwen3.8-omni-flash-realtime 模型实现实时通话
+- [使用 AOQ 接入 qwen3.8-omni-flash-realtime 实现按键语音对话](https://platform.qianwenai.com/docs/developer-guides/tutorials/realtime/aoq-omni-ptt.md): 通过 AOQ 接入 qwen3.8-omni-flash-realtime，由客户端控制语音起止，实现按键通话和可选的拍照提问。客户端代码以 iOS Swift 为例。
+- [使用AOQ接入fun-asr-realtime实现实时语音识别](https://platform.qianwenai.com/docs/developer-guides/tutorials/realtime/aoq-fun-asr-realtime.md): 通过 AOQ 接入 fun-asr-realtime，发送麦克风音频并实时接收语音识别结果。客户端代码以 Android Java 为例，AOQ 支持的其他平台使用相同的接口。
+- [使用 AOQ 接入 Qwen-Audio 实现实时语音对话](https://platform.qianwenai.com/docs/developer-guides/tutorials/realtime/aoq-audio-realtime.md): 通过 AOQ 接入 qwen-audio-3.1-realtime-plus，使用服务端 VAD 自动划分轮次，实现低延迟的实时语音对话。客户端代码以 Android Java 为例。
+- [使用 AOQ 接入 qwen-audio-3.0-tts-flash 实现语音合成](https://platform.qianwenai.com/docs/developer-guides/tutorials/realtime/aoq-tts-realtime.md): 通过 AOQ 接入 qwen-audio-3.0-tts-flash，分段发送文本并实时播放合成语音。客户端代码以 Android Java 为例。
+
+## 管理
+
+- [API Key](https://platform.qianwenai.com/docs/developer-guides/administration/api-keys.md): 创建和管理 API Key
+- [业务空间](https://platform.qianwenai.com/docs/developer-guides/administration/workspace.md): 管理模型权限、速率限制和 API Key
+- [限流](https://platform.qianwenai.com/docs/developer-guides/administration/rate-limits.md): 了解和管理 API 限流
+- [动态限流](https://platform.qianwenai.com/docs/developer-guides/administration/dynamic-rate-limits.md): 千问AI平台对部分模型采用动态限流，TPM 限流值随平台月消费额度按月调整，实际可用 TPM 不低于限流值。
+
+## 集成
+
+- [OpenClaw](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/openclaw.md): 在 OpenClaw 中使用千问AI平台模型
+- [Hermes Agent](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/hermes-agent.md): 在 Hermes Agent 中使用千问AI平台模型
+- [Claude Code](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/claude-code.md): 在 Claude Code 中使用千问AI平台模型
+- [OpenCode](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/opencode.md): 在 OpenCode 中使用千问AI平台模型
+- [Cursor](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/cursor.md): 在 Cursor 中使用千问AI平台模型
+- [Codex](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/codex.md): 在 Codex 中使用千问AI平台模型
+- [千问](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/qwen-office-assistant.md): 千问 APP 中的工作助理功能支持通过 Token Plan 接入千问AI平台，使用 Token Plan 模型处理文档、表格等办公任务。桌面端和手机 APP 均可使用。
+- [Qwen Code](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/qwen-code.md): 在 Qwen Code 中使用千问AI平台模型
+- [DeepSeek Harness](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/deepseek-harness.md): 在千问AI平台中使用 DeepSeek Harness
+- [QwenPaw](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/qwenpaw.md): 在 QwenPaw 中使用千问AI平台模型
+- [Cherry Studio](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/cherry-studio.md): 在 Cherry Studio 中使用千问AI平台模型
+- [Chatbox](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/chatbox.md): 在 Chatbox 中使用千问AI平台模型
+- [Cline](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/cline.md): 在 Cline 中使用千问AI平台模型
+- [Qoder](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/qoder.md): 在 Qoder 中使用千问AI平台模型
+- [Qoder CN（原 Lingma）](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/lingma.md): 在 Qoder CN IDE 中使用千问AI平台模型
+- [Kilo CLI](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/kilo-cli.md): 在 Kilo CLI 中使用千问AI平台模型
+- [Postman](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/postman.md): API 测试工具
+- [Dify](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/dify.md): 低代码 LLM 应用平台
+- [其他 AI 工具](https://platform.qianwenai.com/docs/developer-guides/clients-and-developer-tools/other-tools.md): 兼容 OpenAI/Anthropic 协议的工具
+- [用量分析](https://platform.qianwenai.com/docs/developer-guides/integrations/mlops-observability.md): 查看 Token 消耗、请求日志与性能指标
+
+## 模型生产
+
+- [数据集概览](https://platform.qianwenai.com/docs/developer-guides/datasets/overview.md): 在千问AI平台上管理用于模型微调和模型评测的数据集。
+- [创建数据集](https://platform.qianwenai.com/docs/developer-guides/datasets/create-dataset.md): 上传训练数据或评测数据到千问AI平台，用于模型微调或模型评测。
+- [管理数据集](https://platform.qianwenai.com/docs/developer-guides/datasets/manage-datasets.md): 在千问AI平台平台上发布、编辑和删除数据集。
+- [模型微调概览](https://platform.qianwenai.com/docs/developer-guides/fine-tuning/overview.md): 通过千问AI平台的 SFT、DPO、CPT 微调 Qwen 模型，支持 LoRA 和全参训练模式。
+- [创建微调任务](https://platform.qianwenai.com/docs/developer-guides/fine-tuning/create-fine-tuning-job.md): 在工作台中创建模型微调任务的步骤指南。
+- [管理微调任务](https://platform.qianwenai.com/docs/developer-guides/fine-tuning/manage-fine-tuning-jobs.md): 在工作台中监控、管理和部署微调任务。
+- [超参数参考](https://platform.qianwenai.com/docs/developer-guides/fine-tuning/hyperparameters.md): 千问AI平台微调超参数的参考说明与调参建议。
+- [微调训练计费](https://platform.qianwenai.com/docs/developer-guides/fine-tuning/training-billing.md): 千问AI平台模型微调的训练计费规则、公式与各模型训练单价。
+- [自定义模型概览](https://platform.qianwenai.com/docs/developer-guides/custom-models/overview.md): 查看和管理您在千问AI平台上微调的模型。
+- [模型评测概览](https://platform.qianwenai.com/docs/developer-guides/evaluation/overview.md): 通过千问AI平台的模型评测功能，从多维度量化模型表现，支持 LLM 自动打分与人工标注两种方式。
+- [评测维度](https://platform.qianwenai.com/docs/developer-guides/evaluation/evaluation-dimensions.md): 在千问AI平台上创建和管理评测维度，支持 LLM 数值打分、LLM 分类判定和人工标注三种类型。
+- [评测任务](https://platform.qianwenai.com/docs/developer-guides/evaluation/evaluation-tasks.md): 在千问AI平台上创建评测任务，选择数据来源、评测模型和评测维度，量化模型输出质量。
+- [创建部署](https://platform.qianwenai.com/docs/developer-guides/deployment/overview.md): 在千问AI平台上部署自定义模型，为生产工作负载创建专属推理服务。
+- [管理部署](https://platform.qianwenai.com/docs/developer-guides/deployment/manage-deployments.md): 在千问AI平台上监控和管理模型部署的生命周期。
+
+## 安全与合规
+
+- [数据安全与隐私](https://platform.qianwenai.com/docs/developer-guides/security-compliance/data-security.md): 千问AI平台如何保护您的数据
+- [审计与访问日志](https://platform.qianwenai.com/docs/developer-guides/security-compliance/audit-logs.md): 追踪 API 使用情况，满足合规要求
+- [模型备案信息公示](https://platform.qianwenai.com/docs/developer-guides/security-compliance/model-filing.md): 千问AI平台接入大模型的算法备案号与大模型备案号公示
+- [开源模型协议条款说明](https://platform.qianwenai.com/docs/developer-guides/security-compliance/open-source-model-terms.md): 千问AI平台平台开源模型的开源协议及许可证条款说明
+
+## 概览
+
+- [Agent 开发概览](https://platform.qianwenai.com/docs/agent-infra/overview.md): 千问AI平台 Agent 开发提供智能体托管运行时、知识库、MCP、记忆库、沙箱与 Skill 等能力，覆盖 Agent 从构建、运行、记忆到工具集成的全链路。
+
+## Managed Agent
+
+- [概述](https://platform.qianwenai.com/docs/agent-infra/managed-agents/introduction.md): Managed Agents 是千问AI平台提供的智能体托管运行时，适用于多步工具调用、代码执行、文件处理等长时运行任务。平台托管会话状态、沙箱环境和工具执行，智能体在独立沙箱中自主执行命令、读写文件、安装依赖并处理数据，事件历史在服务端持久化。
+- [快速开始](https://platform.qianwenai.com/docs/agent-infra/managed-agents/overview/quickstart.md): 通过控制台，按 4 步完成智能体创建、环境配置、会话发起与调用。
+- [定义 Agent](https://platform.qianwenai.com/docs/agent-infra/managed-agents/build-agent/define-agent.md): 智能体定义模型、系统提示词、工具与扩展能力，每次保存自动产生新版本。
+- [Agent 工具配置](https://platform.qianwenai.com/docs/agent-infra/managed-agents/build-agent/tools.md): Managed Agents 提供 9 个内置工具，覆盖命令执行、文件操作、网络访问与产出物标记，全部在会话绑定的运行环境中执行。
+- [Agent MCP](https://platform.qianwenai.com/docs/agent-infra/managed-agents/build-agent/mcp.md): MCP（Model Context Protocol）是大模型与外部工具之间的标准协议。在控制台 MCP 管理页面按服务卡片浏览与管理。
+- [Agent Skills](https://platform.qianwenai.com/docs/agent-infra/managed-agents/build-agent/skills.md): 技能是打包后的能力集合，封装常见任务的端到端流程。在控制台 Skill 管理页面管理，可被多个智能体复用。
+- [多智能体协作](https://platform.qianwenai.com/docs/agent-infra/managed-agents/build-agent/multiagent.md): 通过 coordinator 编队，让一个协调者智能体编排多个成员智能体协同完成任务。
+- [云端托管环境](https://platform.qianwenai.com/docs/agent-infra/managed-agents/environment/cloud-hosting.md): 运行环境定义工具调用的执行沙箱。在控制台环境页面创建和管理，可被多个会话复用。
+- [发起会话](https://platform.qianwenai.com/docs/agent-infra/managed-agents/sessions/create-session.md): 会话承载智能体的一次运行实例，全部消息、工具调用与状态变更以事件形式实时记录。
+- [管理会话](https://platform.qianwenai.com/docs/agent-infra/managed-agents/sessions/manage-sessions.md): 会话创建后，可通过状态机、工具调用审批和中断机制控制执行流程，并在任务完成后归档或删除。
+- [会话事件流（SSE）](https://platform.qianwenai.com/docs/agent-infra/managed-agents/sessions/event-stream.md): 会话内的全部交互以事件形式记录。通过 API 订阅时以 SSE（Server-Sent Events）事件流推送。
+- [密钥库认证](https://platform.qianwenai.com/docs/agent-infra/managed-agents/sessions/credentials.md): 密钥库是一个保险箱（Vault），集中管理外部服务的鉴权信息。保险箱内存放具体的密钥（API Key、Token 等），在创建会话时绑定，供 MCP 服务和技能在运行时引用。
+- [Agent 上下文管理](https://platform.qianwenai.com/docs/agent-infra/managed-agents/context/introduction.md): 通过挂载资源扩展智能体在会话中可访问的数据。资源独立管理，可被多个会话复用。
+- [文件上传与挂载](https://platform.qianwenai.com/docs/agent-infra/managed-agents/context/file-upload.md): 文件是独立管理的资源，可被多个会话挂载，生命周期与会话解耦。在控制台文件菜单上传与管理。
+- [Webhook 事件订阅](https://platform.qianwenai.com/docs/agent-infra/managed-agents/webhooks/introduction.md): Webhook 将会话、智能体、部署等资源的状态变更事件实时推送到指定回调地址，替代轮询获取最新状态。
+- [计费说明](https://platform.qianwenai.com/docs/agent-infra/managed-agents/pricing/billing.md): Managed Agents 的计费项、免费额度与计费示例。
+- [入门：搭一个数据分析 Agent](https://platform.qianwenai.com/docs/agent-infra/managed-agents/best-practices/data-analysis.md): 用 curl 走通 Managed Agents REST API 全链路：创建 Agent 与 Environment、上传并挂载数据集、驱动 Session 完成数据体检、清洗与出结论，取回产物并归档资源。
+- [进阶：自定义 MCP 与 Skills](https://platform.qianwenai.com/docs/agent-infra/managed-agents/best-practices/custom-mcp-skills.md): 把自有能力挂上 Agent：已运行的 MCP Server 注册进千问AI平台（自定义 MCP，含按会话动态传入鉴权 Header），团队作业流程打包上传（Skills），含运行时机制与版本管理。
+- [进阶：构建对话客户端](https://platform.qianwenai.com/docs/agent-infra/managed-agents/best-practices/client-streaming.md): 把 Managed Agents 接入网页或移动端产品：SSE 增量拼接、思考与回合状态处理、断线恢复不重复提交，以及会话内动态挂载与撤下附件。
+- [进阶：多模态输入与图片问答](https://platform.qianwenai.com/docs/agent-infra/managed-agents/best-practices/multimodal-image.md): 图片经上传与审核后以 file_id 进入会话：发送图文混合消息、用可控图片验证识别结果，以及当前的模型与输入格式限制。
+- [进阶：生产化定时晨报机器人](https://platform.qianwenai.com/docs/agent-infra/managed-agents/best-practices/production.md): 把 Managed Agents 接入生产：MCP 工具集接入、配置注入（会话环境变量与 Vault 密钥库）、定时任务（Deployment）触发、人工审核（HITL）与资源生命周期管理，示例统一用 curl。
+- [进阶：密钥库安全注入与出网网关](https://platform.qianwenai.com/docs/agent-infra/managed-agents/best-practices/credential-security.md): Vault 密钥库的占位符注入模型、allowed_hosts 出口白名单、出网网关的 Authorization 头替换行为，以及会话环境变量与密钥库的选型分层。
+- [进阶：提示词版本管理与回滚](https://platform.qianwenai.com/docs/agent-infra/managed-agents/best-practices/prompt-versioning.md): Agent 版本机制、标注测试集评测、Session 版本锁定语义与灰度回滚的做法，把提示词从应用代码剥离为服务端可版本化的资源。
+- [进阶：Webhook 事件通知](https://platform.qianwenai.com/docs/agent-infra/managed-agents/best-practices/webhook-notifications.md): 把「事件发生」（会话跑完、部署执行结束、资源变更）变成一次主动的 HTTP 推送：接收端工程、验签、投递语义与重试禁用规则的完整实践。
+
+## RAG
+
+- [知识库](https://platform.qianwenai.com/docs/agent-infra/rag/introduction.md): 千问AI平台知识库——企业级 RAG 知识库与检索服务。
+- [快速开始](https://platform.qianwenai.com/docs/agent-infra/rag/getting-started/quickstart.md): 5 步创建知识库，完成一次检索与问答
+- [核心概念](https://platform.qianwenai.com/docs/agent-infra/rag/getting-started/concepts.md): 理解 RAG、切片、嵌入、索引与检索的工作原理
+- [概览](https://platform.qianwenai.com/docs/agent-infra/rag/playground/overview.md): 多知识库聚合问答体验入口
+- [数据连接](https://platform.qianwenai.com/docs/agent-infra/rag/data/connectors.md): 通过数据连接器接入企业数据库、文档系统和对象存储，在应用中实时查询和引用数据
+- [创建知识库](https://platform.qianwenai.com/docs/agent-infra/rag/data/create-kb.md): 选择知识库类型与使用场景，配置解析与切片策略
+- [文档管理与解析](https://platform.qianwenai.com/docs/agent-infra/rag/data/documents.md): 上传文档、查看解析结果、管理切片
+- [切片与向量化](https://platform.qianwenai.com/docs/agent-infra/rag/data/chunking.md): 了解切片策略与嵌入模型如何影响检索质量
+- [知识检索](https://platform.qianwenai.com/docs/agent-infra/rag/service/retrieval.md): 创建检索服务，实现多知识库联合语义搜索
+- [知识问答](https://platform.qianwenai.com/docs/agent-infra/rag/service/qa.md): 基于大模型的流式 RAG 问答服务
+- [RAG 效果优化](https://platform.qianwenai.com/docs/agent-infra/rag/cookbook/rag-optimization.md): 按 RAG 各阶段诊断问题并针对性改进，系统性提升检索与回答质量
+- [多轮对话：正确传递工具调用历史](https://platform.qianwenai.com/docs/agent-infra/rag/cookbook/multi-turn-chat.md): 从创建知识库到 API 多轮调用，端到端实践传递工具调用历史避免重复检索
+- [文件自动打标：用大模型生成文档标签](https://platform.qianwenai.com/docs/agent-infra/rag/cookbook/auto-tag.md): 用知识问答服务基于文档全部切片自动抽取标签并写回，实现从导入到按标签检索的端到端自动打标
+- [接入 AgentScope](https://platform.qianwenai.com/docs/agent-infra/rag/cookbook/knowledge-as-memory.md): 在 AgentScope 框架中通过自定义中间件把千问AI平台知识库作为智能体的知识记忆体，实现 static 静态注入与 agentic 自主检索两种模式
+- [服务渠道](https://platform.qianwenai.com/docs/agent-infra/rag/integration/channels.md): API / MCP / Skill 等多种接入方式
+- [第三方平台接入](https://platform.qianwenai.com/docs/agent-infra/rag/integration/third-party.md): 将 RAG 知识库接入 Dify、Coze、n8n、LangChain 等平台
+- [业务空间与 API Key](https://platform.qianwenai.com/docs/agent-infra/rag/settings/workspace.md): 知识库如何按业务空间隔离，以及调用 API 时业务空间怎么生效
+- [计费说明](https://platform.qianwenai.com/docs/agent-infra/rag/settings/billing.md): 知识库计费方式、费用构成、计费示例与账单管理
+- [容量与限制](https://platform.qianwenai.com/docs/agent-infra/rag/settings/limits.md): 知识库各功能模块的容量上限与使用限制
+
+## MCP
+
+- [MCP 简介](https://platform.qianwenai.com/docs/agent-infra/mcp/introduction.md): 模型上下文协议（Model Context Protocol, MCP）旨在搭建大模型和外部工具之间的信息传递通道。通过 MCP 协议，开发者不用为每个外部工具编写复杂的接口，千问AI平台的智能体也能够接入海量第三方工具。
+- [MCP 商店服务](https://platform.qianwenai.com/docs/agent-infra/mcp/official-services.md): 千问AI平台 MCP 商店提供的 MCP 服务所有用户可见，均为 One Key MCP：无需开通，用千问AI平台 API Key 直接鉴权。支持挂载到 Managed Agent 由智能体自主调用，也支持通过外部调用集成至第三方应用或项目中。
+- [自定义 MCP 服务](https://platform.qianwenai.com/docs/agent-infra/mcp/custom-services.md): 除官方 MCP 服务外，千问AI平台还支持以下三种自定义 MCP 服务部署方式：使用脚本部署、从 AI 网关导入、从阿里云 OpenAPI 导入。
+- [外部调用](https://platform.qianwenai.com/docs/agent-infra/mcp/external-invocation.md): 千问AI平台提供了全周期 MCP 服务，既支持挂载到 Managed Agent 由智能体自主调用，也支持通过外部调用集成至第三方应用或个人项目。
+- [常见问题](https://platform.qianwenai.com/docs/agent-infra/mcp/faq.md): 您可以查阅有关 MCP 协议和 MCP 服务的常见问题。
+
+## 记忆库
+
+- [记忆库](https://platform.qianwenai.com/docs/agent-infra/memory.md): 千问AI平台记忆库——为智能体提供跨会话长期记忆的托管服务，通过 API 写入、检索与管理记忆。
+- [快速开始](https://platform.qianwenai.com/docs/agent-infra/memory/getting-started/quickstart.md): 3 步体验记忆的写入、查看和检索
+- [核心概念](https://platform.qianwenai.com/docs/agent-infra/memory/getting-started/concepts.md): 理解记忆库的工作原理、记忆类型与关键术语
+- [创建与删除记忆库](https://platform.qianwenai.com/docs/agent-infra/memory/guide/create-memory.md): 创建自定义记忆库并管理记忆库生命周期
+- [配置记忆规则](https://platform.qianwenai.com/docs/agent-infra/memory/guide/configure-rules.md): 定义事实记忆和用户画像的提取规则
+- [使用用户画像](https://platform.qianwenai.com/docs/agent-infra/memory/guide/user-profile.md): 通过 API 创建画像模板、提取画像并获取用户画像
+- [管理记忆](https://platform.qianwenai.com/docs/agent-infra/memory/guide/manage-memory.md): 查看、检索调试、更新和删除记忆
+- [计费说明](https://platform.qianwenai.com/docs/agent-infra/memory/reference/billing.md): 记忆库商业化定价、免费额度与计费示例
+- [限流说明](https://platform.qianwenai.com/docs/agent-infra/memory/reference/limits.md): 记忆库 API 的请求频率限制
+- [常见问题](https://platform.qianwenai.com/docs/agent-infra/memory/reference/faq.md): 记忆库使用中的常见问题解答
+- [更新日志](https://platform.qianwenai.com/docs/agent-infra/memory/changelog.md): 记忆库文档版本变更记录
+
+## Sandbox
+
+- [概述](https://platform.qianwenai.com/docs/agent-infra/sandbox.md): Sandbox 是千问AI平台提供的云端安全沙箱，为 AI 智能体提供隔离的代码执行、浏览器操作与文件处理环境，兼容 E2B SDK/API 协议接入。
+- [快速开始](https://platform.qianwenai.com/docs/agent-infra/sandbox/quickstart.md): 通过控制台创建模版、生成 API Key 并发起首次调用，几分钟内启动第一个沙箱。
+- [模版管理](https://platform.qianwenai.com/docs/agent-infra/sandbox/templates.md): 模版定义沙箱的基础镜像、资源规格、文件挂载、网络策略、环境变量与生命周期。基于模版可创建多个隔离实例。
+- [实例管理与使用](https://platform.qianwenai.com/docs/agent-infra/sandbox/sdk.md): 通过 E2B SDK 管理沙箱实例的生命周期并执行数据面操作。使用千问AI平台沙箱接入地址与 API Key，即可创建实例、执行命令、运行代码与读写文件。
+- [使用 Code Interpreter Sandbox](https://platform.qianwenai.com/docs/agent-infra/sandbox/best-practice-code-interpreter.md): 面向数据分析类 Agent 的最佳实践：把模型生成的分析逻辑放进隔离沙箱执行，固定脚本入口、结构化输出、依赖固化到模版，返回可解释、可下载、可审计的结果。
+- [使用 Browser Use Sandbox](https://platform.qianwenai.com/docs/agent-infra/sandbox/best-practice-browser-use.md): 面向网页自动化类 Agent 的最佳实践：基于浏览器镜像创建模版，通过 CDP 连接 Puppeteer、Playwright 或 BrowserUse，完成网页访问、交互、截图与结果归档。
+- [使用 AIO Sandbox](https://platform.qianwenai.com/docs/agent-infra/sandbox/best-practice-aio.md): 面向“浏览器自动化 + 代码执行 + 文件处理”连续任务的最佳实践：基于全能型镜像创建模版，在同一沙箱中完成网页访问、截图、下载、数据清洗与结果导出。
+- [计费说明](https://platform.qianwenai.com/docs/agent-infra/sandbox/billing.md): Sandbox 计费项、计费规则与计费示例。
+- [更新日志](https://platform.qianwenai.com/docs/agent-infra/sandbox/changelog.md): Sandbox 的版本更新记录
+
+## Skill
+
+- [Skill 简介](https://platform.qianwenai.com/docs/agent-infra/skills/introduction.md): 介绍 Skill 的概念、自定义 Skill 的 ZIP 包规范，以及千问AI平台技能市场与自定义 Skill 两条路径。
+- [技能市场](https://platform.qianwenai.com/docs/agent-infra/skills/custom.md): 介绍千问AI平台技能市场首页结构、技能包，以及如何安装技能和技能包。
+- [发布和管理 Skill](https://platform.qianwenai.com/docs/agent-infra/skills/publish.md): 介绍把 Skill 发布到千问AI平台技能市场的完整流程，以及发布后的版本管理。
+
+## 开始使用
+
+- [获取 API Key](https://platform.qianwenai.com/docs/api-reference/preparation/api-key.md): 使用模型的第一步
+- [配置 API Key](https://platform.qianwenai.com/docs/api-reference/preparation/export-api-key-env.md): 避免在代码中硬编码密钥
+- [安装 SDK](https://platform.qianwenai.com/docs/api-reference/preparation/install-sdk.md): Python、Java、Node.js 和 Go 环境配置
+- [CLI 工具](https://platform.qianwenai.com/docs/api-reference/preparation/cli.md): 千问AI平台命令行工具，用于查询模型和文档、发起模型调用，并管理账号、用量、账单、充值、订阅、云栖大会活动和支持工单
+- [错误信息](https://platform.qianwenai.com/docs/api-reference/preparation/error-messages.md): API 错误码参考
+
+## 对话模型
+
+- [OpenAI Chat API 参考](https://platform.qianwenai.com/docs/api-reference/chat/openai-chat.md): OpenAI 兼容的 Chat API
+- [创建响应](https://platform.qianwenai.com/docs/api-reference/chat/openai-responses.md): 兼容 Responses API
+- [获取响应](https://platform.qianwenai.com/docs/api-reference/chat/retrieve-response.md): 根据 Response ID 获取一个已完成的模型响应
+- [删除响应](https://platform.qianwenai.com/docs/api-reference/chat/delete-response.md): 根据 Response ID 删除一个已存储的模型响应
+- [获取输入项列表](https://platform.qianwenai.com/docs/api-reference/chat/list-input-items.md): 获取生成指定 Response 时所使用的输入项列表
+- [Anthropic Messages API 参考](https://platform.qianwenai.com/docs/api-reference/chat/anthropic.md): 通过 Anthropic SDK 调用 Qwen 模型
+- [DashScope API 参考](https://platform.qianwenai.com/docs/api-reference/chat/dashscope.md): 原生 SDK 与 HTTP API
+
+## 图像生成 API
+
+- [Qwen — OpenAI 兼容图像生成](https://platform.qianwenai.com/docs/api-reference/image-generation/qwen-text-to-image-openai.md): 通过 OpenAI Images 兼容协议调用千问图像生成与编辑模型进行文生图与图生图/图像编辑
+- [Qwen — 同步图像生成](https://platform.qianwenai.com/docs/api-reference/image-generation/qwen-text-to-image.md): 同步图像生成
+- [Qwen — 异步图像生成（3.0 系列与 2.1-pro）](https://platform.qianwenai.com/docs/api-reference/image-generation/qwen-text-to-image-30-async.md): qwen-image-3.0 系列和 qwen-image-2.1-pro 的异步图像生成接口
+- [Qwen — 查询图像生成结果](https://platform.qianwenai.com/docs/api-reference/image-generation/qwen-text-to-image-task-query.md): 查询图像生成任务状态
+- [Z-Image](https://platform.qianwenai.com/docs/api-reference/image-generation/z-image.md): 轻量快速图像生成
+- [Wan v2 — 同步调用](https://platform.qianwenai.com/docs/api-reference/image-generation/wan-text-to-image-v2/synchronous.md): Wan 文生图同步接口
+- [Wan v2 — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/wan-text-to-image-v2/create-task.md): Wan 异步图像生成
+- [Wan v2 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/wan-text-to-image-v2/query-result.md): 查询 Wan 图像生成任务状态
+- [wanx-v1 — 创建文生图任务](https://platform.qianwenai.com/docs/api-reference/image-generation/wanx-v1-text-to-image/create-task.md): wanx-v1 异步图像生成
+- [wanx-v1 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/wanx-v1-text-to-image/query-result.md): 查询 wanx-v1 图像生成任务状态
+- [Qwen](https://platform.qianwenai.com/docs/api-reference/image-generation/qwen-image-editing.md): 通过文本编辑图片
+- [Wan 2.7 — 同步调用](https://platform.qianwenai.com/docs/api-reference/image-generation/wan27-image-gen-edit/synchronous.md): Wan 2.7 同步图像生成与编辑
+- [Wan 2.7 — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/wan27-image-gen-edit/create-task.md): Wan 2.7 异步图像生成与编辑
+- [Wan 2.7 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/wan27-image-gen-edit/query-result.md): 查询 Wan 2.7 图像任务状态
+- [Wan 2.6 — 同步调用](https://platform.qianwenai.com/docs/api-reference/image-generation/wan26-image-gen-edit/synchronous.md): Wan 2.6 同步图像生成与编辑
+- [Wan 2.6 — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/wan26-image-gen-edit/create-task.md): Wan 2.6 异步图像生成与编辑
+- [Wan 2.6 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/wan26-image-gen-edit/query-result.md): 查询 Wan 2.6 图像任务状态
+- [Wan 2.5 — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/wan25-general-image-editing/create-task.md): 异步 Wan 2.5 图像编辑
+- [Wan 2.5 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/wan25-general-image-editing/query-result.md): 查询 Wan 2.5 图像编辑任务状态
+- [Wan 2.1 — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/wan21-general-image-editing/create-task.md): 异步 Wan 2.1 通用图像编辑
+- [Wan 2.1 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/wan21-general-image-editing/query-result.md): 查询 Wan 2.1 图像编辑任务状态
+- [创建图像生成任务](https://platform.qianwenai.com/docs/api-reference/image-generation/kling-image-generation/create-task.md): 提交可灵图像生成任务（文生图或参考图生图），获取 task_id 用于后续查询。
+- [查询图像生成任务结果](https://platform.qianwenai.com/docs/api-reference/image-generation/kling-image-generation/query-result.md): 通过 task_id 轮询查询可灵图像生成任务的执行状态与生成图像。
+- [可灵-主体ID列表](https://platform.qianwenai.com/docs/api-reference/image-generation/kling-subject-id-list.md): 可灵（Kling）图像生成和视频生成API支持的主体ID（element_id）完整列表及参考图。
+- [Vidu -- 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/vidu-image-generation/create-task.md): 使用 Vidu 模型提交图像生成任务（文生图/参考图生图），异步生成图像。
+- [Vidu -- 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/vidu-image-generation/query-result.md): 查询 Vidu 图像生成任务的状态与结果。
+- [万相涂鸦作画 — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/wanx-sketch-to-image/create-task.md): 提交涂鸦作画任务，获取任务 ID。
+- [万相涂鸦作画 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/wanx-sketch-to-image/query-result.md): 通过任务 ID 查询涂鸦作画任务的状态和结果。
+- [Wanx — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/wanx-x-painting/create-task.md): 异步 wanx-x-painting 图像局部重绘
+- [Wanx — 查询局部重绘结果](https://platform.qianwenai.com/docs/api-reference/image-generation/wanx-x-painting/query-result.md): 查询 wanx-x-painting 图像局部重绘任务状态
+- [人像风格重绘 — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/wanx-style-repaint/create-task.md): 异步人像风格重绘
+- [人像风格重绘 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/wanx-style-repaint/query-result.md): 查询人像风格重绘任务状态
+- [虚拟模特 — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/virtual-model/create-task.md): 提交虚拟模特试衣任务
+- [虚拟模特 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/virtual-model/query-result.md): 查询虚拟模特任务的状态和结果
+- [鞋靴模特 — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/shoe-model/create-task.md): 异步鞋靴模特图像生成
+- [鞋靴模特 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/shoe-model/query-result.md): 查询鞋靴模特图像生成任务状态
+- [创意海报 — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/creative-poster/create-task.md): 创意海报异步生成
+- [创意海报 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/creative-poster/query-result.md): 查询创意海报生成任务状态
+- [人物实例分割 — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/person-instance-segmentation/create-task.md): 提交人物实例分割任务
+- [人物实例分割 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/person-instance-segmentation/query-result.md): 查询人物实例分割任务的状态和结果
+- [图像擦除补全 — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/image-erase-completion/create-task.md): 异步提交图像擦除补全任务
+- [图像擦除补全 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/image-erase-completion/query-result.md): 根据任务ID查询异步擦除补全任务的状态和结果
+- [FaceChain — 图像检测](https://platform.qianwenai.com/docs/api-reference/image-generation/facechain-generation/facechain-face-detect.md): 检测图像中是否包含符合要求的人脸
+- [人物形象训练 — 创建任务](https://platform.qianwenai.com/docs/api-reference/image-generation/facechain-finetune/create-task.md): 提交 FaceChain 人物形象训练任务
+- [人物形象训练 — 查询结果](https://platform.qianwenai.com/docs/api-reference/image-generation/facechain-finetune/query-result.md): 查询 FaceChain 人物形象训练任务的状态和结果
+
+## 视频生成 API
+
+- [wan3.0-video 视频生成](https://platform.qianwenai.com/docs/api-reference/video-generation/wan30-video/create-task.md): wan3.0-video 全能参考视频生成模型。支持文生视频、首帧/首尾帧生视频、全能参考生视频、有声视频等能力。
+- [wan3.0-video 查询任务结果](https://platform.qianwenai.com/docs/api-reference/video-generation/wan30-video/query-result.md): 查询 wan3.0-video 视频生成任务的状态和结果。
+- [MiniMax-H3 视频生成](https://platform.qianwenai.com/docs/api-reference/video-generation/minimax-h3-video/create-task.md): MiniMax-H3 视频生成模型。支持文生视频、图生视频（首帧/尾帧/首尾帧）和多模态参考生视频。
+- [MiniMax-H3 查询任务结果](https://platform.qianwenai.com/docs/api-reference/video-generation/minimax-h3-video/query-result.md): 查询 MiniMax-H3 视频生成任务的状态和结果。
+- [HappyHorse -- 图生视频（首帧）](https://platform.qianwenai.com/docs/api-reference/video-generation/happyhorse-image-to-video/create-task.md): 提交 HappyHorse 图生视频任务（基于首帧）
+- [HappyHorse -- 查询图生视频结果](https://platform.qianwenai.com/docs/api-reference/video-generation/happyhorse-image-to-video/query-result.md): 查询 HappyHorse 图生视频任务状态
+- [Wan 2.7 — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/wan27-image-to-video/create-task.md): 提交图生视频任务（wan2.7）
+- [Wan 2.7 — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/wan27-image-to-video/query-result.md): 查询 Wan 2.7 图生视频任务状态
+- [Wan — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-image-to-video-first-frame/create-task.md): 提交图生视频任务
+- [Wan — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-image-to-video-first-frame/query-result.md): 查询视频生成任务状态
+- [Wan — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-image-to-video-first-last-frames/create-task.md): 提交首尾帧图生视频任务
+- [Wan — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-image-to-video-first-last-frames/query-result.md): 查询视频生成任务状态
+- [万相-视频特效列表](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-image-to-video-first-frame/video-effects.md): 万相视频特效模板完整列表，包含首帧和首尾帧模型支持的所有特效模板参数值、支持模型及输入图像建议。
+- [Vidu — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/vidu-image-to-video/create-task.md): 提交一个基于首帧图像的 Vidu 图生视频任务。
+- [Vidu — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/vidu-image-to-video/query-result.md): 查询 Vidu 图生视频任务的状态和结果。
+- [Vidu — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/vidu-image-to-video-first-frame/create-task.md): 基于首帧图片提交 Vidu 图生视频异步任务
+- [Vidu — 查询图生视频任务结果（基于首帧）](https://platform.qianwenai.com/docs/api-reference/video-generation/vidu-image-to-video-first-frame/query-result.md): 查询 Vidu 图生视频（基于首帧）任务状态，获取生成的视频
+- [Vidu — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/vidu-start-end-to-video/create-task.md): 提交首尾帧生视频任务，使用 Vidu 模型基于首帧和尾帧图像生成过渡视频。
+- [Vidu — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/vidu-start-end-to-video/query-result.md): 查询 Vidu 首尾帧生视频任务的状态与结果。
+- [爱诗 PixVerse — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-image-to-video/create-task.md): 提交 PixVerse 图生视频任务
+- [爱诗 PixVerse — 查询图生视频任务结果](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-image-to-video/query-result.md): 查询 PixVerse 图生视频任务状态
+- [PixVerse — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-image-to-video-first-last/create-task.md): 提交 PixVerse 首尾帧图生视频任务
+- [PixVerse — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-image-to-video-first-last/query-result.md): 查询 PixVerse 首尾帧图生视频任务状态
+- [爱诗 PixVerse — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-image-to-video-first-frame/create-task.md): 基于首帧图片提交爱诗 PixVerse 图生视频异步任务
+- [爱诗 PixVerse — 查询图生视频任务结果（基于首帧）](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-image-to-video-first-frame/query-result.md): 查询爱诗 PixVerse 图生视频（基于首帧）任务状态，获取生成的视频
+- [HappyHorse -- 参考生视频](https://platform.qianwenai.com/docs/api-reference/video-generation/happyhorse-reference-to-video/create-task.md): 提交 HappyHorse 参考生视频任务
+- [HappyHorse -- 查询参考生视频结果](https://platform.qianwenai.com/docs/api-reference/video-generation/happyhorse-reference-to-video/query-result.md): 查询 HappyHorse 参考生视频任务状态
+- [Wan 2.7 — 参考素材生成视频](https://platform.qianwenai.com/docs/api-reference/video-generation/wan27-reference-to-video/create-task.md): 提交 Wan 2.7 参考素材生成视频任务
+- [Wan 2.7 — 查询参考素材生成视频结果](https://platform.qianwenai.com/docs/api-reference/video-generation/wan27-reference-to-video/query-result.md): 查询 Wan 2.7 参考素材生成视频任务状态
+- [Wan 2.6 — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-reference-to-video/create-task.md): 提交参考视频生成任务
+- [Wan 2.6 — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-reference-to-video/query-result.md): 查询视频生成任务状态
+- [PixVerse — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-reference-to-video/create-task.md): 提交 PixVerse 参考生视频任务
+- [PixVerse — 查询参考生视频结果](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-reference-to-video/query-result.md): 查询 PixVerse 参考生视频任务状态
+- [Vidu — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/vidu-reference-to-video/create-task.md): 使用 Vidu 模型提交参考视频生成任务。
+- [Vidu — 查询参考视频生成结果](https://platform.qianwenai.com/docs/api-reference/video-generation/vidu-reference-to-video/query-result.md): 查询 Vidu 参考视频生成任务的状态和结果。
+- [HappyHorse -- 文生视频](https://platform.qianwenai.com/docs/api-reference/video-generation/happyhorse-text-to-video/create-task.md): 提交 HappyHorse 文生视频任务
+- [HappyHorse -- 查询文生视频结果](https://platform.qianwenai.com/docs/api-reference/video-generation/happyhorse-text-to-video/query-result.md): 查询 HappyHorse 文生视频任务状态
+- [Wan 2.7 — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/wan27-text-to-video/create-task.md): 提交文本生成视频任务（wan2.7）
+- [Wan 2.7 — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/wan27-text-to-video/query-result.md): 查询 Wan 2.7 文生视频任务状态
+- [Wan — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-text-to-video/create-task.md): 提交文生视频任务（wan2.6 及更早版本）
+- [Wan — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-text-to-video/query-result.md): 查询视频生成任务状态（wan2.6 及更早版本）
+- [爱诗 PixVerse — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-text-to-video/create-task.md): 提交爱诗 PixVerse 文生视频异步任务
+- [爱诗 PixVerse — 查询文生视频任务结果](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-text-to-video/query-result.md): 查询爱诗 PixVerse 文生视频任务状态，获取生成的视频
+- [Vidu — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/vidu-text-to-video/create-task.md): 使用 Vidu 模型提交文生视频任务，异步生成视频。
+- [Vidu — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/vidu-text-to-video/query-result.md): 查询 Vidu 文生视频任务的状态与生成结果。
+- [HappyHorse -- 视频编辑](https://platform.qianwenai.com/docs/api-reference/video-generation/happyhorse-video-editing/create-task.md): 提交 HappyHorse 视频编辑任务
+- [HappyHorse -- 查询视频编辑结果](https://platform.qianwenai.com/docs/api-reference/video-generation/happyhorse-video-editing/query-result.md): 查询 HappyHorse 视频编辑任务状态
+- [Wan 2.7 — 视频编辑](https://platform.qianwenai.com/docs/api-reference/video-generation/wan27-video-editing/create-task.md): 提交视频编辑任务（wan2.7）
+- [Wan 2.7 — 查询视频编辑结果](https://platform.qianwenai.com/docs/api-reference/video-generation/wan27-video-editing/query-result.md): 查询 Wan 2.7 视频编辑任务状态
+- [Wan — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-general-video-editing/create-task.md): 提交视频编辑任务
+- [Wan — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-general-video-editing/query-result.md): 查询视频编辑任务状态
+- [爱诗 PixVerse — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-upscale/create-task.md): 提交 PixVerse 视频超清任务
+- [爱诗 PixVerse — 查询视频超清任务结果](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-upscale/query-result.md): 查询 PixVerse 视频超清任务状态
+- [可灵视频生成 — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/kling-video-generation/create-task.md): 提交可灵视频生成异步任务
+- [可灵视频生成 — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/kling-video-generation/query-result.md): 查询可灵视频生成任务状态并获取视频
+- [可灵-主体ID列表](https://platform.qianwenai.com/docs/api-reference/image-generation/kling-subject-id-list.md): 可灵（Kling）图像生成和视频生成API支持的主体ID（element_id）完整列表及参考图。
+- [爱诗 PixVerse — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-motioncontrol/create-task.md): 提交 PixVerse 视频动作模仿任务
+- [爱诗 PixVerse — 查询视频动作模仿任务结果](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-motioncontrol/query-result.md): 查询 PixVerse 视频动作模仿任务状态
+- [Wan — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-image-to-animation/create-task.md): 提交动画生成任务
+- [Wan — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-image-to-animation/query-result.md): 查询动画生成状态
+- [Wan — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-video-character-swap/create-task.md): 提交视频角色替换任务
+- [Wan — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-video-character-swap/query-result.md): 查询视频人物换脸任务状态
+- [Wan 数字人图像检测](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-s2v/wan-s2v-detect.md): 检测图像是否符合 wan2.2-s2v 视频生成模型的人物图像规格要求
+- [万相数字人 — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-s2v/create-task.md): 基于单张图片和音频，异步生成数字人视频
+- [万相数字人 — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/wan-s2v/query-result.md): 查询 wan2.2-s2v 数字人视频生成任务状态和结果
+- [爱诗 PixVerse — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-lipsync/create-task.md): 提交 PixVerse 视频对口型任务
+- [爱诗 PixVerse — 查询视频对口型任务结果](https://platform.qianwenai.com/docs/api-reference/video-generation/pixverse-lipsync/query-result.md): 查询 PixVerse 视频对口型任务状态
+- [声动人像 VideoRetalk — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/video-retalk/create-task.md): 提交声动人像 VideoRetalk 视频口型替换异步任务
+- [声动人像 VideoRetalk — 查询视频口型替换任务结果](https://platform.qianwenai.com/docs/api-reference/video-generation/video-retalk/query-result.md): 查询声动人像 VideoRetalk 视频口型替换任务状态，获取生成的视频
+- [视频风格重绘 — 创建任务](https://platform.qianwenai.com/docs/api-reference/video-generation/video-style-transform/create-task.md): 提交视频风格重绘任务
+- [视频风格重绘 — 查询结果](https://platform.qianwenai.com/docs/api-reference/video-generation/video-style-transform/query-result.md): 查询视频风格重绘任务状态
+
+## 3D 生成 API
+
+- [Tripo -- 3D 生成](https://platform.qianwenai.com/docs/api-reference/3d-generation/create-task.md): 提交 Tripo 3D 生成任务
+- [Tripo -- 查询 3D 生成结果](https://platform.qianwenai.com/docs/api-reference/3d-generation/query-result.md): 查询 Tripo 3D 生成任务状态
+
+## 世界模型 API
+
+- [世界模型](https://platform.qianwenai.com/docs/api-reference/world-model/world-model.md): 世界模型相关能力与使用指南。
+- [HappyOyster](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster.md): HappyOyster 世界模型文档索引，涵盖概述、快速开始、客户端 SDK 与 Open API 参考。
+- [HappyOyster 概述](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-overview.md): HappyOyster 是实时交互的开放式世界模型。输入一段自然语言 Prompt 和一张首帧图，即可生成一个可实时演绎、探索、互动的数字世界，输出为可进房的实时视频流。适用于互动剧、影视预演、AI 陪伴、可玩世界等场景。
+- [快速开始](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-quick-start.md): 完成 HappyOyster 端到端接入：鉴权、服务端 Open API、客户端 SDK、Demo。
+- [获取鉴权凭证](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-auth-setup.md): 获取 HappyOyster 服务端与客户端所需的鉴权凭证：API Host、主 API Key、临时 API Key、ticket。
+- [接入流程](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-integration-flow.md): 服务端调用 HappyOyster Open API 准备世界与产物导出，客户端 SDK 完成 RTC 建连与实时互动。
+- [下载 SDK 与 Demo](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-sdk-and-demo.md): 下载 HappyOyster 各端客户端 SDK 与服务端 Demo 参考实现。
+- [客户端SDK](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-client-sdk.md): HappyOyster 客户端 SDK 文档索引，覆盖 Android、iOS 与 Web 三个平台的接入指南与 API 参考。
+- [Android SDK](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-android-sdk.md): HappyOyster Android SDK 文档索引，包含接入指南、API 参考与 Playground 体验指南。
+- [HappyOyster Android SDK 接入指南](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-android-sdk-integration-guide.md): 本文面向集成方 Android 开发者，覆盖安装、鉴权、完整接入流程、事件处理与最佳实践，说明如何稳定接入 HappyOyster Android SDK。
+- [HappyOyster Android SDK API参考](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-android-sdk-api-reference.md): HappyOyster Android SDK 入口为单例对象 HappyOyster ，除 initialize 、 updateToken 、 attachVideo 、 sendCommand 外，业务方法均为 suspend ，失败时抛出 SDKError 。
+- [Happy Oyster Android Playground 体验指南](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-android-playground-guide.md): 本文帮助国内合作方快速了解 Happy Oyster Android Playground：如何安装、登录，并走完一次完整的产品体验。
+- [iOS SDK](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-ios-sdk.md): HappyOyster iOS SDK 文档索引，包含接入指南与 API 参考。
+- [HappyOyster iOS SDK 接入指南](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-ios-sdk-integration-guide.md): 本文是 iOS 集成方的最短上手路径：从初始化，到画面出来，到发送控制指令，再到结束体验。完整的方法签名、字段、错误码以 iOS SDK API Reference 为准。
+- [HappyOyster iOS SDK API参考](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-ios-sdk-api-reference.md): HappyOyster iOS SDK 入口为进程级单例 HappyOysterEngine.shared ，业务方法均为 async throws ，失败时抛出 OysterSDKError 。一次体验由 OysterTravel 句柄承载，支持 UIKit 与 SwiftUI。
+- [Web SDK](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-web-sdk.md): HappyOyster Web SDK 文档索引，包含接入指南与 API 参考。
+- [HappyOyster Web SDK 接入指南](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-web-sdk-integration-guide.md): 本文面向前端 / 全栈开发者，说明如何在生产环境中稳定接入 HappyOyster Web SDK 。
+- [HappyOyster Web SDK API参考](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-web-sdk-api-reference.md): HappyOysterEngine 负责配置 Open Platform host 与模型、更新千问AI平台临时 API Key token，并创建 Travel 会话。 Travel 是 createTravel() 返回的会话对象，调用 travel.start() 后才会进入并启动会话。
+- [HappyOyster Adventure Open API参考](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-adventure-openapi-reference.md)
+- [HappyOyster-Adventure-创建World API参考](https://platform.qianwenai.com/docs/api-reference/world-model/adventure/create-world.md): 创建一个世界探索 World。使用自然语言 Prompt 和必填首帧图创建 World，接口立即返回加密 World ID，World 在后台异步构建，客户端轮询构建进度直至完成。
+- [HappyOyster-Adventure-查询World构建状态 API参考](https://platform.qianwenai.com/docs/api-reference/world-model/adventure/query-world-build-status.md): 查询 Adventure World 的构建进度。接口返回加密 World ID、构建状态和首帧 URL，客户端轮询直至 World 进入 ready。
+- [HappyOyster-Adventure-获取体验凭证 API参考](https://platform.qianwenai.com/docs/api-reference/world-model/adventure/get-travel-credential.md): 三方服务端使用主 API Key 换取短时效、一次性的 ticket，再将其安全下发给客户端。此接口只校验 World 归属、状态与规格，不创建 Travel。
+- [HappyOyster-Adventure-客户端进入房间 API参考](https://platform.qianwenai.com/docs/api-reference/world-model/adventure/enter-travel.md): 客户端使用 ticket 创建实际 Travel，并获取 RTC 入会配置和 Adventure 能力版本。maxExperienceTimeSec 仅在 Adventure 模型中生效。
+- [HappyOyster-Adventure-查询Travel状态 API参考](https://platform.qianwenai.com/docs/api-reference/world-model/adventure/query-travel-status.md): 查询 Adventure Travel 生命周期、服务端推流状态和当前世界的动作池，也可同时上报客户端拉流或播放心跳。
+- [HappyOyster-Adventure-结束Travel API参考](https://platform.qianwenai.com/docs/api-reference/world-model/adventure/end-travel.md): 主动结束 Adventure Travel。正常结束后进入 completed；无推流超时结束时进入 failed，且不生成回放产物。达到 maxExperienceTimeSec 时服务端也会自动结束。
+- [HappyOyster-Adventure-查询World详情 API参考](https://platform.qianwenai.com/docs/api-reference/world-model/adventure/query-world-detail.md): 查询单个 Adventure World 的完整元数据和可回显创建参数。构建进度轮询请使用查询World构建状态接口。
+- [HappyOyster-Adventure-查询World列表 API参考](https://platform.qianwenai.com/docs/api-reference/world-model/adventure/query-world-list.md): 分页查询当前千问AI平台账号名下的 Adventure World。接口自动按模型隔离，不会返回 Directing 或 Acting World。
+- [HappyOyster-Adventure-删除World API参考](https://platform.qianwenai.com/docs/api-reference/world-model/adventure/delete-world.md): 删除当前千问AI平台账号名下的 Adventure World。同账号下 World 已不存在时幂等返回 deleted=false。
+- [HappyOyster-Adventure-查询Travel列表 API参考](https://platform.qianwenai.com/docs/api-reference/world-model/adventure/query-travel-list.md): 分页查询当前千问AI平台账号名下的 Adventure Travel，可按状态或关联 World 筛选。
+- [HappyOyster-Adventure-查询Travel产物 API参考](https://platform.qianwenai.com/docs/api-reference/world-model/adventure/query-travel-artifacts.md): 查询已完成 Adventure Travel 的录制原片和三个合成变体。对外交付推荐使用 withInstructionAndWatermark。
+- [HappyOyster 错误码](https://platform.qianwenai.com/docs/api-reference/world-model/happyoyster-error-code.md): HappyOyster Open API 响应结构与错误码说明，包括业务码、典型场景与处理建议。
+
+## 专项模型 API
+
+- [Qwen-Deep-Research API 参考](https://platform.qianwenai.com/docs/api-reference/specialized-models/deep-research-api.md): Qwen-Deep-Research 深入研究模型的输入与输出参数说明
+- [GUI-Plus OpenAI 兼容](https://platform.qianwenai.com/docs/api-reference/gui-plus/openai.md): 通过 OpenAI 兼容接口调用 GUI-Plus 界面交互专用模型。
+- [GUI-Plus DashScope](https://platform.qianwenai.com/docs/api-reference/gui-plus/dashscope.md): 通过 DashScope 原生 HTTP API 调用 GUI-Plus 界面交互专用模型。
+- [Qwen-OCR 文字提取模型](https://platform.qianwenai.com/docs/api-reference/specialized-models/qwen-ocr/openai.md): 通过 OpenAI 兼容接口调用 Qwen-OCR 文字提取模型。
+- [Qwen-OCR 文字提取模型](https://platform.qianwenai.com/docs/api-reference/specialized-models/qwen-ocr/dashscope.md): 通过 DashScope 原生 HTTP API 调用 Qwen-OCR 文字提取模型。
+- [决策模型 API 参考](https://platform.qianwenai.com/docs/api-reference/decision-model-api.md): 调用 POST /compatible-mode/v1/systemone 接口使用千问AI平台决策模型（decision-model-preview），一次前向返回分类、评分、是非判断及其概率分布与置信度，不生成文本。
+
+## 语音合成
+
+- [Qwen-Audio-TTS 模型接入方式](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/model-access.md): 介绍 Qwen-Audio-TTS 的接入入口、SDK 和事件参考。
+- [Qwen-Audio-TTS客户端事件](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/client-events.md)
+- [Qwen-Audio-TTS服务端事件](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/server-events.md)
+- [CosyVoice 模型接入方式](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/cosyvoice/model-access.md): 介绍 CosyVoice 的接入入口、SDK 和事件参考。
+- [CosyVoice客户端事件](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/cosyvoice/client-events.md)
+- [CosyVoice服务端事件](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/cosyvoice/server-events.md)
+- [Qwen3-TTS-Realtime 模型接入方式](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-tts-realtime/model-access.md): 介绍 Qwen3-TTS-Realtime 的接入入口、SDK 和事件参考。
+- [客户端事件](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-tts-realtime/client-events.md): 本文介绍 Qwen3-TTS-Realtime API 的客户端事件。
+- [服务端事件](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-tts-realtime/server-events.md): 本文介绍 Qwen3-TTS-Realtime API 的服务端事件。
+- [Sambert 模型接入方式](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/sambert/model-access.md): 介绍 Sambert 的接入入口、SDK 和事件参考。
+- [Sambert客户端事件](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/sambert/client-events.md)
+- [Sambert服务端事件](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/sambert/server-events.md)
+- [非实时语音合成Qwen-Audio-TTS HTTP API参考](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/http-api.md): 本文介绍非实时语音合成Qwen-Audio-TTS的HTTP调用方法，支持非流式和流式两种调用模式。
+- [非实时语音合成Qwen-Audio-TTS Java SDK参考](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/http-java-sdk.md): 本文介绍非实时语音合成Qwen-Audio-TTS的Java SDK调用方法，支持非流式和流式两种调用模式。
+- [非实时语音合成Qwen-Audio-TTS Python SDK参考](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/http-python-sdk.md): 本文介绍非实时语音合成Qwen-Audio-TTS的Python SDK调用方法，支持非流式和流式两种调用模式。
+- [非实时语音合成CosyVoice HTTP API参考](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/cosyvoice-nrt/http-api.md): 本文介绍非实时语音合成CosyVoice的HTTP调用方法，支持非流式和流式两种调用模式。
+- [非实时语音合成CosyVoice Java SDK参考](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/cosyvoice-nrt/java-sdk.md): 本文介绍非实时语音合成CosyVoice的Java SDK调用方法，支持非流式和流式两种调用模式。
+- [非实时语音合成CosyVoice Python SDK参考](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/cosyvoice-nrt/python-sdk.md): 本文介绍非实时语音合成CosyVoice的Python SDK调用方法，支持非流式和流式两种调用模式。
+- [非实时语音合成（Qwen3-TTS）API参考](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-tts.md): 非实时语音合成（Qwen3-TTS）API 的请求参数与返回字段说明。
+- [MiniMax同步语音合成API参考](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/minimax-tts.md)
+- [声音复刻HTTP API参考](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/voice-cloning/http-api.md): 本文介绍声音复刻的HTTP API接口详情，包括创建音色、查询音色列表、查询音色详情、更新音色和删除音色等操作。
+- [声音复刻Java SDK参考](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/voice-cloning/java-sdk.md): 本文介绍声音复刻的Java SDK使用方法。
+- [声音复刻Python SDK参考](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/voice-cloning/python-sdk.md): 本文介绍声音复刻的Python SDK使用方法。
+- [声音设计API参考](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/voice-design/http-api.md): 本文介绍声音设计的HTTP API接口详情，包括创建音色、查询音色列表、查询音色详情和删除音色四个操作。
+
+## 音频生成
+
+- [音频生成 API参考](https://platform.qianwenai.com/docs/api-reference/audio-generation.md): 使用 HTTPS 接口提交文本提示词和参考音频，获取生成的音频文件。本文说明请求参数、响应结构和错误处理。
+
+## 音乐生成
+
+- [音乐生成（Fun-Music）](https://platform.qianwenai.com/docs/api-reference/music-generation/fun-music.md): 音乐生成 Fun-Music 模型 API 参考
+
+## 语音识别
+
+- [Qwen-Audio-ASR-Message 模型接入方式](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-message/model-access.md): 介绍 Qwen-Audio-3.1-ASR-Flash-Message 的接入入口、SDK 和事件参考。
+- [实时语音识别（Qwen-Audio-ASR-Message）客户端事件](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-message/client-events.md): 本文介绍 Qwen-Audio-3.1-ASR-Flash-Message 实时语音识别服务中客户端通过 WebSocket 发送给服务端的客户端事件，包括 run-task（启动任务）、 continue-task（更新上下文）、 finish-task（结束任务）等指令的数据结构与字段含义。
+- [实时语音识别（Qwen-Audio-ASR-Message）服务端事件](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-message/server-events.md): 本文介绍 Qwen-Audio-3.1-ASR-Flash-Message 实时语音识别服务通过 WebSocket 推送给客户端的服务端事件，包括 task-started、result-generated、task-finished、task-failed 四类事件的数据结构与字段含义。
+- [Qwen-Audio-ASR-Streaming 模型接入方式](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-audio-asr-streaming/model-access.md): 介绍 Qwen-Audio-ASR-Streaming 的接入入口、SDK 和事件参考。
+- [实时语音识别（Qwen-Audio-ASR-Streaming）客户端事件](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-audio-asr-streaming/client-events.md): 本文介绍 Qwen-Audio-ASR-Streaming 实时语音识别服务中客户端通过 WebSocket 发送给服务端的客户端事件，包括 run-task（启动任务）、 continue-task（更新上下文）、 finish-task（结束任务）等指令的数据结构与字段含义。
+- [实时语音识别（Qwen-Audio-ASR-Streaming）服务端事件](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-audio-asr-streaming/server-events.md): 本文介绍 Qwen-Audio-ASR-Streaming 实时语音识别服务通过 WebSocket 推送给客户端的服务端事件，包括 task-started、result-generated、task-finished、task-failed 四类事件的数据结构与字段含义。
+- [Fun-ASR-Realtime 模型接入方式](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-realtime/model-access.md): 介绍 Fun-ASR-Realtime 的接入入口、SDK 和事件参考。
+- [实时语音识别（Fun-ASR-Realtime）客户端事件](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-realtime/client-events.md): 本文介绍 Fun-ASR-Realtime 实时语音识别服务中客户端通过 WebSocket 发送给服务端的客户端事件，包括 run-task（启动任务）、 continue-task（更新上下文）、 finish-task（结束任务）等指令的数据结构与字段含义。
+- [实时语音识别（Fun-ASR-Realtime）服务端事件](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-realtime/server-events.md): 本文介绍 Fun-ASR-Realtime 实时语音识别服务通过 WebSocket 推送给客户端的服务端事件，包括 task-started、result-generated、task-finished、task-failed 四类事件的数据结构与字段含义。
+- [Qwen-ASR-Realtime 模型接入方式](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-realtime/model-access.md): 介绍 Qwen-ASR-Realtime 的接入入口、SDK 和事件参考。
+- [实时语音识别（Qwen-ASR-Realtime）客户端事件](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-realtime/client-events.md): 本文档介绍在与 Qwen-ASR Realtime API 的 WebSocket 会话中，客户端向服务端发送的事件。
+- [实时语音识别（Qwen-ASR-Realtime）服务端事件](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-realtime/server-events.md): 本文档介绍在与 Qwen-ASR Realtime API 的 WebSocket 会话中，服务端向客户端发送的事件。
+- [Paraformer 模型接入方式](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-realtime/model-access.md): 介绍 Paraformer 的接入入口、SDK 和事件参考。
+- [实时语音识别（Paraformer）客户端事件](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-realtime/client-events.md): 本文介绍 Paraformer 实时语音识别服务中客户端通过 WebSocket 发送给服务端的客户端事件，包括 run-task（启动任务）和 finish-task（结束任务）两类指令的数据结构与字段含义。
+- [实时语音识别（Paraformer）服务端事件](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-realtime/server-events.md): 本文介绍 Paraformer 实时语音识别服务通过 WebSocket 推送给客户端的服务端事件，包括 task-started、result-generated、task-finished、task-failed 四类事件的数据结构与字段含义。
+- [Qwen-Audio-3.x-ASR-Flash-Filetrans/Fun-ASR非实时语音识别HTTP API参考](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-recording/restful-api.md): 本文介绍Qwen-Audio-3.x-ASR-Flash-Filetrans/Fun-ASR非实时语音识别HTTP API的参数和接口细节。
+- [Qwen-Audio-3.x-ASR-Flash-Filetrans/Fun-ASR非实时语音识别Python SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-recording/python-sdk.md): 本文介绍Qwen-Audio-3.x-ASR-Flash-Filetrans/Fun-ASR非实时语音识别Python SDK的参数和接口细节。
+- [Qwen-Audio-3.x-ASR-Flash-Filetrans/Fun-ASR非实时语音识别Java SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-recording/java-sdk.md): 本文介绍Qwen-Audio-3.x-ASR-Flash-Filetrans/Fun-ASR非实时语音识别Java SDK的参数和接口细节。
+- [Qwen-Audio-3.x-ASR-Flash-Filetrans/Fun-ASR非实时语音识别Android SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-recording/android-sdk.md): 本文档提供了Qwen-Audio-3.x-ASR-Flash-Filetrans/Fun-ASR非实时语音识别Android SDK的详细使用指南，帮助您将语音转换为文本。
+- [Qwen-Audio-3.x-ASR-Flash-Filetrans/Fun-ASR非实时语音识别iOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-recording/ios-sdk.md): 本文档提供了Qwen-Audio-3.x-ASR-Flash-Filetrans/Fun-ASR非实时语音识别iOS SDK的详细使用指南，帮助您将语音转换为文本。
+- [Qwen-Audio-3.x-ASR-Flash-Filetrans/Fun-ASR非实时语音识别HarmonyOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-recording/harmonyos-sdk.md): 使用Qwen-Audio-3.x-ASR-Flash-Filetrans/Fun-ASR非实时语音识别HarmonyOS SDK将音视频文件转换为文本。
+- [非实时语音识别（Qwen-Audio-3.x-ASR-Flash/Fun-ASR-Flash） HTTP API](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-flash/http-api.md): 本文介绍Qwen-Audio-3.x-ASR-Flash/Fun-ASR-Flash非实时语音识别HTTP API的参数和接口细节。
+- [非实时语音识别（Qwen-Audio-3.x-ASR-Flash/Fun-ASR-Flash）Android SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-flash/android-sdk.md): Qwen-Audio-3.x-ASR-Flash/Fun-ASR-Flash非实时语音识别Android SDK可将语音转换为文本。
+- [非实时语音识别（Qwen-Audio-3.x-ASR-Flash/Fun-ASR-Flash）iOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-flash/ios-sdk.md): Qwen-Audio-3.x-ASR-Flash/Fun-ASR-Flash非实时语音识别iOS SDK可将语音转换为文本。
+- [非实时语音识别（Qwen-Audio-3.x-ASR-Flash/Fun-ASR-Flash）HarmonyOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-flash/harmonyos-sdk.md): Qwen-Audio-3.x-ASR-Flash/Fun-ASR-Flash非实时语音识别HarmonyOS SDK可将语音转换为文本。
+- [非实时语音识别（Qwen-ASR）API参考](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr/api-reference.md): 本文介绍 Qwen-ASR 模型的输入与输出参数。可通过OpenAI 兼容或DashScope协议调用 API。
+- [Paraformer非实时语音识别HTTP API](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-asr-file/api-reference.md): 本文介绍Paraformer非实时语音识别HTTP API的参数和接口细节。
+- [Paraformer非实时语音识别Python SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-asr-file/python-sdk.md): 本文介绍Paraformer非实时语音识别Python SDK的参数和接口细节。
+- [Paraformer非实时语音识别Java SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-asr-file/java-sdk.md): 本文介绍Paraformer非实时语音识别Java SDK的参数和接口细节。
+- [Paraformer非实时语音识别Android SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-asr-file/android-sdk.md): 本文档提供了Paraformer非实时语音识别Android SDK的详细使用指南，帮助您将语音转换为文本。
+- [Paraformer非实时语音识别iOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-asr-file/ios-sdk.md): 本文档提供了Paraformer非实时语音识别iOS SDK的详细使用指南，帮助您将语音转换为文本。
+- [Paraformer非实时语音识别HarmonyOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-asr-file/harmonyos-sdk.md): 使用Paraformer非实时语音识别HarmonyOS SDK将音视频文件转换为文本。
+- [最佳实践](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-asr-file/best-practices.md)
+- [定制热词HTTP API参考](https://platform.qianwenai.com/docs/api-reference/speech-recognition/custom-hotwords/http-api.md): 通过HTTP API管理定制热词列表，包括创建、查询、更新和删除热词列表。
+- [定制热词Python SDK参考](https://platform.qianwenai.com/docs/api-reference/speech-recognition/custom-hotwords/python-sdk.md): 通过Python SDK管理定制热词列表，包括VocabularyService类的方法说明与示例代码。
+- [定制热词Java SDK参考](https://platform.qianwenai.com/docs/api-reference/speech-recognition/custom-hotwords/java-sdk.md): 通过Java SDK管理定制热词列表，包括VocabularyService类的方法说明与示例代码。
+
+## 语音对话
+
+- [Qwen-Audio-Realtime 模型接入方式](https://platform.qianwenai.com/docs/api-reference/qwen-audio-realtime/model-access.md): 介绍 Qwen-Audio-Realtime 的接入入口、SDK 和事件参考。
+- [Qwen-Audio 实时语音对话客户端事件](https://platform.qianwenai.com/docs/api-reference/qwen-audio-realtime/client-events.md): Qwen-Audio Realtime API的客户端事件参考。
+- [Qwen-Audio 实时语音对话服务端事件](https://platform.qianwenai.com/docs/api-reference/qwen-audio-realtime/server-events.md): Qwen-Audio Realtime API 的服务端事件参考。所有服务端事件均包含 event_id （服务端自动生成）和 type （事件类型）公共字段。
+
+## 语音翻译
+
+- [Qwen-Livetranslate-Realtime 模型接入方式](https://platform.qianwenai.com/docs/api-reference/speech-translation/livetranslate-realtime/model-access.md): 介绍 Qwen-Livetranslate-Realtime 的接入入口、SDK 和事件参考。
+- [客户端事件](https://platform.qianwenai.com/docs/api-reference/speech-translation/livetranslate-realtime/client-events.md): 本文介绍千问实时语音/音视频翻译 API 的客户端事件，包括事件类型、参数和示例。
+- [服务端事件](https://platform.qianwenai.com/docs/api-reference/speech-translation/livetranslate-realtime/server-events.md): 本文介绍千问实时语音/音视频翻译 API 的服务端事件，包括事件类型、参数和示例。
+- [音视频翻译-通义千问 API 参考](https://platform.qianwenai.com/docs/api-reference/speech-translation/audio-video-translation-api.md): 本文介绍通过 OpenAI 兼容接口调用 qwen3-livetranslate-flash 模型的输入与输出参数。
+
+## 实时多模态
+
+- [Qwen-Omni-Realtime 模型接入方式](https://platform.qianwenai.com/docs/api-reference/real-time-multimodal/model-access.md): 介绍 Qwen-Omni-Realtime 的接入入口、SDK 和事件参考。
+- [客户端事件](https://platform.qianwenai.com/docs/api-reference/real-time-multimodal/client-events.md): Qwen-Omni-Realtime API的客户端事件参考。
+- [服务端事件](https://platform.qianwenai.com/docs/api-reference/real-time-multimodal/server-events.md): 本文介绍 Qwen-Omni-Realtime API 的服务端事件，包括工具调用（Function Calling）相关事件。
+
+## Realtime API
+
+- [概述](https://platform.qianwenai.com/docs/api-reference/realtime-api/overview.md): Realtime API 提供多种传输协议，针对性能、延迟、弱网对抗、接入成本等不同需求进行优化
+- [SDK下载](https://platform.qianwenai.com/docs/api-reference/realtime-api/sdk-download.md): 本文提供适用于Android、iOS、HarmonyOS、Windows、macOS、Electron和Linux平台的AOQ SDK下载链接及版本更新说明。
+- [Token鉴权](https://platform.qianwenai.com/docs/api-reference/realtime-api/token-auth.md): AOQ、WebRTC 和 WebSocket 三种协议的鉴权方式
+- [接入概览](https://platform.qianwenai.com/docs/api-reference/realtime-api/connect-model.md): 了解接入 Realtime API 的前提条件、体验 Demo，并选择 AOQ、WebRTC 或 WebSocket 接入方式。
+- [AOQ 接入](https://platform.qianwenai.com/docs/api-reference/realtime-api/aoq-access.md): 本文介绍通过 AOQ Client SDK 接入 Realtime API 的通用流程：获取连接凭证、初始化 SDK、配置媒体方向、建立连接、按目标模型协议交互，以及释放资源。
+- [WebRTC 接入](https://platform.qianwenai.com/docs/api-reference/realtime-api/webrtc-access.md): 本文介绍通过 WebRTC 接入 Realtime API 的通用流程：准备鉴权、初始化连接对象、配置媒体方向、完成 SDP 交换、按目标模型协议交互，以及释放资源。
+- [WebSocket 接入概览](https://platform.qianwenai.com/docs/api-reference/realtime-api/websocket-overview.md): 了解 WebSocket 的接入地址、鉴权、Realtime 与 Inference 交互流程及各模型的事件差异。
+- [WebSocket 接入指南](https://platform.qianwenai.com/docs/api-reference/real-time-multimodal/interaction-process.md): 介绍 Qwen-Omni-Realtime 系列模型的 WebSocket 接入地址、交互流程及 SDK。
+- [Python SDK](https://platform.qianwenai.com/docs/api-reference/real-time-multimodal/realtime-python-sdk.md): 本文介绍 DashScope Python SDK 调用 Qwen-Omni 实时模型 时的关键接口与请求参数。
+- [Java SDK](https://platform.qianwenai.com/docs/api-reference/real-time-multimodal/realtime-java-sdk.md): 本文介绍 DashScope Java SDK 调用 Qwen-Omni 实时模型 时的关键接口与请求参数。
+- [声音复刻API参考](https://platform.qianwenai.com/docs/api-reference/real-time-multimodal/voice-cloning.md): 声音复刻依托大模型进行特征提取，无需训练即可复刻声音。仅需提供 10~20 秒的音频，即可生成高度相似且听感自然的定制音色。声音复刻与模型调用是前后关联的两个步骤。本文档聚焦于介绍声音复刻的参数和接口细节，模型调用请参见 实时（Qwen-Omni-Realtime） 或 非实时（Qwen-Omni） 。
+- [WebSocket 接入指南](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/websocket-api.md): 本文介绍通过WebSocket连接访问Qwen-Audio-TTS实时语音合成服务的交互流程、接口地址和请求头。
+- [Qwen-Audio-TTS Java SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/java-sdk.md): 通过DashScope Java SDK进行Qwen-Audio-TTS语音合成。
+- [Qwen-Audio-TTS Python SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/python-sdk.md): 本文介绍通过DashScope Python SDK进行Qwen-Audio-TTS实时语音合成的类定义、请求参数和示例代码。
+- [Qwen-Audio-TTS Android SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/android-sdk.md): 本文档提供了语音合成Qwen-Audio-TTS Android SDK的详细使用指南，帮助您将文本转换为高质量、富有表现力的语音。
+- [Qwen-Audio-TTS iOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/ios-sdk.md): 本文档提供了语音合成Qwen-Audio-TTS iOS SDK的详细使用指南，帮助您将文本转换为高质量、富有表现力的语音。
+- [Qwen-Audio-TTS HarmonyOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/harmonyos-sdk.md): 了解实时语音合成HarmonyOS SDK的集成方法、参数、接口、回调和示例代码。
+- [WebSocket 接入指南](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/cosyvoice/websocket-api.md): 本文介绍通过WebSocket连接访问CosyVoice实时语音合成服务的交互流程、接口地址和请求头。
+- [CosyVoice Java SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/cosyvoice/java-sdk.md): 通过DashScope Java SDK进行CosyVoice语音合成。
+- [CosyVoice Python SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/cosyvoice/python-sdk.md): 本文介绍通过DashScope Python SDK进行CosyVoice实时语音合成的类定义、请求参数和示例代码。
+- [CosyVoice Android SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/cosyvoice/android-sdk.md): 本文档提供了语音合成CosyVoice Android SDK的详细使用指南，帮助您将文本转换为高质量、富有表现力的语音。
+- [CosyVoice iOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/cosyvoice/ios-sdk.md): 本文档提供了语音合成CosyVoice iOS SDK的详细使用指南，帮助您将文本转换为高质量、富有表现力的语音。
+- [CosyVoice HarmonyOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/cosyvoice/harmonyos-sdk.md): 了解实时语音合成HarmonyOS SDK的集成方法、参数、接口、回调和示例代码。
+- [WebSocket 接入指南](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-tts-realtime/websocket-api.md): 本文介绍通过 WebSocket 连接访问 Qwen3-TTS-Realtime 实时语音合成服务的接口地址、请求头和交互流程。
+- [Python SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-tts-realtime/python-sdk.md)
+- [Java SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-tts-realtime/java-sdk.md): 本文介绍 DashScope Java SDK 调用 实时语音合成 时的关键接口与请求参数。
+- [WebSocket 接入指南](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/sambert/websocket.md): 本文介绍通过WebSocket连接访问Sambert实时语音合成服务的交互流程、接口地址和请求头。
+- [语音合成Sambert Java SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/sambert/java-sdk.md): 本文介绍语音合成Sambert Java SDK的参数和接口细节。
+- [语音合成Sambert Python SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/sambert/python-sdk.md): 本文介绍语音合成Sambert Python SDK的参数和接口细节。
+- [语音合成Sambert Android SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/sambert/android-sdk.md): 本文档提供了语音合成Sambert Android SDK的详细使用指南，帮助您将文本转换为高质量、富有表现力的语音。
+- [语音合成Sambert iOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/sambert/ios-sdk.md): 本文档提供了语音合成Sambert iOS SDK的详细使用指南，帮助您将文本转换为高质量、富有表现力的语音。
+- [语音合成Sambert HarmonyOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/sambert/harmonyos-sdk.md): 使用Sambert HarmonyOS SDK将文本合成为高质量、富有表现力的语音。
+- [WebSocket 接入指南](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-message/websocket-api.md): 本文介绍通过 WebSocket 连接访问 Qwen-Audio-3.1-ASR-Flash-Message 实时语音识别服务的接口地址、请求头和交互流程。
+- [Qwen-Audio-ASR-Message实时语音识别Python SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-message/python-sdk.md): 本文介绍Qwen-Audio-3.1-ASR-Flash-Message实时语音识别Python SDK的参数和接口细节。
+- [Qwen-Audio-ASR-Message实时语音识别Java SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-message/java-sdk.md): 本文介绍Qwen-Audio-3.1-ASR-Flash-Message实时语音识别Java SDK的参数和接口细节。
+- [Qwen-Audio-ASR-Message实时语音识别Android SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-message/android-sdk.md): 本文档提供了Qwen-Audio-3.1-ASR-Flash-Message实时语音识别Android SDK的详细使用指南，帮助您将语音转换为文本。
+- [Qwen-Audio-ASR-Message实时语音识别iOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-message/ios-sdk.md): 本文档提供了Qwen-Audio-3.1-ASR-Flash-Message实时语音识别iOS SDK的详细使用指南，帮助您将语音转换为文本。
+- [Qwen-Audio-ASR-Message实时语音识别HarmonyOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-message/harmonyos-sdk.md): 本文介绍 Qwen-Audio-3.1-ASR-Flash-Message 实时语音识别 HarmonyOS SDK 的集成方法、请求参数、接口、回调和示例代码。
+- [WebSocket 接入指南](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-audio-asr-streaming/websocket-api.md): 本文介绍通过 WebSocket 连接访问 Qwen-Audio-ASR-Streaming 实时语音识别服务的接口地址、请求头和交互流程。
+- [Qwen-Audio-ASR-Streaming实时语音识别Python SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-audio-asr-streaming/python-sdk.md): 本文介绍Qwen-Audio-ASR-Streaming实时语音识别Python SDK的参数和接口细节。
+- [Qwen-Audio-ASR-Streaming实时语音识别Java SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-audio-asr-streaming/java-sdk.md): 本文介绍Qwen-Audio-ASR-Streaming实时语音识别Java SDK的参数和接口细节。
+- [Qwen-Audio-ASR-Streaming实时语音识别Android SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-audio-asr-streaming/android-sdk.md): 本文档提供了Qwen-Audio-ASR-Streaming实时语音识别Android SDK的详细使用指南，帮助您将语音转换为文本。
+- [Qwen-Audio-ASR-Streaming实时语音识别iOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-audio-asr-streaming/ios-sdk.md): 本文档提供了Qwen-Audio-ASR-Streaming实时语音识别iOS SDK的详细使用指南，帮助您将语音转换为文本。
+- [Qwen-Audio-ASR-Streaming实时语音识别HarmonyOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-audio-asr-streaming/harmonyos-sdk.md): 本文介绍 Qwen-Audio-ASR-Streaming 实时语音识别 HarmonyOS SDK 的集成方法、请求参数、接口、回调和示例代码。
+- [WebSocket 接入指南](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-realtime/websocket-api.md): 本文介绍通过 WebSocket 连接访问 Fun-ASR-Realtime 实时语音识别服务的接口地址、请求头和交互流程。
+- [Fun-ASR-Realtime实时语音识别Python SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-realtime/python-sdk.md): 本文介绍Fun-ASR-Realtime实时语音识别Python SDK的参数和接口细节。
+- [Fun-ASR-Realtime实时语音识别Java SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-realtime/java-sdk.md): 本文介绍Fun-ASR-Realtime实时语音识别Java SDK的参数和接口细节。
+- [Fun-ASR-Realtime实时语音识别Android SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-realtime/android-sdk.md): 本文档提供了Fun-ASR-Realtime实时语音识别Android SDK的详细使用指南，帮助您将语音转换为文本。
+- [Fun-ASR-Realtime实时语音识别iOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-realtime/ios-sdk.md): 本文档提供了Fun-ASR-Realtime实时语音识别iOS SDK的详细使用指南，帮助您将语音转换为文本。
+- [Fun-ASR-Realtime实时语音识别HarmonyOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/fun-asr-realtime/harmonyos-sdk.md): 本文介绍 Fun-ASR-Realtime 实时语音识别 HarmonyOS SDK 的集成方法、请求参数、接口、回调和示例代码。
+- [WebSocket 接入指南](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-realtime/websocket-api.md): Qwen-ASR-Realtime 实时语音识别服务通过 WebSocket 协议，接收实时音频流并实时转写。支持 VAD 模式 和 Manual 模式 交互流程。
+- [实时语音识别（Qwen-ASR-Realtime）Python SDK-API参考](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-realtime/python-sdk.md): 本文档介绍如何使用 DashScope Python SDK 调用实时语音识别（Qwen-ASR-Realtime）模型。
+- [实时语音识别（Qwen-ASR-Realtime）Java SDK-API参考](https://platform.qianwenai.com/docs/api-reference/speech-recognition/qwen-asr-realtime/java-sdk.md): 本文档介绍如何使用 DashScope Java SDK 调用实时语音识别（Qwen-ASR-Realtime）模型。
+- [WebSocket 接入指南](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-realtime/websocket-api.md): 本文介绍通过 WebSocket 连接访问 Paraformer 实时语音识别服务的接口地址、请求头和交互流程。
+- [Paraformer实时语音识别Python SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-realtime/python-sdk.md): 本文介绍Paraformer实时语音识别Python SDK的参数和接口细节。
+- [Paraformer实时语音识别Java SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-realtime/java-sdk.md): 本文介绍Paraformer实时语音识别Java SDK的参数和接口细节。
+- [Paraformer实时语音识别Android SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-realtime/android-sdk.md): 本文档提供了Paraformer实时语音识别Android SDK的详细使用指南，帮助您将语音转换为文本。
+- [Paraformer实时语音识别iOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-realtime/ios-sdk.md): 本文档提供了Paraformer实时语音识别iOS SDK的详细使用指南，帮助您将语音转换为文本。
+- [Paraformer实时语音识别HarmonyOS SDK](https://platform.qianwenai.com/docs/api-reference/speech-recognition/paraformer-realtime/harmonyos-sdk.md): 使用Paraformer实时语音识别HarmonyOS SDK将语音转换为文本。
+- [WebSocket 接入指南](https://platform.qianwenai.com/docs/api-reference/qwen-audio-realtime/websocket-api.md): Qwen-Audio Realtime API 通过 WebSocket 协议提供实时语音对话能力。客户端通过发送和接收 JSON 事件与服务端交互，支持语音输入、文本输入、语音活动检测（VAD）、流式语音和文本输出等功能。
+- [Qwen-Audio-3.0-Realtime实时语音对话Android SDK](https://platform.qianwenai.com/docs/api-reference/qwen-audio-realtime/android-sdk.md): 使用Qwen-Audio-3.0-Realtime实时语音对话Android SDK，实现实时音频输入以及语音或文本输出。
+- [Qwen-Audio-3.0-Realtime实时语音对话iOS SDK](https://platform.qianwenai.com/docs/api-reference/qwen-audio-realtime/ios-sdk.md): 使用Qwen-Audio-3.0-Realtime实时语音对话iOS SDK，实现实时音频输入以及语音或文本输出。
+- [Qwen-Audio-3.0-Realtime实时语音对话HarmonyOS SDK](https://platform.qianwenai.com/docs/api-reference/qwen-audio-realtime/harmonyos-sdk.md): 使用Qwen-Audio-3.0-Realtime实时语音对话HarmonyOS SDK，实现实时音频输入以及语音或文本输出。
+- [实时音视频翻译（Qwen-LiveTranslate）Python SDK-API参考](https://platform.qianwenai.com/docs/api-reference/speech-translation/livetranslate-realtime/python-sdk.md): 本文档介绍如何使用 DashScope Python SDK 调用实时音视频翻译（Qwen-LiveTranslate）模型。
+- [实时音视频翻译（Qwen-LiveTranslate）Java SDK-API参考](https://platform.qianwenai.com/docs/api-reference/speech-translation/livetranslate-realtime/java-sdk.md): 本文档介绍如何使用 DashScope Java SDK 调用实时音视频翻译（Qwen-LiveTranslate）模型。
+- [AOQ SDK简介](https://platform.qianwenai.com/docs/api-reference/realtime-api/aoq-sdk-intro.md): AOQ SDK 面向实时多模态场景，帮助开发者基于千问 Realtime API 快速搭建实时交互应用。
+- [AOQ Client SDK Windows API 参考](https://platform.qianwenai.com/docs/api-reference/realtime-api/windows-sdk.md): 本文介绍 AOQ Client SDK Windows 版的 C++ 接口、回调和数据类型，帮助您在 Windows 应用中接入实时音视频和数据消息能力。
+- [AOQ Client SDK macOS API 参考](https://platform.qianwenai.com/docs/api-reference/realtime-api/macos-sdk.md): 本文介绍 AOQ Client SDK macOS 版的 Objective-C 接口、回调和数据类型，帮助您在 macOS 应用中接入实时音视频和数据消息能力。
+- [AOQ Client SDK Electron API 参考](https://platform.qianwenai.com/docs/api-reference/realtime-api/electron-sdk.md): 本文介绍 AOQ Client SDK Electron 版的 TypeScript 接口、事件和数据类型。该 SDK 适用于 macOS x64/arm64 和 Windows x64，要求 Node.js 16 或更高版本。
+- [AOQ Client SDK Linux C++ API 参考](https://platform.qianwenai.com/docs/api-reference/realtime-api/linux-cpp-sdk.md): 本文介绍 AOQ Client SDK Linux 版的 C++ 接口、回调和数据类型。
+- [AOQ Client SDK Linux Python API 参考](https://platform.qianwenai.com/docs/api-reference/realtime-api/linux-python-sdk.md): 本文介绍 AOQ Client SDK Linux 版的 Python 接口、回调和数据类型。
+- [AOQ Client SDK Android API 参考](https://platform.qianwenai.com/docs/api-reference/realtime-api/android-sdk.md): AOQ Client SDK Android 版提供完整的实时音视频通信能力，包括引擎生命周期管理、音频/视频采集与播放、编解码配置、外部音频流注入、音频文件混音、实时消息收发、音视频帧数据回调等功能。本文档为 Android 平台 Java API 的完整参考。
+- [AOQ Client SDK iOS API 参考](https://platform.qianwenai.com/docs/api-reference/realtime-api/ios-sdk.md): AOQ Client SDK iOS API 参考，涵盖引擎生命周期、音视频设备管理、编码配置、媒体流控制、音频文件播放、外部音频流、实时消息、帧回调、委托协议以及数据类型与枚举。
+- [AOQ Client SDK OHOS (HarmonyOS) API 参考](https://platform.qianwenai.com/docs/api-reference/realtime-api/harmonyos-sdk.md): AOQ Client SDK HarmonyOS (OHOS) 端 API 参考，平台语言为 ArkTS (.ets)，通过 NAPI 桥接 C++ 引擎。
+- [连接状态管理](https://platform.qianwenai.com/docs/api-reference/realtime-api/connection-management.md): 本章节介绍 AOQ Client SDK 的连接状态机及其对应的 API 调用。
+- [媒体流发送管理](https://platform.qianwenai.com/docs/api-reference/realtime-api/media-stream-control.md): enableSendMediaStream 用于控制客户端是否向 AI 服务发送音频/视频媒体流，在 AOQ 协议接入场景中精确控制发送时机。
+- [音频常用功能介绍](https://platform.qianwenai.com/docs/api-reference/realtime-api/audio-features.md): AOQ Client SDK 提供了完整的音频能力，覆盖音频采集、播放、编解码配置、扬声器管理、文件混音、外部音频流注入、音频帧数据回调等核心场景。本文档基于 Android（Java）、iOS（Objective-C）、Ohos（ArkTS）三个平台的公开 API，对音频常用功能进行统一介绍。
+- [自定义音频播放](https://platform.qianwenai.com/docs/api-reference/realtime-api/custom-audio-playback.md): AOQ Client SDK 支持自定义音频播放功能，通过音频帧回调机制将解码后的 PCM 数据回调给应用层，由开发者自行实现音频渲染播放。
+- [自定义音频采集](https://platform.qianwenai.com/docs/api-reference/realtime-api/custom-audio-capture.md): 介绍如何使用 AOQ Client SDK 实现自定义音频采集功能，包括外部音频流的添加、PCM 数据推送和管理。
+- [视频常用功能介绍](https://platform.qianwenai.com/docs/api-reference/realtime-api/video-features.md): AOQ Client SDK 提供了完整的视频能力，覆盖视频采集、渲染显示、编码配置、帧数据回调、外部视频输入等核心场景。本文档基于 Android（Java）、iOS（Objective-C）、Ohos（ArkTS）三个平台的公开 API，对视频常用功能进行统一介绍。
+- [自定义视频输入](https://platform.qianwenai.com/docs/api-reference/realtime-api/custom-video-input.md): 介绍 AOQ Client SDK 自定义视频输入的两种模式：原始帧模式和编码帧模式，以及各模式的配置方法和示例代码。
+
+## 翻译
+
+- [Qwen-MT-Image — 同步调用](https://platform.qianwenai.com/docs/api-reference/image-translation/qwen-mt-image/synchronous.md): 同步模式调用 qwen-mt-image-2.0 图像翻译，直接返回翻译后的图像 URL
+- [创建图像翻译任务](https://platform.qianwenai.com/docs/api-reference/image-translation/qwen-mt-image/create-task.md): 提交 qwen-mt-image 图像翻译异步任务
+- [查询任务结果](https://platform.qianwenai.com/docs/api-reference/image-translation/qwen-mt-image/query-result.md): 查询 qwen-mt-image 图像翻译任务状态和结果
+- [Qwen-MT 翻译模型](https://platform.qianwenai.com/docs/api-reference/specialized-models/qwen-mt/openai.md): 通过 OpenAI 兼容接口调用 Qwen-MT 翻译模型。
+- [Qwen-MT 翻译模型](https://platform.qianwenai.com/docs/api-reference/specialized-models/qwen-mt/dashscope.md): 通过 DashScope 原生 HTTP API 调用 Qwen-MT 翻译模型。
+- [Qwen-MT-Uni — 全模态翻译](https://platform.qianwenai.com/docs/api-reference/multimodal-translation/qwen-mt-uni/translate.md): 调用 qwen-mt-uni 全模态翻译模型，支持同步直接返回结果与异步提交任务两种模式
+- [查询任务结果](https://platform.qianwenai.com/docs/api-reference/multimodal-translation/qwen-mt-uni/query-result.md): 查询 qwen-mt-uni 全模态翻译任务状态和结果
+
+## 文本向量
+
+- [OpenAI 兼容文本向量](https://platform.qianwenai.com/docs/api-reference/text-embedding/openai-embedding.md): OpenAI 兼容的文本向量接口
+- [DashScope 文本向量](https://platform.qianwenai.com/docs/api-reference/text-embedding/dashscope-embedding.md): DashScope embedding API
+
+## 多模态向量
+
+- [DashScope 多模态向量](https://platform.qianwenai.com/docs/api-reference/multimodal-embedding/dashscope-multimodal-embedding.md): 多模态向量化 API
+
+## 重排序
+
+- [OpenAI 兼容重排序](https://platform.qianwenai.com/docs/api-reference/rerank/openai-rerank.md): OpenAI 兼容的重排序 API
+- [DashScope 重排序](https://platform.qianwenai.com/docs/api-reference/rerank/dashscope-rerank.md): DashScope 重排序 API
+
+## 平台 API
+
+- [对话管理](https://platform.qianwenai.com/docs/api-reference/platform-api/conversations.md): 自动管理的多轮对话上下文
+- [创建 Conversation](https://platform.qianwenai.com/docs/api-reference/platform-api/conversations/create-conversation.md): 创建会话，可选择性地添加初始消息。
+- [查询会话](https://platform.qianwenai.com/docs/api-reference/platform-api/conversations/retrieve-conversation.md): 根据会话 ID 查询会话详情。
+- [更新对话](https://platform.qianwenai.com/docs/api-reference/platform-api/conversations/update-conversation.md): 更新会话的元数据。此操作会完全覆盖已有的元数据。
+- [删除会话](https://platform.qianwenai.com/docs/api-reference/platform-api/conversations/delete-conversation.md): 删除会话。会话中的消息不会被删除。
+- [添加消息](https://platform.qianwenai.com/docs/api-reference/platform-api/conversations/create-items.md): 向会话中添加消息。
+- [查询消息列表](https://platform.qianwenai.com/docs/api-reference/platform-api/conversations/list-items.md): 查询会话中的消息列表。
+- [查询消息](https://platform.qianwenai.com/docs/api-reference/platform-api/conversations/retrieve-item.md): 根据消息 ID 查询消息详情。
+- [删除消息](https://platform.qianwenai.com/docs/api-reference/platform-api/conversations/delete-item.md): 从会话中删除指定消息。
+- [文件管理](https://platform.qianwenai.com/docs/api-reference/platform-api/file.md): 文件管理 API
+- [上传文件](https://platform.qianwenai.com/docs/api-reference/platform-api/file/upload-file.md): 上传文件用于文档解析或批量处理。账户最多可存储 10,000 个文件，总容量上限为 100 GB，文件永久有效，不会过期。
+- [查询文件详情](https://platform.qianwenai.com/docs/api-reference/platform-api/file/retrieve-file.md): 通过文件 ID 查询文件详细信息。
+- [查询文件列表](https://platform.qianwenai.com/docs/api-reference/platform-api/file/list-files.md): 列出账户下所有文件（包括已上传的文件和批量处理结果），支持按用途、创建时间筛选，并提供分页功能。
+- [删除文件](https://platform.qianwenai.com/docs/api-reference/platform-api/file/delete-file.md): 通过文件 ID 删除指定文件。
+- [创建 Batch](https://platform.qianwenai.com/docs/api-reference/platform-api/batch/create-batch.md): 创建批量任务，异步处理已上传输入文件中的所有请求。
+- [查询 Batch](https://platform.qianwenai.com/docs/api-reference/platform-api/batch/retrieve-batch.md): 查询批量任务的状态，并在任务完成后获取输出文件 ID。
+- [列出 Batch](https://platform.qianwenai.com/docs/api-reference/platform-api/batch/list-batches.md): 查询当前账号下的批量任务列表。结果按创建时间降序排列，仅返回最近 30 天的任务。
+- [取消 Batch](https://platform.qianwenai.com/docs/api-reference/platform-api/batch/cancel-batch.md): 取消正在执行或排队中的批量任务。状态将先变为 `cancelling`（等待当前正在执行的请求完成），然后变为 `cancelled`。取消前已完成的请求仍会计费。
+
+## 工具包与框架
+
+- [OpenAI 兼容接口](https://platform.qianwenai.com/docs/api-reference/toolkitframework/openai-compatible/overview.md): 只需修改 base_url、api_key 和 model 三个参数，即可从 OpenAI 迁移到千问AI平台。
+
+## 更多
+
+- [生成临时 API Key](https://platform.qianwenai.com/docs/api-reference/more/generate-a-temporary-api-key.md): 短期有效的临时访问令牌
+- [上传文件获取临时 URL](https://platform.qianwenai.com/docs/api-reference/more/upload-file-get-temporary-url.md): 将本地文件上传至免费临时存储空间并获取 oss:// 格式的临时 URL，供多模态、图像、视频或音频模型调用。
+- [管理异步任务](https://platform.qianwenai.com/docs/api-reference/more/manage-asynchronous-tasks.md): 查询和管理异步任务
+- [异步任务管理 API 参考](https://platform.qianwenai.com/docs/api-reference/more/async-task-management.md): 通过 HTTP API 查询单个异步任务结果、批量查询异步任务状态、以及取消异步任务的完整参考文档。
+- [连接复用与连接池](https://platform.qianwenai.com/docs/api-reference/more/connection-pooling.md): 面向高并发场景的 HTTP 连接复用和 WebSocket 连接池配置指南。
+
+## Managed Agent API
+
+- [API 总览与认证](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/introduction.md): Managed Agents API 是千问AI平台提供的智能体托管运行时，由平台托管会话、沙箱、工具执行与事件流。
+- [创建 Agent](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/agent/create.md): 创建一个新的智能体
+- [获取 Agent](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/agent/get.md): 获取指定 Agent 的详情
+- [列出 Agent](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/agent/list.md): 分页列出业务空间下的 Agent
+- [更新 Agent](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/agent/update.md): 全量替换更新 Agent 配置
+- [归档 Agent](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/agent/archive.md): 软归档 Agent
+- [列出 Agent 版本](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/agent/list-versions.md): 分页列出 Agent 的所有历史版本
+- [创建 Environment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/environment/create.md): 创建运行环境
+- [获取 Environment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/environment/get.md): 获取指定环境详情
+- [列出 Environment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/environment/list.md): 分页列出业务空间下的环境
+- [更新 Environment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/environment/update.md): 更新环境配置
+- [删除 Environment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/environment/delete.md): 硬删除环境
+- [归档 Environment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/environment/archive.md): 归档指定的运行环境
+- [创建 Session](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/session/create.md): 启动一个新会话
+- [获取 Session](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/session/get.md): 获取指定会话详情
+- [列出 Session](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/session/list.md): 分页列出业务空间下的会话
+- [更新 Session](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/session/update.md): 更新会话元数据
+- [删除 Session](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/session/delete.md): 硬删除会话
+- [归档 Session](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/session/archive.md): 归档会话
+- [发送 Event](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/session/send-event.md): 向会话发送用户消息，content 支持文本、图片、视频、文件四类内容块
+- [订阅 Event Stream](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/session/stream-events.md): 通过 SSE 实时订阅会话事件
+- [列出 Event](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/session/list-events.md): 列出会话的所有事件
+- [运行时挂载资源](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/session/resource-create.md): 在会话运行期间动态挂载文件
+- [列出会话资源](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/session/resource-list.md): 分页列出会话当前已挂载的资源
+- [查询会话资源](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/session/resource-get.md): 查询单个已挂载资源的详情
+- [卸载会话资源](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/session/resource-delete.md): 从会话中卸载指定资源
+- [上传 File](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/file/upload.md): 上传文件到业务空间
+- [获取 File](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/file/get.md): 获取文件元数据
+- [下载 File](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/file/download.md): 下载文件内容
+- [列出 File](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/file/list.md): 分页列出文件
+- [删除 File](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/file/delete.md): 硬删除文件
+- [创建 Skill](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/skill/create.md): 上传技能包创建新技能
+- [获取 Skill](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/skill/get.md): 获取技能详情
+- [列出 Skill](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/skill/list.md): 分页列出技能
+- [删除 Skill](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/skill/delete.md): 硬删除技能
+- [上传 Skill 新版本](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/skill/upload-version.md): 上传技能包新版本
+- [获取 Skill 版本](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/skill/get-version.md): 获取指定版本的技能详情
+- [列出 Skill 版本](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/skill/list-versions.md): 列出技能所有版本
+- [下载 Skill](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/skill/download.md): 获取技能包下载 URL
+- [创建 Vault](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/vault/create.md): 创建一个密钥库
+- [获取 Vault](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/vault/get.md): 获取密钥库详情
+- [列出 Vault](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/vault/list.md): 分页列出密钥库
+- [更新 Vault](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/vault/update.md): 更新密钥库信息
+- [删除 Vault](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/vault/delete.md): 硬删除密钥库
+- [归档 Vault](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/vault/archive.md): 归档指定的密钥库
+- [创建 Credential](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/credential/create.md): 在密钥库中创建密钥
+- [获取 Credential](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/credential/get.md): 获取密钥元数据
+- [列出 Credential](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/credential/list.md): 分页列出密钥
+- [更新 Credential](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/credential/update.md): 更新密钥信息
+- [删除 Credential](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/credential/delete.md): 硬删除密钥
+- [归档 Credential](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/credential/archive.md): 归档指定密钥库中的密钥
+- [创建 Deployment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/deployment/create.md): 创建一个新的部署，绑定 Agent 与触发方式
+- [获取 Deployment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/deployment/get.md): 获取单个部署的详细信息
+- [列出 Deployment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/deployment/list.md): 分页列出业务空间下的部署
+- [更新 Deployment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/deployment/update.md): 更新部署配置，传入字段替换，缺省字段保持不变
+- [暂停 Deployment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/deployment/pause.md): 暂停部署，停止定时触发
+- [取消暂停 Deployment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/deployment/unpause.md): 恢复部署为 active 状态
+- [归档 Deployment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/deployment/archive.md): 归档部署为终态，后续不可更新或触发
+- [触发 Deployment](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/deployment/run.md): 手动触发一次部署运行
+- [列出 Run](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/deployment/list-runs.md): 分页列出指定部署的运行历史
+- [获取 Run](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/deployment/get-run.md): 获取单条运行记录详情
+- [Webhook 概述与回调投递](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/webhook/callback.md): Webhook 将会话、智能体、部署等资源的状态变更事件推送到指定回调地址。本页说明投递行为、支持的事件、回调请求契约与验签算法。
+- [创建 Webhook](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/webhook/create.md): 创建一个 Webhook endpoint 并订阅事件
+- [查询 Webhook 详情](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/webhook/get.md): 查询单个 Webhook 的详情
+- [查询 Webhook 列表](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/webhook/list.md): 返回当前 Workspace 下全部未删除的 Webhook
+- [更新 Webhook](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/webhook/update.md): 更新 Webhook 的描述、回调地址或订阅事件
+- [删除 Webhook](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/webhook/delete.md): 删除 Webhook，停止后续事件投递
+- [启用 Webhook](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/webhook/enable.md): 启用被禁用的 Webhook
+- [禁用 Webhook](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/webhook/disable.md): 手动禁用 Webhook
+- [测试 Webhook](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/webhook/test.md): 向回调地址发送一次测试事件
+- [重置 Signing Secret](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/webhook/reset-secret.md): 重置验签密钥
+- [查询 Webhook 事件](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/webhook/list-events.md): 查询指定 Webhook 最近 7 天的投递事件
+
+## RAG API
+
+- [API 概览](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/overview.md): 了解知识库 API 的服务地址、协议约定、请求格式与限流规则
+- [鉴权](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/authentication.md): API Key 获取与使用方式
+- [限流](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/rate-limits.md): 各接口的请求频率限制
+- [错误码](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/errors.md): API 错误响应与处理建议
+- [创建知识库并导入](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/search/create-index-v2.md): 一步完成创建知识库和导入文件
+- [查询知识库列表](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/kb/list-indices.md): 分页查询当前业务空间下的所有知识库
+- [更新知识库](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/kb/update-index.md): 修改指定知识库的描述信息
+- [删除知识库](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/kb/delete-index.md): 永久删除指定的知识库及其所有文档和切片
+- [获取知识库监控数据](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/kb/get-monitor.md): 查询指定知识库的存储用量和 QPS 监控数据
+- [查询文档列表](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/docs/list-documents.md): 查询指定知识库中的文档列表
+- [查询文件详情列表](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/docs/list-file-details.md): 查询文档的详细信息，包括切片数量和解析状态
+- [删除文档](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/docs/delete-document.md): 从知识库中删除文档及其所有关联切片
+- [新增切片](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/chunks/add-chunk.md): 向指定知识库添加切片内容
+- [查询切片列表](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/chunks/list-chunks.md): 分页查询知识库中的切片
+- [更新切片](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/chunks/update-chunk.md): 更新指定切片的内容
+- [删除切片](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/chunks/delete-chunk.md): 批量删除切片，单次最多 10 个
+- [提交导入任务](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/search/submit-job.md): 向已创建的知识库追加导入文档
+- [查询任务状态](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/search/get-job-status.md): 查询知识库导入任务的执行状态
+- [查询类目列表](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/connector/list-category.md): 查询当前业务空间下的类目列表，支持按类型、名称过滤
+- [新增类目](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/connector/add-category.md): 在当前业务空间下创建新的类目
+- [删除类目](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/connector/delete-category.md): 删除指定的类目
+- [查询文件列表](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/connector/list-file.md): 查询当前业务空间下的文件列表，支持按类目、文件名和文件 ID 过滤
+- [查询文件详情](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/connector/describe-file.md): 查询指定文件的详细信息，包括大小、MD5、标签和时间戳
+- [删除文件](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/connector/delete-file.md): 永久删除指定的文件
+- [批量更新文件标签](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/connector/batch-update-tag.md): 批量更新多个文件的标签，支持覆盖和追加两种模式
+- [申请上传租约](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/connector/upload-lease.md): 上传文件到数据中心的第一步，返回 OSS 预签名 URL 和租约 ID
+- [注册文件](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/connector/add-file.md): 上传文件的最后一步，将通过 OSS 上传的文件注册到数据中心
+- [从 OSS 批量导入](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/connector/oss-import.md): 从已授权的阿里云 OSS Bucket 批量导入文件到数据中心
+- [新增连接器](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/connector/add-connector.md): 创建新的数据连接器，用于管理数据导入来源
+- [查询连接器](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/connector/get-connector.md): 查询指定连接器的详细信息
+- [知识检索](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/knowledge/search.md): 跨多个知识库执行联合语义检索
+- [知识问答](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/knowledge/chat.md): 基于知识库的 SSE 流式问答
+- [Agent 管理概述](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/agent/overview.md): RAG Agent 实例的全生命周期管理 API
+- [创建 Agent](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/agent/create.md): 创建一个新的 RAG Agent，初始状态为 draft
+- [更新 Agent](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/agent/update.md): 更新 Agent 的名称、描述或草稿配置
+- [发布 Agent](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/agent/deploy.md): 将 beta 草稿发布为新版本
+- [删除 Agent](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/agent/delete.md): 软删除 Agent，标记状态为 deleted
+- [查询 Agent 列表](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/agent/list.md): 分页查询当前租户下的 Agent 列表
+- [查询 Agent 详情](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/agent/get.md): 获取 Agent 完整信息，支持指定版本
+- [复制 Agent](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/agent/copy.md): 复制已有 Agent，生成新的草稿
+
+## 记忆库 API
+
+- [API 概览](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/overview.md): 服务地址、协议约定、请求格式与通用响应
+- [鉴权](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/authentication.md): API Key 获取与使用方式
+- [错误码](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/errors.md): API 错误响应与处理建议
+- [添加记忆](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/fragments/add-memory.md): 将对话存储为事实记忆，自动提取关键信息
+- [异步添加记忆](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/fragments/add-memory-async.md): 异步将对话存储为记忆，通过事件 ID 查询执行状态与结果
+- [搜索记忆](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/fragments/search-memory.md): 基于语义检索返回与查询最相关的历史记忆
+- [列出记忆](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/fragments/list-memory.md): 分页查看用户的所有事实记忆
+- [更新记忆](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/fragments/update-memory.md): 修改已有事实记忆的内容
+- [删除记忆](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/fragments/delete-memory.md): 删除指定的事实记忆
+- [查询事件](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/fragments/get-event.md): 查询异步添加记忆事件的执行状态与结果
+- [创建画像模板](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/profiles/create-schema.md): 创建用户画像模板，定义画像字段
+- [列出画像模板](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/profiles/list-schemas.md): 分页查询所有画像模板
+- [获取画像模板](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/profiles/get-schema.md): 获取指定画像模板的详情
+- [更新画像模板](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/profiles/update-schema.md): 更新画像模板的名称、描述或策略版本
+- [删除画像模板](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/profiles/delete-schema.md): 删除指定的画像模板
+- [获取用户画像](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/profiles/get-user-profile.md): 获取指定用户的画像属性
+
+## Sandbox API
+
+- [API 总览与认证](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/introduction.md): Sandbox API 兼容 E2B 协议，提供沙箱实例的生命周期管理与模版管理能力，通过千问AI平台 AI 网关转发。
+- [创建实例](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/sandbox-create.md): 基于模版创建一个沙箱实例
+- [列举实例](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/sandbox-list.md): 列举当前工作空间下的沙箱实例
+- [获取实例](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/sandbox-get.md): 获取指定实例的详细信息
+- [连接实例](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/sandbox-connect.md): 连接到已有实例，返回数据面访问信息
+- [暂停实例](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/sandbox-pause.md): 暂停实例，保留文件系统与内存状态
+- [恢复实例](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/sandbox-resume.md): 恢复已暂停的实例，从暂停点继续运行
+- [释放实例](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/sandbox-delete.md): 释放指定实例，回收计算与网络资源
+- [创建模版](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/template-create.md): 创建一个沙箱模版
+- [列举模版](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/template-list.md): 列举当前工作空间下的模版
+- [获取模版](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/template-get.md): 获取指定模版的详细配置
+- [更新模版](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/template-update.md): 更新指定模版的配置
+- [获取构建状态](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/template-build-status.md): 查询模版的镜像构建状态
+- [删除模版](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/template-delete.md): 删除指定模版
+
+## 计费
+
+- [充值及查看余额](https://platform.qianwenai.com/docs/resources/billing-overview.md): 为账户充值并查看可用额度
+- [免费额度](https://platform.qianwenai.com/docs/resources/free-quota.md): 新用户免费额度
+- [使用和管理优惠券](https://platform.qianwenai.com/docs/resources/coupons.md): 查看、使用和管理您的优惠券
+- [账单查询与费用管理](https://platform.qianwenai.com/docs/resources/bill-query.md): 查看按量付费账单、还款及成本管理
+- [发票管理](https://platform.qianwenai.com/docs/resources/invoice.md): 申请、下载和管理千问AI平台消费发票
+
+## 常见问题
+
+- [账号与访问](https://platform.qianwenai.com/docs/resources/faq-account.md): API Key、权限、访问相关常见问题
+- [计费与定价](https://platform.qianwenai.com/docs/resources/faq-billing.md): 付费和费用常见问题
+- [文本生成常见问题](https://platform.qianwenai.com/docs/resources/faq-text-generation.md): 流式输出、上下文管理、上下文缓存、结构化输出、思考模式、函数调用和批量处理的常见问题。
+- [图片与视频 FAQ](https://platform.qianwenai.com/docs/resources/faq-images-videos.md): 图片和视频生成的常见问题——计费、API 报错、模型差异、输入要求和输出 URL。
+- [语音常见问题](https://platform.qianwenai.com/docs/resources/faq-audio-speech.md): CosyVoice 语音合成、Qwen-Omni 实时对话、Fun-ASR 语音识别的常见问题与解答。
+- [向量与重排序 FAQ](https://platform.qianwenai.com/docs/resources/faq-embedding-reranking.md): 文本向量、多模态向量和重排序的常见问题——模型选择、维度、批量限制及使用场景。
+- [Agent 开发常见问题](https://platform.qianwenai.com/docs/resources/faq-agent-infra.md): 知识库、数据管理、Managed Agent 与 MCP 的常见问题解答
+
+## 更新日志
+
+- [模型发布记录](https://platform.qianwenai.com/docs/changelog/models.md): 模型发布与更新记录
+- [平台更新](https://platform.qianwenai.com/docs/changelog/platform.md): 功能与改进
+- [Agent 开发更新](https://platform.qianwenai.com/docs/changelog/agent-infra.md): Managed Agent、知识库、MCP 的功能更新记录
+
+## OpenAPI Specs
+
+- [openapi-tripo-3d-generation](https://platform.qianwenai.com/docs/openapi-tripo-3d-generation.json): 使用 Tripo 模型通过文本、单张图像或多张图像生成 3D 模型。异步提交任务后，通过 `GET /tasks/{task_id}` 轮询获取结果。
+- [openapi-agent-archive](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-agent-archive.json)
+- [openapi-agent-create](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-agent-create.json)
+- [openapi-agent-get](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-agent-get.json)
+- [openapi-agent-list-versions](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-agent-list-versions.json)
+- [openapi-agent-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-agent-list.json)
+- [openapi-agent-update](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-agent-update.json)
+- [openapi-credential-archive](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-credential-archive.json)
+- [openapi-credential-create](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-credential-create.json)
+- [openapi-credential-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-credential-delete.json)
+- [openapi-credential-get](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-credential-get.json)
+- [openapi-credential-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-credential-list.json)
+- [openapi-credential-update](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-credential-update.json)
+- [openapi-deployment-archive](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-deployment-archive.json)
+- [openapi-deployment-create](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-deployment-create.json)
+- [openapi-deployment-get-run](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-deployment-get-run.json)
+- [openapi-deployment-get](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-deployment-get.json)
+- [openapi-deployment-list-runs](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-deployment-list-runs.json)
+- [openapi-deployment-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-deployment-list.json)
+- [openapi-deployment-pause](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-deployment-pause.json)
+- [openapi-deployment-run](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-deployment-run.json)
+- [openapi-deployment-unpause](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-deployment-unpause.json)
+- [openapi-deployment-update](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-deployment-update.json)
+- [openapi-env-archive](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-env-archive.json)
+- [openapi-env-create](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-env-create.json)
+- [openapi-env-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-env-delete.json)
+- [openapi-env-get](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-env-get.json)
+- [openapi-env-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-env-list.json)
+- [openapi-env-update](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-env-update.json)
+- [openapi-file-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-file-delete.json)
+- [openapi-file-download](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-file-download.json)
+- [openapi-file-get](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-file-get.json)
+- [openapi-file-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-file-list.json)
+- [openapi-file-upload](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-file-upload.json)
+- [openapi-session-archive](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-session-archive.json)
+- [openapi-session-create](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-session-create.json)
+- [openapi-session-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-session-delete.json)
+- [openapi-session-get](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-session-get.json)
+- [openapi-event-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-event-list.json)
+- [openapi-session-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-session-list.json)
+- [openapi-session-resource-create](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-session-resource-create.json)
+- [openapi-session-resource-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-session-resource-delete.json)
+- [openapi-session-resource-get](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-session-resource-get.json)
+- [openapi-session-resource-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-session-resource-list.json)
+- [openapi-event-send](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-event-send.json)
+- [openapi-event-stream](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-event-stream.json)
+- [openapi-session-update](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-session-update.json)
+- [openapi-skill-create](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-skill-create.json)
+- [openapi-skill-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-skill-delete.json)
+- [openapi-skill-download](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-skill-download.json)
+- [openapi-skill-get-version](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-skill-get-version.json)
+- [openapi-skill-get](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-skill-get.json)
+- [openapi-skill-list-versions](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-skill-list-versions.json)
+- [openapi-skill-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-skill-list.json)
+- [openapi-skill-upload-version](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-skill-upload-version.json)
+- [openapi-vault-archive](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-vault-archive.json)
+- [openapi-vault-create](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-vault-create.json)
+- [openapi-vault-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-vault-delete.json)
+- [openapi-vault-get](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-vault-get.json)
+- [openapi-vault-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-vault-list.json)
+- [openapi-vault-update](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-vault-update.json)
+- [openapi-webhook-create](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-webhook-create.json)
+- [openapi-webhook-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-webhook-delete.json)
+- [openapi-webhook-disable](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-webhook-disable.json)
+- [openapi-webhook-enable](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-webhook-enable.json)
+- [openapi-webhook-get](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-webhook-get.json)
+- [openapi-webhook-list-events](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-webhook-list-events.json)
+- [openapi-webhook-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-webhook-list.json)
+- [openapi-webhook-reset-secret](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-webhook-reset-secret.json)
+- [openapi-webhook-test](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-webhook-test.json)
+- [openapi-webhook-update](https://platform.qianwenai.com/docs/api-reference/agent-infra/managed-agents/openapi/openapi-webhook-update.json)
+- [openapi-memory-add-async](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/openapi/openapi-memory-add-async.json)
+- [openapi-memory-add](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/openapi/openapi-memory-add.json)
+- [openapi-memory-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/openapi/openapi-memory-delete.json)
+- [openapi-memory-get-event](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/openapi/openapi-memory-get-event.json)
+- [openapi-memory-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/openapi/openapi-memory-list.json)
+- [openapi-memory-search](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/openapi/openapi-memory-search.json)
+- [openapi-memory-update](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/openapi/openapi-memory-update.json)
+- [openapi-memory-create-schema](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/openapi/openapi-memory-create-schema.json)
+- [openapi-memory-delete-schema](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/openapi/openapi-memory-delete-schema.json)
+- [openapi-memory-get-schema](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/openapi/openapi-memory-get-schema.json)
+- [openapi-memory-get-profile](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/openapi/openapi-memory-get-profile.json)
+- [openapi-memory-list-schemas](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/openapi/openapi-memory-list-schemas.json)
+- [openapi-memory-update-schema](https://platform.qianwenai.com/docs/api-reference/agent-infra/memory/openapi/openapi-memory-update-schema.json)
+- [openapi-rag-agent-copy](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-agent-copy.json)
+- [openapi-rag-agent-create](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-agent-create.json)
+- [openapi-rag-agent-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-agent-delete.json)
+- [openapi-rag-agent-deploy](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-agent-deploy.json)
+- [openapi-rag-agent-get](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-agent-get.json)
+- [openapi-rag-agent-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-agent-list.json)
+- [openapi-rag-agent-update](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-agent-update.json)
+- [openapi-rag-chunk-add](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-chunk-add.json)
+- [openapi-rag-chunk-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-chunk-delete.json)
+- [openapi-rag-chunk-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-chunk-list.json)
+- [openapi-rag-chunk-update](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-chunk-update.json)
+- [openapi-connector-add-category](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag-connector/openapi-connector-add-category.json)
+- [openapi-connector-add-connector](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag-connector/openapi-connector-add-connector.json)
+- [openapi-connector-add-file](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag-connector/openapi-connector-add-file.json)
+- [openapi-connector-batch-update-tag](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag-connector/openapi-connector-batch-update-tag.json)
+- [openapi-connector-delete-category](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag-connector/openapi-connector-delete-category.json)
+- [openapi-connector-delete-file](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag-connector/openapi-connector-delete-file.json)
+- [openapi-connector-describe-file](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag-connector/openapi-connector-describe-file.json)
+- [openapi-connector-get-connector](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag-connector/openapi-connector-get-connector.json)
+- [openapi-connector-list-category](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag-connector/openapi-connector-list-category.json)
+- [openapi-connector-list-file](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag-connector/openapi-connector-list-file.json)
+- [openapi-connector-oss-import](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag-connector/openapi-connector-oss-import.json)
+- [openapi-connector-upload-lease](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag-connector/openapi-connector-upload-lease.json)
+- [openapi-rag-doc-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-doc-delete.json)
+- [openapi-rag-doc-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-doc-list.json)
+- [openapi-rag-doc-details](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-doc-details.json)
+- [openapi-rag-kb-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-kb-delete.json)
+- [openapi-rag-kb-monitor](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-kb-monitor.json)
+- [openapi-rag-kb-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-kb-list.json)
+- [openapi-rag-kb-update](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-kb-update.json)
+- [openapi-rag-knowledge-chat](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-knowledge-chat.json)
+- [openapi-rag-knowledge-search](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-knowledge-search.json)
+- [openapi-rag-sync-create-v2](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-sync-create-v2.json)
+- [openapi-rag-sync-status](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-sync-status.json)
+- [openapi-rag-sync-submit](https://platform.qianwenai.com/docs/api-reference/agent-infra/rag/openapi-rag-sync-submit.json)
+- [openapi-sandbox-connect](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/openapi/openapi-sandbox-connect.json)
+- [openapi-sandbox-create](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/openapi/openapi-sandbox-create.json)
+- [openapi-sandbox-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/openapi/openapi-sandbox-delete.json)
+- [openapi-sandbox-get](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/openapi/openapi-sandbox-get.json)
+- [openapi-sandbox-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/openapi/openapi-sandbox-list.json)
+- [openapi-sandbox-pause](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/openapi/openapi-sandbox-pause.json)
+- [openapi-sandbox-resume](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/openapi/openapi-sandbox-resume.json)
+- [openapi-template-build-status](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/openapi/openapi-template-build-status.json)
+- [openapi-template-create](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/openapi/openapi-template-create.json)
+- [openapi-template-delete](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/openapi/openapi-template-delete.json)
+- [openapi-template-get](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/openapi/openapi-template-get.json)
+- [openapi-template-list](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/openapi/openapi-template-list.json)
+- [openapi-template-update](https://platform.qianwenai.com/docs/api-reference/agent-infra/sandbox/openapi/openapi-template-update.json)
+- [openapi-anthropic](https://platform.qianwenai.com/docs/openapi-anthropic.json): 通过兼容 Anthropic 格式的 Messages API 调用 Qwen 模型，支持深度思考、工具调用、流式输出、图片视频理解和上下文缓存。  认证方式：通过 `x-api-key` 请求头或 `Authorization: Bearer` 请求头传入 API Key，二者选其一即可。
+- [openapi-dashscope](https://platform.qianwenai.com/docs/openapi-dashscope.json): 通过 DashScope 原生 HTTP API 调用 Qwen 模型。支持文本和多模态模型、流式输出、工具调用和结构化输出。
+- [openapi-openai-responses](https://platform.qianwenai.com/docs/openapi-openai-responses.json): 使用 OpenAI 兼容 Responses API 调用通义模型。支持内置工具、基于 `previous_response_id` 的多轮上下文管理，以及思考模式。
+- [openapi-openai-chat](https://platform.qianwenai.com/docs/openapi-openai-chat.json): 通过 OpenAI 兼容接口调用通义千问模型，支持文本及多模态模型、流式输出、工具调用和结构化输出。
+- [openapi-decision-model](https://platform.qianwenai.com/docs/openapi-decision-model.json): 调用 POST /compatible-mode/v1/systemone 接口使用千问AI平台决策模型（decision-model-preview），一次前向完成分类、是非判断与评分，并返回概率分布与置信度，不生成文本。适用于工单分流、内容审核、智能体路由与结果校验等高频结构化决策场景。
+- [openapi-gui-plus-dashscope](https://platform.qianwenai.com/docs/openapi-gui-plus-dashscope.json): 通过 DashScope 原生 HTTP API 调用 GUI-Plus 界面交互专用模型，支持流式输出和多模态输入（图片）。
+- [openapi-gui-plus-openai](https://platform.qianwenai.com/docs/openapi-gui-plus-openai.json): 通过 OpenAI 兼容接口调用 GUI-Plus 界面交互专用模型，支持流式输出和多模态输入（图片）。
+- [openapi-creative-poster](https://platform.qianwenai.com/docs/openapi-creative-poster.json): 创意海报生成 API
+- [openapi-facechain-finetune](https://platform.qianwenai.com/docs/openapi-facechain-finetune.json): 提交 FaceChain 人物形象训练任务，使用 1-10 张人像图片训练专属人像模型。训练完成后，使用 `finetuned_output` 中的模型名称调用人物写真生成 API 生成写真。
+- [openapi-facechain-facedetect](https://platform.qianwenai.com/docs/openapi-facechain-facedetect.json): 人物图像检测 API。检测输入图像中是否包含人脸，用于人物写真生成前的图像筛选。
+- [openapi-image-erase](https://platform.qianwenai.com/docs/openapi-image-erase.json): 图像擦除补全（image-erase-completion）API，可根据mask区域对原图进行擦除补全。
+- [openapi-kling-image-generation](https://platform.qianwenai.com/docs/openapi-kling-image-generation.json): 可灵图像生成模型支持文生图、参考图生图两种任务。
+- [openapi-person-instance-segmentation](https://platform.qianwenai.com/docs/openapi-person-instance-segmentation.json): 人物实例分割 API。对输入图像中的每个人物实例进行分割，输出每个实例的分割掩码图像和可视化结果。
+- [openapi-qwen-image-edit](https://platform.qianwenai.com/docs/openapi-qwen-image-edit.json): qwen-image-3.0 图像编辑 API，支持单图编辑、多图融合、风格迁移、文字编辑、元素操控等多种图像处理功能。
+- [openapi-qwen-image](https://platform.qianwenai.com/docs/openapi-qwen-image.json): qwen-image-3.0 文生图 API，支持所有模型的同步调用，以及旧版模型的异步调用。
+- [openapi-qwen-image-openai](https://platform.qianwenai.com/docs/openapi-qwen-image-openai.json): 通过 OpenAI Images 兼容协议调用千问-图像生成与编辑模型，支持文生图（T2I）与图生图/图像编辑（I2I）。
+- [openapi-shoe-model](https://platform.qianwenai.com/docs/openapi-shoe-model.json): AI 鞋靴模特上脚效果图生成。上传模特模板图和鞋靴商品图，自动生成模特上脚效果图。
+- [openapi-vidu-image-generation](https://platform.qianwenai.com/docs/openapi-vidu-image-generation.json): Vidu 参考生图模型支持文生图、图片编辑、参考图生图等任务。API 采用异步调用模式，包含"创建任务"和"查询结果"两个步骤。
+- [openapi-virtual-model](https://platform.qianwenai.com/docs/openapi-virtual-model.json): 万相-虚拟模特可以对上传的真人实拍商品展示图进行智能生成，将其中的模特和背景替换为心仪的内容，在保持人物姿态不变的情况下，使用虚拟模特对商品进行更加精美、多样的展示。支持各种与模特产生互动的商品，如手持小商品、服装、鞋靴、配饰等。
+- [openapi-wan-t2i-v2](https://platform.qianwenai.com/docs/openapi-wan-t2i-v2.json): 使用 Wan 文生图模型系列，根据文本描述生成图像。支持多种艺术风格和写实摄影效果，满足多样化的创意需求。本 API 采用异步任务模式：先通过 POST 请求提交任务，再通过 GET 请求轮询结果。
+- [openapi-wan21-image-edit](https://platform.qianwenai.com/docs/openapi-wan21-image-edit.json): Wan 2.1 通用图像编辑 API。支持 10 种编辑功能：整图风格化、局部风格化、指令编辑、蒙版编辑、去水印、扩图、超分辨率、上色、涂鸦成图、卡通特征控制。
+- [openapi-wan25-image-edit](https://platform.qianwenai.com/docs/openapi-wan25-image-edit.json): Wan2.5 通用图像编辑 API。通过文本提示词对图像进行编辑，保持主体一致性。支持单图编辑和多图融合，最多支持三张参考图。
+- [openapi-wan26-image](https://platform.qianwenai.com/docs/openapi-wan26-image.json): Wan2.6 图像生成与编辑 API，支持多图输入、图像编辑及图文交织输出。
+- [openapi-wan27-image](https://platform.qianwenai.com/docs/openapi-wan27-image.json): Wan2.7 图像生成与编辑 API，支持文生图、多图编辑、边界框交互式编辑以及图像集生成。
+- [openapi-wanx-sketch-to-image](https://platform.qianwenai.com/docs/openapi-wanx-sketch-to-image.json): 本文介绍万相-涂鸦作画模型的API输入输出参数。万相-涂鸦作画通过手绘图案和文字描述，生成精美的涂鸦绘画作品。
+- [openapi-wanx-style-repaint](https://platform.qianwenai.com/docs/openapi-wanx-style-repaint.json): 人像风格重绘模型支持将人物照片转换为多种预设或自定义的艺术风格。
+- [openapi-wanx-v1-text-to-image](https://platform.qianwenai.com/docs/openapi-wanx-v1-text-to-image.json): 使用 wanx-v1 模型根据文本描述生成图像。本 API 采用异步任务模式：先通过 POST 请求提交任务，再通过 GET 请求轮询结果。
+- [openapi-wanx-x-painting](https://platform.qianwenai.com/docs/openapi-wanx-x-painting.json): 图像局部重绘 API。根据用户输入的原始图片、掩码图和 prompt 提示词，在涂抹区域生成与文字描述相对应的内容，而涂抹区域外的部分则基本保持不变。
+- [openapi-z-image](https://platform.qianwenai.com/docs/openapi-z-image.json): Z-Image 文生图 API。
+- [openapi-image-translation](https://platform.qianwenai.com/docs/openapi-image-translation.json): 千问-图像翻译模型（Qwen-MT-Image）可精准翻译图像中的文字，并保留原始排版。该模型还支持领域提示、敏感词过滤、术语干预等自定义功能。  `qwen-mt-image-2.0` 支持同步调用和异步调用两种模式。同步调用详见[同步调用](/api-reference/image-translation/qwen-mt-image/synchronous)。  异步调用流程分两步： 1. **创建任务获取任务 ID**：发送 POST 请求创建任务，返回 task_id。 2. **根据任务 ID 查询结果**：使用 task_id 轮询任务状态，直到任务完成并获得图像 URL。
+- [openapi-image](https://platform.qianwenai.com/docs/openapi-image.json): DashScope 图像 API，涵盖图像生成、图像编辑、专项图像任务及多模态向量嵌入。
+- [openapi-qwen-mt-uni](https://platform.qianwenai.com/docs/openapi-qwen-mt-uni.json): Qwen-MT-Uni 是一款面向图片、文本、音频及各类文档的全模态翻译模型，通过统一的格式识别、智能路由、内容抽取、跨模态翻译与原格式重构链路，实现多类型输入的一体化高保真翻译。  同一接口支持**同步**与**异步**两种调用模式，请求体参数完全一致，由请求头 `X-DashScope-Async` 控制返回形式。同步调用请求后等待并直接返回翻译结果，适合文本、图片、小文件等耗时较短的场景。  异步调用流程分两步： 1. **创建任务获取任务 ID**：发送 POST 请求创建任务，返回 task_id。 2. **根据任务 ID 查询结果**：使用 task_id 轮询任务状态，直到任务完成并获得译后文件 URL 或译文文本。
+- [openapi-fun-music](https://platform.qianwenai.com/docs/openapi-fun-music.json): 音乐生成 Fun-Music 模型的 API 参考文档，支持流式和非流式输出。
+- [openapi-batch](https://platform.qianwenai.com/docs/openapi-batch.json): 通过文件上传提交批量推理任务，费用仅为实时 API 调用的50%。兼容 OpenAI 接口。
+- [openapi-conversations](https://platform.qianwenai.com/docs/openapi-conversations.json): 自动管理多轮对话历史，支持跨设备、跨会话的上下文管理。
+- [openapi-file](https://platform.qianwenai.com/docs/openapi-file.json): 上传并管理文件，用于文档解析或批量处理。
+- [openapi-reranking](https://platform.qianwenai.com/docs/openapi-reranking.json): 对召回文档按语义相关度重新排序，提升 RAG 和检索系统的搜索精准度。
+- [openapi-deep-research](https://platform.qianwenai.com/docs/openapi-deep-research.json): 通过 DashScope API 调用 Qwen-Deep-Research 深入研究模型。支持两步式调用流程（反问确认 + 深入研究）和流式输出。
+- [openapi-translation](https://platform.qianwenai.com/docs/openapi-translation.json): 通过 OpenAI 兼容接口或 DashScope 原生接口调用 Qwen-MT 翻译模型。支持基础翻译、术语干预、翻译记忆和领域提示。
+- [openapi-ocr](https://platform.qianwenai.com/docs/openapi-ocr.json): Qwen-OCR 文字提取模型的 API 参考文档，支持 OpenAI 兼容协议和 DashScope 协议。
+- [openapi-text-embedding](https://platform.qianwenai.com/docs/openapi-text-embedding.json): 文本向量模型 API 参考文档，支持 OpenAI 兼容协议和 DashScope 协议。
+- [openapi-happyhorse-image-to-video](https://platform.qianwenai.com/docs/openapi-happyhorse-image-to-video.json): 使用 HappyHorse 模型以首帧图片为基础生成视频。异步提交任务后，通过 `GET /tasks/{task_id}` 轮询获取结果。
+- [openapi-happyhorse-ref-to-video](https://platform.qianwenai.com/docs/openapi-happyhorse-ref-to-video.json): 使用 HappyHorse 模型传入多张参考图像生成视频。异步提交任务后，通过 `GET /tasks/{task_id}` 轮询获取结果。
+- [openapi-happyhorse-text-to-video](https://platform.qianwenai.com/docs/openapi-happyhorse-text-to-video.json): 使用 HappyHorse 模型通过文本提示词生成视频。异步提交任务后，通过 `GET /tasks/{task_id}` 轮询获取结果。
+- [openapi-happyhorse-video-editing](https://platform.qianwenai.com/docs/openapi-happyhorse-video-editing.json): 使用 HappyHorse 模型通过文本指令和参考图片编辑视频。异步提交任务后，通过 `GET /tasks/{task_id}` 轮询获取结果。
+- [openapi-kling-video-generation](https://platform.qianwenai.com/docs/openapi-kling-video-generation.json): 可灵（Kling）视频生成异步 API，支持文生视频、图生视频（首帧/首尾帧）、参考生视频等多种模式。
+- [openapi-minimax-h3-video](https://platform.qianwenai.com/docs/openapi-minimax-h3-video.json): MiniMax-H3 是视频生成模型，支持文生视频、图生视频（首帧/尾帧/首尾帧）和多模态参考生视频等多种用法。提交异步任务后，通过 `GET /tasks/{task_id}` 轮询获取结果。
+- [openapi-pixverse-image-to-video](https://platform.qianwenai.com/docs/openapi-pixverse-image-to-video.json): 爱诗 PixVerse 图生视频模型根据输入图像和文本提示词，生成一段流畅的视频。API 采用异步调用方式：先 POST 创建任务获取 task_id，再 GET 轮询查询任务状态与结果。
+- [openapi-pixverse-i2v-first-frame](https://platform.qianwenai.com/docs/openapi-pixverse-i2v-first-frame.json): 基于首帧图片生成视频。提交异步任务后，通过 `GET /tasks/{task_id}` 轮询结果。
+- [openapi-pixverse-kf2v](https://platform.qianwenai.com/docs/openapi-pixverse-kf2v.json): 爱诗-首尾帧生视频模型基于首帧图像、尾帧图像和文本提示词，生成一段平滑过渡的视频。
+- [openapi-pixverse-lipsync](https://platform.qianwenai.com/docs/openapi-pixverse-lipsync.json): 爱诗 PixVerse 视频对口型模型支持输入视频和音频（或 TTS 文本），生成与音频同步的对口型视频。API 采用异步调用方式：先 POST 创建任务获取 task_id，再 GET 轮询查询任务状态与结果。
+- [openapi-pixverse-motioncontrol](https://platform.qianwenai.com/docs/openapi-pixverse-motioncontrol.json): 爱诗 PixVerse 视频动作模仿模型支持输入人物图片和动作参考视频，将视频中的动作迁移到目标角色上，生成角色复现相同动作的新视频。适用于动作模仿、编舞复刻、角色动画生成等场景。API 采用异步调用方式：先 POST 创建任务获取 task_id，再 GET 轮询查询任务状态与结果。
+- [openapi-pixverse-ref-to-video](https://platform.qianwenai.com/docs/openapi-pixverse-ref-to-video.json): PixVerse 参考生视频模型支持传入多张参考图片或视频，通过文本提示词描述场景，将图片中的主体角色融合生成一段流畅的视频。支持通过 `@ref_name` 语法精确引用参考图中的主体。
+- [openapi-pixverse-text-to-video](https://platform.qianwenai.com/docs/openapi-pixverse-text-to-video.json): 爱诗 PixVerse 文生视频模型基于文本提示词，生成一段流畅的视频。API 采用异步调用方式：先 POST 创建任务获取 task_id，再 GET 轮询查询任务状态与结果。
+- [openapi-pixverse-upscale](https://platform.qianwenai.com/docs/openapi-pixverse-upscale.json): 爱诗 PixVerse 视频超清模型支持将输入视频进行超分辨率处理，固定输出 4K（3840×2160）分辨率视频。API 采用异步调用方式：先 POST 创建任务获取 task_id，再 GET 轮询查询任务状态与结果。
+- [openapi-video-retalk](https://platform.qianwenai.com/docs/openapi-video-retalk.json): 基于人物视频和人声音频，生成人物讲话口型与输入音频相匹配的新视频。
+- [openapi-video-style-transform](https://platform.qianwenai.com/docs/openapi-video-style-transform.json): 视频风格重绘 API。将真实视频转换为多种艺术风格（日式漫画、美式漫画、3D卡通等8种风格）。使用异步任务模式——提交任务后轮询获取结果。
+- [openapi-vidu-image-to-video](https://platform.qianwenai.com/docs/openapi-vidu-image-to-video.json): 使用 Vidu 模型从图像生成视频（基于首帧）。采用异步任务提交模式——提交任务后轮询结果。
+- [openapi-vidu-i2v-first-frame](https://platform.qianwenai.com/docs/openapi-vidu-i2v-first-frame.json): 基于首帧图片，使用 Vidu 模型生成视频。
+- [openapi-vidu-reference-to-video](https://platform.qianwenai.com/docs/openapi-vidu-reference-to-video.json): Vidu-参考生视频模型支持传入参考图片和文本提示词，将图片中的主体角色融合到提示词描述的场景中，生成流畅的视频内容。API 采用异步调用模式，包含"创建任务"和"查询结果"两个步骤。
+- [openapi-vidu-start-end-to-video](https://platform.qianwenai.com/docs/openapi-vidu-start-end-to-video.json): 基于首帧图像和尾帧图像生成平滑过渡视频。采用异步任务模式：提交任务后轮询获取结果。
+- [openapi-vidu-text-to-video](https://platform.qianwenai.com/docs/openapi-vidu-text-to-video.json): Vidu 文生视频模型基于文本提示词，生成一段流畅的视频。API 采用异步调用模式，包含"创建任务"和"查询结果"两个步骤。
+- [openapi-wan-video-editing](https://platform.qianwenai.com/docs/openapi-wan-video-editing.json): Wan 统一视频编辑 API，支持多模态输入（文本、图像、视频），提供五大核心能力：多图参考、视频重绘、局部编辑、视频续写和画面扩展。
+- [openapi-wan-image-to-animation](https://platform.qianwenai.com/docs/openapi-wan-image-to-animation.json): 使用 wan2.2-animate-move 模型，将参考视频中的人物动作与表情迁移到输入图片，生成动画视频。
+- [openapi-wan-i2v-first-frame](https://platform.qianwenai.com/docs/openapi-wan-i2v-first-frame.json): 使用 Wan 图像转视频模型，根据首帧图像和文字描述生成视频。支持音频同步、多镜头叙事以及多种分辨率规格。
+- [openapi-wan-i2v-first-last](https://platform.qianwenai.com/docs/openapi-wan-i2v-first-last.json): 使用 Wan kf2v 模型，基于首帧图像、尾帧图像和文本提示词，生成过渡自然流畅的视频。
+- [openapi-wan-ref-to-video](https://platform.qianwenai.com/docs/openapi-wan-ref-to-video.json): Wan 参考驱动视频生成 API，支持通过参考图片或视频结合多模态输入（文本、图片、视频）生成表演视频，覆盖单人或多人互动、多镜头叙事及音视频同步等场景。
+- [openapi-wan-s2v](https://platform.qianwenai.com/docs/openapi-wan-s2v.json): 数字人 wan2.2-s2v 模型能基于单张图片和音频，生成动作自然的说话、唱歌或表演视频。
+- [openapi-wan-s2v-detect](https://platform.qianwenai.com/docs/openapi-wan-s2v-detect.json): 万相数字人图像检测 API。检测输入图像是否符合 wan2.2-s2v 视频生成模型的人物图像规格要求。
+- [openapi-wan-text-to-video](https://platform.qianwenai.com/docs/openapi-wan-text-to-video.json): Wan 文本生成视频 API。支持多模态输入（文字、图像、音频），可生成最长 15 秒、分辨率高达 1080P 的视频。采用异步任务模式——先提交任务，再轮询获取结果。
+- [openapi-wan-character-swap](https://platform.qianwenai.com/docs/openapi-wan-character-swap.json): Wan 视频换脸 API。将视频中的主角替换为图片中的人物，同时保留原视频的场景、光线和色调。采用异步任务方式处理。
+- [openapi-wan27-image-to-video](https://platform.qianwenai.com/docs/openapi-wan27-image-to-video.json): 基于 Wan 2.7 模型，从图片、音频和视频片段生成视频。以异步方式提交任务，然后通过 `GET /tasks/{task_id}` 轮询获取结果。
+- [openapi-wan27-ref-to-video](https://platform.qianwenai.com/docs/openapi-wan27-ref-to-video.json): Wan 2.7 参考内容生视频 API。基于参考图片或视频生成表演视频，支持多模态输入（文本、图像、视频）。采用新协议，通过 media 数组传入参考内容，支持分辨率和比例参数配置，并提供增强版响应元数据。
+- [openapi-wan27-text-to-video](https://platform.qianwenai.com/docs/openapi-wan27-text-to-video.json): 使用 Wan 2.7 模型从文本生成视频。提交异步任务后，通过轮询 `GET /tasks/{task_id}` 获取生成结果。
+- [openapi-wan27-video-editing](https://platform.qianwenai.com/docs/openapi-wan27-video-editing.json): 基于 Wan 2.7 模型，通过多模态输入（文本、图片、视频）对视频进行编辑。提交异步任务后，通过 `GET /tasks/{task_id}` 轮询获取结果。
+- [openapi-wan30-video](https://platform.qianwenai.com/docs/openapi-wan30-video.json): 万相 3.0 是全能参考视频生成模型（All-in-One），统一支持文生视频、图生视频（首帧/首尾帧）、参考生视频和参考文件生视频等多种用法，最长可生成30秒视频，输出帧率为30fps。提交异步任务后，通过 `GET /tasks/{task_id}` 轮询获取结果。
+- [openapi-happyoyster-adventure](https://platform.qianwenai.com/docs/openapi-happyoyster-adventure.json): HappyOyster 世界探索（Adventure）模式 Open API。创建/管理 World、换取体验凭证、查询历史与产物。服务端通过主 API Key 调用，标准 HTTPS REST。客户端通过临时 API Key + ticket 走 RTC 通道实时体验。
