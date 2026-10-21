@@ -9,6 +9,7 @@ const QuestionListView = () => import("../views/QuestionListView.vue")
 const RegisterView = () => import("../views/RegisterView.vue")
 const SessionEventLogView = () => import("../views/SessionEventLogView.vue")
 const SessionView = () => import("../views/SessionView.vue")
+const UserGuideView = () => import("../views/UserGuideView.vue")
 
 const router = createRouter({
   history: createWebHistory(),
@@ -16,6 +17,7 @@ const router = createRouter({
     { path: "/login", name: "login", component: LoginView, meta: { public: true } },
     { path: "/register", name: "register", component: RegisterView, meta: { public: true } },
     { path: "/", name: "question-list", component: QuestionListView },
+    { path: "/guide", name: "user-guide", component: UserGuideView },
     { path: "/questions", redirect: "/" },
     { path: "/questions/new", name: "question-create", component: QuestionFormView, meta: { teacherOnly: true } },
     {

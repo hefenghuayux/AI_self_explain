@@ -20,7 +20,8 @@ import { authUser } from "../stores/auth"
 .health-page {
   display: grid;
   min-height: 100vh;
-  padding: var(--space-6);
+  padding: var(--space-8) var(--space-6);
+  background: var(--background-shell);
   place-items: center;
 }
 
@@ -28,9 +29,9 @@ import { authUser } from "../stores/auth"
   width: min(100%, 640px);
   padding: var(--space-8);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-page);
   background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
 }
 
 h1 {
@@ -47,5 +48,5 @@ h1 {
   display: inline-block;
   margin-top: var(--space-6);
 }
-@media (max-width: 640px) { .health-page { padding: var(--space-4); } .health-card { padding: var(--space-6) var(--space-4); } .question-link, .question-link .el-button { width: 100%; } }
+@media (max-width: 640px) { .health-page { min-height: 100dvh; padding: var(--space-4) var(--space-3); } .health-card { padding: var(--space-6) var(--space-4); } .question-link, .question-link .el-button { width: 100%; } }
 </style>

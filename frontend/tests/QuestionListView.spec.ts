@@ -132,4 +132,41 @@ describe("QuestionListView", () => {
     expect(wrapper.text()).not.toContain("重新自讲")
     expect(wrapper.text()).toContain("归档")
   })
+
+  it("does not offer primary school in the grade period filter", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            token: "student-token",
+            expiresAt: "2026-08-22T00:00:00Z",
+            user: { id: 1, username: "student", fullName: "学生", role: "STUDENT" },
+          }),
+        })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ gradePeriods: [1, 2], subjects: ["S"] }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => questionListResponse() }),
+    )
+    await login("student", "secret6", false)
+    const router = createTestRouter()
+    await router.push("/")
+    await router.isReady()
+
+    const wrapper = mount(QuestionListView, {
+      global: { plugins: [ElementPlus, router] },
+    })
+    await flushPromises()
+
+    await wrapper.findAll(".el-select__wrapper")[0].trigger("click")
+    await flushPromises()
+
+    const optionLabels = Array.from(document.querySelectorAll(".el-select-dropdown__item")).map((item) =>
+      item.textContent?.trim(),
+    )
+    expect(optionLabels).toContain("初中")
+    expect(optionLabels).not.toContain("小学")
+    wrapper.unmount()
+  })
 })

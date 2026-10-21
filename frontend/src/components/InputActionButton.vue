@@ -26,6 +26,7 @@ defineOptions({ inheritAttrs: false })
 </template>
 
 <style scoped>
-.input-action.el-button { width: 44px; height: 44px; min-width: 44px; flex: 0 0 44px; margin: 0; padding: 0; border-radius: var(--radius-md); }
+.input-action.el-button { width: 44px; height: 44px; min-width: 44px; flex: 0 0 44px; margin: 0; padding: 0; border-radius: var(--radius-control); }
+.input-action.el-button:not(.el-button--primary, .el-button--danger, .is-disabled) { --el-button-bg-color: var(--color-surface); }
 .input-action:focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
 </style>

@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     prompt_version: NonEmptyString
     database_url: NonEmptyString
     audio_storage_dir: Path
+    audio_storage_backend: Literal["local", "oss"] = "local"
+    oss_endpoint: AnyHttpUrl | None = None
+    oss_bucket: str = ""
+    oss_prefix: str = "ailab/"
+    oss_access_key_id: SecretStr = SecretStr("")
+    oss_access_key_secret: SecretStr = SecretStr("")
     log_dir: Path
 
     @field_validator("tts_base_url", mode="before")
@@ -132,6 +138,21 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_retry_backoffs(self) -> Self:
+        if self.audio_storage_backend == "oss":
+            if not (
+                self.oss_endpoint
+                and self.oss_endpoint.scheme == "https"
+                and self.oss_bucket.strip()
+                and self.oss_access_key_id.get_secret_value().strip()
+                and self.oss_access_key_secret.get_secret_value().strip()
+            ):
+                raise ValueError("OSS 存储需要 HTTPS endpoint、Bucket 和完整访问凭据")
+            if (
+                not self.oss_prefix.endswith("/")
+                or any(part in {"", ".", ".."} for part in self.oss_prefix[:-1].split("/"))
+                or "\\" in self.oss_prefix
+            ):
+                raise ValueError("OSS 前缀必须是以 / 结尾的非空目录，不能包含空段或相对路径")
         if self.context_compaction_wait_timeout_seconds is None:
             self.context_compaction_wait_timeout_seconds = self.ai_request_timeout_seconds
         if (

@@ -27,6 +27,8 @@ const total = ref(0)
 const gradePeriod = ref<number>()
 const subject = ref("")
 const keyword = ref("")
+// 学段筛选不提供小学；题目本身的学段名称仍按字典正常显示。
+const PRIMARY_SCHOOL_GRADE_PERIOD = 1
 
 function evaluationModeLabel(question: QuestionListItem): string {
   return {
@@ -79,9 +81,13 @@ async function loadQuestions() {
 
 async function loadFilterOptions() {
   try {
-    filterOptions.value = await fetchQuestionFilterOptions(
+    const options = await fetchQuestionFilterOptions(
       authUser.value?.role === "TEACHER" && showArchived.value,
     )
+    filterOptions.value = {
+      ...options,
+      gradePeriods: options.gradePeriods.filter((item) => item !== PRIMARY_SCHOOL_GRADE_PERIOD),
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   }
@@ -132,6 +138,7 @@ onMounted(async () => {
 
 <template>
   <main class="question-page">
+    <div class="question-surface">
     <div class="page-header">
       <div>
         <h1>题目列表</h1>
@@ -158,7 +165,7 @@ onMounted(async () => {
         <el-select v-model="subject" clearable placeholder="全部学科" @change="resetAndLoadQuestions">
           <el-option v-for="item in filterOptions.subjects" :key="item" :label="subjectName(item)" :value="item" />
         </el-select>
-        <el-input v-model="keyword" clearable placeholder="检索题干" @keyup.enter="resetAndLoadQuestions" />
+        <el-input v-model="keyword" clearable placeholder="检索题干或题目ID" @keyup.enter="resetAndLoadQuestions" />
         <el-button @click="resetAndLoadQuestions">搜索</el-button>
       </div>
       <el-switch
@@ -206,7 +213,7 @@ onMounted(async () => {
           <div class="row-actions">
             <el-button
               v-if="!scope.row.archivedAt"
-              type="success"
+              type="primary"
               size="small"
               :loading="actingQuestionId === scope.row.id"
               @click="startSelfExplanation(scope.row)"
@@ -243,7 +250,7 @@ onMounted(async () => {
         </div>
         <div class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
         <div class="row-actions">
-          <el-button v-if="!question.archivedAt" type="success" :loading="actingQuestionId === question.id" @click="startSelfExplanation(question)">开始自讲</el-button>
+          <el-button v-if="!question.archivedAt" type="primary" :loading="actingQuestionId === question.id" @click="startSelfExplanation(question)">开始自讲</el-button>
           <template v-if="authUser?.role === 'TEACHER'">
             <RouterLink :to="`/questions/${question.id}`"><el-button>查看详情</el-button></RouterLink>
             <el-button :type="question.archivedAt ? 'success' : 'warning'" :loading="actingQuestionId === question.id" @click="changeArchiveState(question)">{{ question.archivedAt ? "恢复" : "归档" }}</el-button>
@@ -263,14 +270,25 @@ onMounted(async () => {
       @current-change="loadQuestions"
       @size-change="resetAndLoadQuestions"
     />
+    </div>
   </main>
 </template>
 
 <style scoped>
 .question-page {
-  max-width: 1200px;
-  margin: 0 auto;
+  min-height: calc(100vh - 68px);
+  min-height: calc(100dvh - 68px);
   padding: var(--space-8) var(--space-6) var(--space-12);
+  background: var(--background-shell);
+}
+
+.question-surface {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: var(--space-8);
+  border-radius: var(--radius-page);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
 }
 
 .page-header,
@@ -295,13 +313,13 @@ h1 {
 .question-table {
   margin-top: var(--space-6);
 }
-.list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); }
+.list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface-muted); }
 .list-filters { display: flex; flex: 1; gap: var(--space-3); }
 .list-filters > * { flex: 1 1 0; min-width: 0; }
 .list-filters :deep(.el-select) { margin-right: 0; }
 .list-filters :deep(.el-select__wrapper) { width: 100%; min-height: 40px; }
-.question-pagination { justify-content: flex-end; margin-top: var(--space-6); }
-.question-table { border-top: 1px solid var(--color-border); }
+.question-pagination { justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-6); }
+.question-table { --el-table-header-bg-color: var(--color-surface-muted); --el-table-header-text-color: var(--color-text-primary); --el-table-row-hover-bg-color: var(--color-brand-50); --el-table-current-row-bg-color: var(--color-brand-50); --el-table-border-color: var(--color-border); border: 1px solid var(--color-border); border-radius: var(--radius-card); }
 .question-table :deep(.question-content-cell .cell) { overflow: hidden; display: -webkit-box; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .question-rich-text :deep(p) { margin: 0; }
 .question-rich-text :deep(img) { display: block; max-width: 100%; height: auto; }
@@ -314,8 +332,12 @@ h1 {
 
 @media (max-width: 640px) {
   .question-page {
-    padding: var(--space-6) var(--space-4) var(--space-8);
+    min-height: calc(100vh - 64px);
+    min-height: calc(100dvh - 64px);
+    padding: var(--space-4) var(--space-3) var(--space-8);
   }
+
+  .question-surface { padding: var(--space-5) var(--space-4); }
 
   .page-header {
     align-items: flex-start;
@@ -326,11 +348,14 @@ h1 {
   .list-filters > * { flex: 0 1 auto; }
   .question-table { display: none; }
   .question-list-mobile { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
-  .question-item { padding: var(--space-4) 0 var(--space-6); border-bottom: 1px solid var(--color-border); }
-  .question-item-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .question-item { min-width: 0; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
+  .question-item:focus-within { border-color: var(--color-brand-700); }
+  .question-item-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
   .question-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
   .question-id { color: var(--color-text-muted); font-size: var(--font-size-sm); font-weight: 600; }
   .question-item .question-rich-text { margin: var(--space-3) 0 var(--space-4); overflow-wrap: anywhere; }
   .row-actions { flex-wrap: wrap; }
+  .question-pagination { justify-content: center; }
+  .question-pagination :deep(.el-pager) { display: flex; flex-wrap: wrap; justify-content: center; max-width: 100%; }
 }
 </style>

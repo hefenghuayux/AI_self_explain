@@ -241,13 +241,13 @@ async function copyFullText(record: TrajectoryRecord) {
 .content-cell { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .record-index { flex: 0 0 auto; min-width: 38px; color: var(--color-text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 .kind-tag { flex: 0 0 auto; padding: 2px var(--space-2); border-radius: 999px; color: #ffffff; background: #64748b; font-size: 12px; white-space: nowrap; }
-.kind-tag[data-kind="session"] { background: #94a3b8; }
-.kind-tag[data-kind="user"] { background: var(--color-brand-700); }
-.kind-tag[data-kind="context"] { background: #0ea5e9; }
-.kind-tag[data-kind="model_request"] { background: #7c3aed; }
-.kind-tag[data-kind="model_response"] { background: #16a34a; }
-.kind-tag[data-kind="model_error"] { background: #dc2626; }
-.kind-tag[data-kind="state_change"] { background: #d97706; }
+.kind-tag[data-kind="session"] { background: var(--color-event-session); }
+.kind-tag[data-kind="user"] { background: var(--color-event-user); }
+.kind-tag[data-kind="context"] { background: var(--color-event-context); }
+.kind-tag[data-kind="model_request"] { background: var(--color-event-model-request); }
+.kind-tag[data-kind="model_response"] { background: var(--color-event-model-response); }
+.kind-tag[data-kind="model_error"] { background: var(--color-event-model-error); }
+.kind-tag[data-kind="state_change"] { background: var(--color-event-state-change); }
 .record-summary { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 展开区跨满两列；正文按原文换行，超出视口高度时在区内滚动，不淹没整页。 */
 .record-full-block { grid-column: 1 / -1; border-top: 1px dashed var(--color-border); }

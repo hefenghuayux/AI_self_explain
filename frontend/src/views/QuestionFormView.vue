@@ -45,6 +45,7 @@ async function submitQuestion(question: QuestionInput) {
 
 <template>
   <main class="question-page">
+    <div class="question-surface">
     <div class="page-header">
       <div>
         <h1>{{ questionId ? "编辑题目" : "录入题目" }}</h1>
@@ -69,14 +70,25 @@ async function submitQuestion(question: QuestionInput) {
         @submit="submitQuestion"
       />
     </section>
+    </div>
   </main>
 </template>
 
 <style scoped>
 .question-page {
+  min-height: calc(100vh - 68px);
+  min-height: calc(100dvh - 68px);
+  padding: var(--space-8) var(--space-6) var(--space-12);
+  background: var(--background-shell);
+}
+
+.question-surface {
   max-width: 960px;
   margin: 0 auto;
-  padding: var(--space-8) var(--space-6) var(--space-12);
+  padding: var(--space-8);
+  border-radius: var(--radius-page);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
 }
 
 .page-header {
@@ -92,6 +104,6 @@ h1 {
   line-height: 1.35;
 }
 .page-header p { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
-.form-surface { margin-top: var(--space-8); padding-top: var(--space-6); border-top: 1px solid var(--color-border); }
-@media (max-width: 640px) { .question-page { padding: var(--space-6) var(--space-4) var(--space-8); } .page-header { align-items: flex-start; flex-direction: column; } .page-header a, .page-header .el-button { width: 100%; } }
+.form-surface { margin-top: var(--space-6); padding-top: var(--space-6); border-top: 1px solid var(--color-border); }
+@media (max-width: 640px) { .question-page { min-height: calc(100vh - 64px); min-height: calc(100dvh - 64px); padding: var(--space-4) var(--space-3) var(--space-8); } .question-surface { padding: var(--space-5) var(--space-4); } .page-header { align-items: flex-start; flex-direction: column; } .page-header a, .page-header .el-button { width: 100%; } }
 </style>

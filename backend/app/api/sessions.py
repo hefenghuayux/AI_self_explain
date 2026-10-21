@@ -1302,16 +1302,31 @@ async def stream_voice_input(
                         )
                         await reject_voice_stream(websocket, "未获得有效转写，请重新录音")
                         return
+                    def persist_transcription(transcript: str) -> int:
+                        # OSS 网络请求不占用事件循环；ORM 会话仅在工作线程内使用。
+                        with websocket.app.state.database_session_factory() as saving_db:
+                            saving_session = saving_db.get(Session, session_id)
+                            if saving_session is None:
+                                raise ValueError(f"会话不存在：{session_id}")
+                            _, saved_attempt = SessionRepository(
+                                saving_db
+                            ).complete_voice_transcription(
+                                session=saving_session,
+                                capture=capture,
+                                audio_storage=audio_storage,
+                                asr_transcript=transcript,
+                                voice_target=target,
+                                voice_target_id=target_id,
+                                expected_version=version,
+                            )
+                            return saved_attempt.id
+
                     try:
-                        completed_session, attempt = repository.complete_voice_transcription(
-                            session=session,
-                            capture=capture,
-                            audio_storage=audio_storage,
-                            asr_transcript=asr_transcript,
-                            voice_target=target,
-                            voice_target_id=target_id,
-                            expected_version=version,
-                        )
+                        # 释放旧的读取快照，完成后重新读取工作线程已提交的版本。
+                        database_session.rollback()
+                        attempt_id = await asyncio.to_thread(persist_transcription, asr_transcript)
+                        completed_session = database_session.get(Session, session_id)
+                        attempt = database_session.get(ExplanationAttempt, attempt_id)
                     except (SessionVersionConflict, ValueError) as error:
                         capture.delete()
                         await reject_voice_stream(websocket, str(error))

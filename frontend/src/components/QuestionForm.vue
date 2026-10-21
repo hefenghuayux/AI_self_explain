@@ -197,7 +197,7 @@ function submitForm() {
 .form-alert {
   margin-bottom: var(--space-6);
 }
-h2 { margin: var(--space-8) 0 0; font-size: var(--font-size-lg); line-height: 1.45; }
+h2 { margin: var(--space-8) 0 0; padding: var(--space-3) var(--space-4); border-left: 3px solid var(--color-brand-600); border-radius: var(--radius-sm); background: var(--color-surface-muted); font-size: var(--font-size-lg); line-height: 1.45; }
 h2:first-of-type { margin-top: 0; }
 .section-description { margin: var(--space-1) 0 var(--space-4); color: var(--color-text-muted); font-size: var(--font-size-sm); }
 
@@ -212,8 +212,12 @@ h2:first-of-type { margin-top: 0; }
   grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted);
 }
 .item-index { display: grid; width: 24px; height: 24px; border-radius: 50%; color: var(--color-brand-700); background: var(--color-brand-50); font-size: 12px; font-weight: 700; place-items: center; }
-.submit-area { display: flex; justify-content: flex-end; margin-top: var(--space-8); padding-top: var(--space-6); border-top: 1px solid var(--color-border); }
+.submit-area { display: flex; justify-content: flex-end; margin-top: var(--space-8); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface-muted); }
 @media (max-width: 640px) { .array-row { grid-template-columns: 24px minmax(0, 1fr); } .array-row .el-button { grid-column: 2; justify-self: start; } .submit-area .el-button { width: 100%; } }
 </style>

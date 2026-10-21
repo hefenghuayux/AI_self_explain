@@ -216,10 +216,10 @@ defineExpose({ playReply, playSolution, stop })
 </template>
 
 <style scoped>
-.teacher-speech { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); vertical-align: middle; }
-.speech-toggle { display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 10px; border: 1px solid var(--color-border-strong); border-radius: 50%; color: var(--color-brand-700); background: var(--color-surface); cursor: pointer; flex-shrink: 0; }
+.teacher-speech { display: inline-flex; min-width: 0; max-width: 100%; flex-wrap: wrap; align-items: center; gap: var(--space-2); vertical-align: middle; }
+.speech-toggle { display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 10px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); color: var(--color-brand-700); background: var(--color-surface); cursor: pointer; flex-shrink: 0; transition: background-color var(--transition-interactive), border-color var(--transition-interactive); }
 .speech-toggle svg { width: 22px; height: 22px; fill: currentColor; }
-.speech-toggle:hover:not(:disabled), .speech-toggle.is-playing { background: var(--color-brand-100); }
+.speech-toggle:hover:not(:disabled), .speech-toggle.is-playing { border-color: var(--color-brand-700); background: var(--color-brand-50); }
 .speech-toggle:focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
 .speech-toggle:disabled { cursor: default; opacity: .55; }
 .speech-spinner { animation: speech-spin 1s linear infinite; fill: none !important; stroke: currentColor; stroke-width: 2; stroke-dasharray: 42 16; }

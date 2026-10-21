@@ -1254,12 +1254,12 @@ async function respondToSolution(understood: boolean) {
     <div class="session-shell">
       <Teleport to="#app-header-actions">
         <div v-if="session" class="page-actions" role="none">
-          <button type="button" role="menuitem" data-testid="restart-self-explanation" :disabled="submitting" @click="restartSelfExplanation">重新自讲</button>
-          <button type="button" role="menuitem" data-testid="session-history" @click="openHistoryDrawer">自讲历史</button>
-          <RouterLink v-if="authUser?.role === 'TEACHER'" role="menuitem" :to="`/sessions/${session.id}/logs`">查看运行日志</RouterLink>
+          <button type="button" class="menu-item" role="menuitem" data-testid="restart-self-explanation" :disabled="submitting" @click="restartSelfExplanation">重新自讲</button>
+          <button type="button" class="menu-item" role="menuitem" data-testid="session-history" @click="openHistoryDrawer">自讲历史</button>
+          <RouterLink v-if="authUser?.role === 'TEACHER'" class="menu-item" role="menuitem" :to="`/sessions/${session.id}/logs`">查看运行日志</RouterLink>
         </div>
       </Teleport>
-      <el-drawer v-model="historyDrawerVisible" title="自讲历史" direction="rtl" size="360px">
+      <el-drawer v-model="historyDrawerVisible" class="history-drawer" title="自讲历史" direction="rtl" size="min(360px, calc(100vw - 16px))">
         <el-skeleton v-if="historyLoading" :rows="5" animated />
         <el-alert v-else-if="historyError" :title="historyError" type="error" :closable="false" show-icon />
         <el-empty v-else-if="historyItems.length === 0" description="暂无自讲历史" />
@@ -1626,13 +1626,10 @@ async function respondToSolution(understood: boolean) {
 </template>
 
 <style scoped>
-.session-page { max-width: 1040px; margin: 0 auto; padding: var(--space-6) var(--space-6) var(--space-12); }
-.session-shell { min-width: 0; }
+.session-page { min-height: calc(100vh - 68px); min-height: calc(100dvh - 68px); padding: var(--space-6) var(--space-6) var(--space-12); background: var(--background-shell); }
+.session-shell { max-width: 1040px; min-width: 0; margin: 0 auto; padding: var(--space-6); border: 1px solid var(--color-border); border-radius: var(--radius-page); background: var(--color-surface); box-shadow: var(--shadow-md); }
+/* 顶栏菜单行的外观由 App.vue 的 .menu-item 统一提供，这里只保留容器布局。 */
 .page-actions { display: flex; flex-direction: column; }
-.page-actions button, .page-actions a { display: flex; align-items: center; min-height: 44px; padding: var(--space-2) var(--space-4); border: 0; background: transparent; color: var(--color-text-primary); font: inherit; font-size: var(--font-size-sm); text-decoration: none; cursor: pointer; text-align: left; }
-.page-actions button:hover:not(:disabled), .page-actions a:hover { background: var(--color-surface-muted); }
-.page-actions button:disabled { opacity: .5; cursor: default; }
-.page-actions button:focus-visible, .page-actions a:focus-visible { outline: 2px solid var(--color-brand-600); outline-offset: -2px; }
 .actions { display: flex; align-items: center; gap: var(--space-2); }
 .actions { flex-wrap: wrap; margin-top: var(--space-4); }
 .history-list { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -1640,37 +1637,44 @@ async function respondToSolution(understood: boolean) {
 .history-item:hover, .history-item.is-current { border-color: var(--color-brand-600); background: var(--color-brand-50); }
 .history-item-name { font-weight: 700; }
 .history-item time { grid-column: 1 / -1; color: var(--color-text-muted); font-size: var(--font-size-sm); }
+:global(.history-drawer .el-drawer__body) { overflow-y: auto; padding: var(--space-4); }
+:global(.history-drawer .el-drawer__header) { margin-bottom: var(--space-2); color: var(--color-text-primary); }
+:global(.history-drawer .el-drawer__close-btn:focus-visible) { outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
 .error-state { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
 .error-state .el-alert { flex: 1; }
 h2, h3 { margin: 0; line-height: 1.4; }
 h2 { font-size: var(--font-size-lg); }
-.question-content { padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-sm); }
+.question-content { padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
 .question-content .question-rich-text { margin-top: 0; }
 .question-rich-text { max-width: var(--reading-width); margin-top: var(--space-3); color: var(--color-text-primary); font-size: var(--font-size-lg); font-weight: 600; line-height: 1.75; overflow-wrap: anywhere; }
 .question-rich-text :deep(p) { margin: 0; }
 .question-rich-text :deep(p + p) { margin-top: var(--space-3); }
 .question-rich-text :deep(img) { display: block; max-width: 100%; height: auto; }
 .session-section { margin-top: var(--space-8); }
-.session-section p { color: var(--color-text-secondary); }
+.session-section > p { color: var(--color-text-secondary); }
 .input-section, .feedback-section { margin-top: var(--space-4); }
-.dialog-segmented { --el-segmented-item-selected-bg-color: var(--color-brand-700); width: 100%; margin-top: 0; }
-.dialog-segmented :deep(.el-segmented__item) { min-height: 44px; }
+.dialog-segmented { --el-segmented-bg-color: var(--color-surface-muted); --el-segmented-item-selected-bg-color: var(--color-brand-700); --el-segmented-item-selected-color: var(--color-on-brand); --el-segmented-item-hover-bg-color: var(--color-brand-50); --el-segmented-item-hover-color: var(--color-brand-700); --el-segmented-color: var(--color-text-primary); --el-segmented-item-disabled-color: var(--color-text-muted); width: 100%; margin-top: 0; padding: var(--space-2); border-radius: var(--radius-card); }
+.dialog-segmented :deep(.el-segmented__item) { min-height: 44px; border-radius: var(--radius-control); }
+.dialog-segmented :deep(.el-segmented__item-selected) { border-radius: var(--radius-control); background: var(--gradient-action); }
+.dialog-segmented :deep(.el-segmented__item-selected.is-disabled) { background: var(--color-brand-100); }
+.dialog-segmented :deep(.el-segmented__item.is-selected.is-disabled) { color: var(--color-text-secondary); background: var(--color-brand-100); }
+.dialog-segmented :deep(.el-segmented__item:has(input:focus-visible)) { outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
 .dialog-panel {
   margin-top: var(--space-2);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
   padding: var(--space-4);
   background: var(--color-surface);
   box-shadow: var(--shadow-sm);
 }
-.guided-question + .guided-question { margin-top: var(--space-4); }
+.guided-question + .guided-question { margin-top: var(--space-5); padding-top: var(--space-5); border-top: 1px solid var(--color-border); }
 .guided-question p { margin: 0 0 var(--space-2); color: var(--color-text-primary); font-weight: 600; }
 .guided-question .voice-recorder { margin-top: 0; }
 .doubt-history { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
 .doubt-thread { padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
 .mastery-result { margin: var(--space-2) 0 0; font-weight: 400; }
-.mastery-result.is-positive { color: var(--color-success, #15803d); }
-.mastery-result.is-attention { color: var(--color-warning, #b45309); }
+.mastery-result.is-positive { color: var(--color-success-700); }
+.mastery-result.is-attention { color: var(--color-action-700); }
 .step-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); }
 .step-content-input {
   display: block;
@@ -1678,8 +1682,8 @@ h2 { font-size: var(--font-size-lg); }
   width: 100%;
   min-height: 128px;
   padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
   color: var(--color-text-primary);
   background: var(--color-surface);
   line-height: 1.7;
@@ -1695,11 +1699,12 @@ h2 { font-size: var(--font-size-lg); }
 .speech-content-heading { display: flex; align-items: flex-start; gap: var(--space-2); }
 .speech-anchor { display: inline-flex; flex-shrink: 0; }
 .speech-content-heading { align-items: center; margin-bottom: var(--space-3); font-weight: 600; }
+.timeline-section { padding-top: var(--space-5); border-top: 1px solid var(--color-border); background: var(--color-surface); }
 .conversation-scroll {
   height: 480px;
   margin-top: var(--space-3);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-card);
   background: var(--color-surface-muted);
 }
 .conversation-list {
@@ -1709,9 +1714,10 @@ h2 { font-size: var(--font-size-lg); }
   padding: var(--space-4);
 }
 .conversation-message {
+  min-width: 0;
   max-width: min(680px, 88%);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-card);
   padding: var(--space-3) var(--space-4);
   background: var(--color-surface);
 }
@@ -1741,8 +1747,8 @@ h2 { font-size: var(--font-size-lg); }
 .conversation-event { color: var(--color-text-primary); font-weight: 700; }
 .conversation-meta time { margin-left: auto; }
 .conversation-message.is-student .conversation-speaker { color: var(--color-brand-700); }
-.conversation-message.is-ai .conversation-speaker { color: var(--color-success-700); }
-.conversation-message.is-system .conversation-speaker { color: var(--color-action-700); }
+.conversation-message.is-ai .conversation-speaker { color: var(--color-ai-700); }
+.conversation-message.is-system .conversation-speaker { color: var(--color-text-secondary); }
 .conversation-content {
   margin: var(--space-2) 0 0;
   white-space: pre-wrap;
@@ -1755,13 +1761,13 @@ h2 { font-size: var(--font-size-lg); }
   .dialog-segmented :deep(.el-segmented__group) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: var(--space-2); background: transparent; }
   /* Element Plus 在浮动选中层上设置内联 display，多行布局改由各选项绘制底色。 */
   .dialog-segmented :deep(.el-segmented__item-selected) { display: none !important; }
-  .dialog-segmented :deep(.el-segmented__item) { min-width: 0; padding: var(--space-2); border-radius: var(--radius-md); white-space: normal; }
-  .dialog-segmented :deep(.el-segmented__item.is-selected) { background: var(--color-brand-700); }
+  .dialog-segmented :deep(.el-segmented__item) { min-width: 0; padding: var(--space-2); border-radius: var(--radius-control); white-space: normal; }
+  .dialog-segmented :deep(.el-segmented__item.is-selected) { background: var(--gradient-action); }
   .dialog-segmented :deep(.el-segmented__item.is-selected.is-disabled) { color: var(--color-text-secondary); background: var(--color-brand-100); }
-  .dialog-segmented :deep(.el-segmented__item:has(input:focus-visible)) { outline: 2px solid var(--color-brand-700); outline-offset: 2px; }
 }
 @media (max-width: 640px) {
-  .session-page { padding: var(--space-4) var(--space-4) var(--space-8); }
+  .session-page { min-height: calc(100vh - 64px); min-height: calc(100dvh - 64px); padding: var(--space-4) var(--space-3) var(--space-8); }
+  .session-shell { padding: var(--space-4) var(--space-3); }
   .question-content { padding: var(--space-4); }
   .dialog-panel { padding: var(--space-4); }
   .actions .el-button { flex: 1 1 100%; }
@@ -1769,6 +1775,7 @@ h2 { font-size: var(--font-size-lg); }
   .conversation-scroll { height: 480px; }
   .conversation-list { padding: var(--space-3); }
   .conversation-message { width: 100%; max-width: none; }
+  :global(.history-drawer) { width: calc(100vw - 16px) !important; }
   .conversation-meta { flex-wrap: wrap; gap: var(--space-2); }
   .conversation-meta time { width: 100%; margin-left: 0; }
 }

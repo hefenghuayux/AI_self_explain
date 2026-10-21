@@ -165,6 +165,7 @@ watch(selectedRunId, resetRunView)
 
 <template>
   <main class="log-page">
+    <div class="log-surface">
     <header class="log-header">
       <div>
         <p class="eyebrow">SESSION TRAJECTORY</p>
@@ -252,11 +253,13 @@ watch(selectedRunId, resetRunView)
     </template>
 
     <p v-else class="empty-state">当前会话没有可展示的运行轨迹。</p>
+    </div>
   </main>
 </template>
 
 <style scoped>
-.log-page { width: min(100%, var(--content-width)); margin: 0 auto; padding: var(--space-8) var(--space-6) var(--space-12); }
+.log-page { min-height: calc(100vh - 68px); min-height: calc(100dvh - 68px); padding: var(--space-8) var(--space-6) var(--space-12); background: var(--background-shell); }
+.log-surface { width: min(100%, var(--content-width)); margin: 0 auto; padding: var(--space-8); border-radius: var(--radius-page); background: var(--color-surface); box-shadow: var(--shadow-md); }
 .log-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-6); }
 .log-header h1 { margin: var(--space-1) 0; }
 .log-header p { margin: 0; color: var(--color-text-secondary); }
@@ -275,7 +278,8 @@ watch(selectedRunId, resetRunView)
 .loading-state, .empty-state { color: var(--color-text-muted); }
 .error-state { padding: var(--space-3); border-radius: var(--radius-md); color: var(--color-error-700); background: var(--color-error-100); overflow-wrap: anywhere; }
 @media (max-width: 640px) {
-  .log-page { padding: var(--space-6) var(--space-4) var(--space-8); }
+  .log-page { min-height: calc(100vh - 64px); min-height: calc(100dvh - 64px); padding: var(--space-4) var(--space-3) var(--space-8); }
+  .log-surface { padding: var(--space-5) var(--space-4); }
   .log-header { align-items: flex-start; flex-direction: column; }
   .toolbar, .toolbar-actions { align-items: stretch; flex-direction: column; }
   .run-picker, .run-picker select, .toolbar-search input { width: 100%; }

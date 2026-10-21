@@ -263,13 +263,13 @@ defineExpose({ start, stop })
 </template>
 
 <style scoped>
-.voice-recorder { margin-top: var(--space-4); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-muted); }
+.voice-recorder { min-width: 0; margin-top: var(--space-4); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface-muted); }
 .voice-heading { display: flex; align-items: flex-start; gap: var(--space-3); }
 .recording-indicator { width: 12px; height: 12px; flex: 0 0 auto; margin-top: 7px; border: 2px solid var(--color-brand-600); border-radius: 50%; background: var(--color-surface); }
 .recording-indicator.is-recording { border-color: var(--color-error-700); background: var(--color-error-700); }
 .voice-recorder h3 { margin: 0; font-size: var(--font-size-base); }
 .voice-recorder p { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
-.transcript-preview { padding: var(--space-3); border-radius: var(--radius-sm); background: var(--color-surface); }
+.transcript-preview { padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); }
 .actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
 .voice-recorder.is-inline { margin-top: 0; padding: 0; border: 0; background: transparent; }
 .voice-recorder.is-inline .actions { margin-top: 0; }

@@ -203,12 +203,12 @@ defineExpose({ open })
 </template>
 
 <style scoped>
-.step-content-input { box-sizing: border-box; width: 100%; min-height: 128px; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text-primary); background: var(--color-surface); line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.step-content-input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 128px; padding: var(--space-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); color: var(--color-text-primary); background: var(--color-surface); font-size: var(--font-size-base); line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .step-content-input:empty::before { content: attr(data-placeholder); color: var(--color-text-secondary); pointer-events: none; }
 .step-content-input:focus-within { border-color: var(--color-brand-600); outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
-.step-content-input[aria-disabled="true"] { cursor: not-allowed; opacity: 0.65; }
+.step-content-input[aria-disabled="true"] { color: var(--color-text-secondary); background: var(--color-surface-muted); cursor: not-allowed; }
 .step-content-input :deep(.step-formula) { display: inline-block; cursor: pointer; vertical-align: baseline; max-width: 100%; }
-.step-content-input :deep(math-field) { min-width: 2em; padding: 0; border: 0; background: transparent; font-size: 1.1em; }
+.step-content-input :deep(math-field) { min-width: 2em; max-width: 100%; padding: 0; border: 0; background: transparent; font-size: 1.1em; }
 .step-content-input :deep(math-field::part(virtual-keyboard-toggle)),
 .step-content-input :deep(math-field::part(menu-toggle)) { display: none; }
 </style>

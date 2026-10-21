@@ -101,13 +101,13 @@ function blockLabel(record: TrajectoryRecord): string {
 .timeline-block--sequence { flex: 1 1 0; width: auto; }
 .timeline-block:hover { filter: brightness(1.15); }
 .timeline-block.active { outline: 2px solid var(--color-text-primary); outline-offset: 1px; }
-.timeline-block[data-kind="session"] { background: #94a3b8; }
-.timeline-block[data-kind="user"] { background: var(--color-brand-700); }
-.timeline-block[data-kind="context"] { background: #0ea5e9; }
-.timeline-block[data-kind="model_request"] { background: #7c3aed; }
-.timeline-block[data-kind="model_response"] { background: #16a34a; }
-.timeline-block[data-kind="model_error"] { background: #dc2626; }
-.timeline-block[data-kind="state_change"] { background: #d97706; }
+.timeline-block[data-kind="session"] { background: var(--color-event-session); }
+.timeline-block[data-kind="user"] { background: var(--color-event-user); }
+.timeline-block[data-kind="context"] { background: var(--color-event-context); }
+.timeline-block[data-kind="model_request"] { background: var(--color-event-model-request); }
+.timeline-block[data-kind="model_response"] { background: var(--color-event-model-response); }
+.timeline-block[data-kind="model_error"] { background: var(--color-event-model-error); }
+.timeline-block[data-kind="state_change"] { background: var(--color-event-state-change); }
 @media (max-width: 640px) {
   .timeline-header { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
 }

@@ -65,6 +65,7 @@ async function startSession(restart = false) {
 
 <template>
   <main class="question-page">
+    <div class="question-surface">
     <div class="page-header">
       <div>
         <h1>题目详情</h1>
@@ -73,11 +74,11 @@ async function startSession(restart = false) {
           <div class="actions">
             <RouterLink to="/questions"><el-button>返回列表</el-button></RouterLink>
             <RouterLink v-if="question && !question.archivedAt" :to="`/questions/${question.id}/edit`">
-              <el-button type="primary">编辑题目</el-button>
+              <el-button>编辑题目</el-button>
             </RouterLink>
             <el-button
               v-if="question && !question.archivedAt"
-              type="success"
+              type="primary"
               :loading="creatingSession"
               @click="startSession"
             >
@@ -85,6 +86,7 @@ async function startSession(restart = false) {
             </el-button>
             <el-button
               v-if="question && !question.archivedAt"
+              type="primary"
               :loading="creatingSession"
               @click="startSession(true)"
             >
@@ -122,7 +124,7 @@ async function startSession(restart = false) {
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="题目内容">
-          <div class="question-rich-text" v-html="sanitizeQuestionHtml(question.questionContent)" />
+          <div class="question-rich-text question-stem" v-html="sanitizeQuestionHtml(question.questionContent)" />
         </el-descriptions-item>
         <el-descriptions-item label="标准答案">
           <div v-if="question.standardAnswer" class="question-rich-text" v-html="sanitizeQuestionHtml(question.standardAnswer)" />
@@ -156,14 +158,25 @@ async function startSession(restart = false) {
         </el-descriptions-item>
       </el-descriptions>
     </section>
+    </div>
   </main>
 </template>
 
 <style scoped>
 .question-page {
+  min-height: calc(100vh - 68px);
+  min-height: calc(100dvh - 68px);
+  padding: var(--space-8) var(--space-6) var(--space-12);
+  background: var(--background-shell);
+}
+
+.question-surface {
   max-width: 960px;
   margin: 0 auto;
-  padding: var(--space-8) var(--space-6) var(--space-12);
+  padding: var(--space-8);
+  border-radius: var(--radius-page);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
 }
 
 .page-header,
@@ -175,7 +188,11 @@ async function startSession(restart = false) {
 
 .page-header {
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-4);
 }
+.actions { flex-wrap: wrap; }
+.actions a .el-button { width: 100%; }
 
 h1 {
   margin: 0;
@@ -183,9 +200,11 @@ h1 {
   line-height: 1.35;
 }
 .page-header > div:first-child > p { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
-.detail-surface { margin-top: var(--space-8); padding-top: var(--space-6); border-top: 1px solid var(--color-border); }
+.detail-surface { margin-top: var(--space-6); border: 1px solid var(--color-border); border-radius: var(--radius-card); overflow-x: auto; }
 .detail-surface :deep(.el-descriptions__content) { line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
-.detail-surface :deep(.el-descriptions__label) { width: 160px; color: var(--color-text-primary); font-weight: 600; }
+.detail-surface :deep(.el-descriptions__label) { width: 160px; color: var(--color-text-primary); background: var(--color-surface-muted); font-weight: 600; }
+.question-rich-text { max-width: var(--reading-width); font-size: var(--font-size-base); }
+.question-stem { font-size: var(--font-size-lg); font-weight: 600; }
 .question-rich-text :deep(p) { margin: 0; }
 .question-rich-text :deep(p + p) { margin-top: var(--space-3); }
 .question-rich-text :deep(img) { display: block; max-width: 100%; height: auto; }
@@ -198,5 +217,5 @@ ul {
 .empty-value {
   color: var(--color-text-muted);
 }
-@media (max-width: 640px) { .question-page { padding: var(--space-6) var(--space-4) var(--space-8); } .page-header { align-items: flex-start; flex-direction: column; } .actions { width: 100%; flex-wrap: wrap; } .actions a, .actions .el-button { flex: 1 1 auto; } .detail-surface :deep(.el-descriptions__label) { width: 112px; } }
+@media (max-width: 640px) { .question-page { min-height: calc(100vh - 64px); min-height: calc(100dvh - 64px); padding: var(--space-4) var(--space-3) var(--space-8); } .question-surface { padding: var(--space-5) var(--space-4); } .page-header { align-items: flex-start; flex-direction: column; } .actions { width: 100%; } .actions a, .actions .el-button { flex: 1 1 auto; } .detail-surface :deep(.el-descriptions__label) { width: 96px; } }
 </style>

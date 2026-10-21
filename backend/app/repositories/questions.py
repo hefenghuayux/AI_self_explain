@@ -33,9 +33,14 @@ class QuestionRepository:
         if query.subject is not None:
             conditions.append(Question.subject == query.subject)
         if query.keyword is not None:
-            escaped_keyword = query.keyword.replace("\\", "\\\\")
-            escaped_keyword = escaped_keyword.replace("%", "\\%").replace("_", "\\_")
-            conditions.append(Question.question_content.like(f"%{escaped_keyword}%", escape="\\"))
+            if query.keyword.isascii() and query.keyword.isdecimal():
+                conditions.append(Question.id == query.keyword)
+            else:
+                escaped_keyword = query.keyword.replace("\\", "\\\\")
+                escaped_keyword = escaped_keyword.replace("%", "\\%").replace("_", "\\_")
+                conditions.append(
+                    Question.question_content.like(f"%{escaped_keyword}%", escape="\\")
+                )
 
         last_self_explained_at = (
             select(
@@ -80,11 +85,11 @@ class QuestionRepository:
             )
             .where(*conditions)
             .order_by(
-                # 已自讲题目按最近自讲时间倒序排在前面，未自讲题目（IS NULL 为真）排在其后。
+                # 完整评分题目始终优先；空数组及 JSON/SQL null 视为未配置评分点。
+                Question.rubric_points[0].as_string().is_not(None).desc(),
+                # 同类题目按最近自讲时间倒序，未自讲题目排在其后。
                 last_self_explained_at.c.last_self_explained_at.is_(None),
                 last_self_explained_at.c.last_self_explained_at.desc(),
-                # 其余题目中，非空评分点数组优先；空数组及 JSON/SQL null 视为未配置。
-                Question.rubric_points[0].as_string().is_not(None).desc(),
                 Question.created_at.desc(),
                 Question.id.desc(),
             )

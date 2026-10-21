@@ -23,10 +23,10 @@ withDefaults(defineProps<{
 </template>
 
 <style scoped>
-.teacher-reply-card { min-width: 0; padding: var(--space-4); border: 1px solid var(--color-brand-100); border-left: 3px solid var(--color-brand-600); border-radius: var(--radius-lg); background: var(--color-brand-50); overflow-wrap: anywhere; }
-.teacher-reply-card__heading { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-3); }
+.teacher-reply-card { min-width: 0; padding: var(--space-4); border: 1px solid var(--color-ai-border); border-left: 3px solid var(--color-ai-700); border-radius: var(--radius-card); color: var(--color-text-primary); background: var(--color-ai-surface); overflow-wrap: anywhere; }
+.teacher-reply-card__heading { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-3); color: var(--color-ai-700); }
 .teacher-reply-card__status { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
-.teacher-reply-card__text { margin: var(--space-2) 0 0; white-space: pre-wrap; line-height: 1.75; }
+.teacher-reply-card__text { margin: var(--space-2) 0 0; color: var(--color-text-primary); white-space: pre-wrap; line-height: 1.75; }
 .teacher-reply-card__error { margin: 0; color: var(--color-error-700); }
 @media (prefers-reduced-motion: reduce) {
   :deep(.el-skeleton.is-animated .el-skeleton__item) { animation: none; }

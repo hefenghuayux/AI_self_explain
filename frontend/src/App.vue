@@ -186,10 +186,11 @@ async function signOut() {
             菜单
           </summary>
           <div class="account-menu-panel" role="menu" aria-label="会话与账户菜单" @click="handleMenuClick">
-            <RouterLink class="mobile-question-list" role="menuitem" to="/">题目列表</RouterLink>
+            <RouterLink class="menu-item mobile-question-list" role="menuitem" to="/">题目列表</RouterLink>
             <!-- 页面级操作由各视图 Teleport 到此容器，与「退出登录」同处下拉菜单。 -->
             <div id="app-header-actions" class="header-actions" />
-            <el-button class="logout-button" text role="menuitem" @click="signOut">退出登录</el-button>
+            <RouterLink class="menu-item user-guide-link" role="menuitem" to="/guide" data-testid="user-guide-link">使用指南</RouterLink>
+            <button type="button" class="menu-item logout-button" role="menuitem" @click="signOut">退出登录</button>
           </div>
         </details>
         <button type="button" class="settings-button" aria-label="设置" title="设置" data-testid="settings-button" @click="openSettings">
@@ -198,7 +199,7 @@ async function signOut() {
       </div>
     </div>
   </header>
-  <el-dialog v-model="settingsVisible" title="设置" width="min(420px, calc(100vw - 32px))" :close-on-click-modal="!voiceSaving" :close-on-press-escape="!voiceSaving" :show-close="!voiceSaving">
+  <el-dialog v-model="settingsVisible" class="settings-dialog" title="设置" width="min(420px, calc(100vw - 32px))" :close-on-click-modal="!voiceSaving" :close-on-press-escape="!voiceSaving" :show-close="!voiceSaving">
     <label class="auto-play-setting">
       <input :checked="teacherSpeechAutoPlay" type="checkbox" data-testid="teacher-speech-auto-play" @change="updateAutoPlay" />
       自动播放老师回复
@@ -219,7 +220,7 @@ async function signOut() {
       <el-button v-if="!voicesLoaded && !voicesLoading" data-testid="reload-tts-voices" @click="loadVoices">重新加载音色</el-button>
     </div>
   </el-dialog>
-  <el-dialog v-model="voicePickerVisible" title="选择老师音色" width="min(680px, calc(100vw - 32px))" :close-on-click-modal="!voiceSaving" :close-on-press-escape="!voiceSaving" :show-close="!voiceSaving">
+  <el-dialog v-model="voicePickerVisible" class="voice-picker-dialog" title="选择老师音色" width="min(680px, calc(100vw - 32px))" :close-on-click-modal="!voiceSaving" :close-on-press-escape="!voiceSaving" :show-close="!voiceSaving">
     <div class="voice-filters" aria-label="音色筛选">
       <select v-model="educationStageFilter" data-testid="tts-voice-stage-filter" aria-label="按学段筛选">
         <option value="">全部学段</option>
@@ -269,8 +270,9 @@ async function signOut() {
   position: sticky;
   z-index: 20;
   top: 0;
-  border-bottom: 1px solid var(--color-border);
-  background: rgb(255 255 255 / 96%);
+  border-bottom: 1px solid rgb(255 255 255 / 16%);
+  color: var(--color-shell-text);
+  background: var(--background-shell);
   box-shadow: var(--shadow-sm);
 }
 
@@ -290,7 +292,7 @@ async function signOut() {
   width: fit-content;
   align-items: center;
   gap: var(--space-3);
-  color: var(--color-text-primary);
+  color: var(--color-shell-text);
   text-decoration: none;
 }
 
@@ -298,9 +300,9 @@ async function signOut() {
   display: grid;
   width: 38px;
   height: 38px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--color-on-brand);
-  background: var(--color-brand-700);
+  background: var(--gradient-action);
   font-size: var(--font-size-lg);
   font-weight: 700;
   place-items: center;
@@ -328,15 +330,25 @@ nav {
   align-items: center;
   padding: 0 var(--space-3);
   border-bottom: 2px solid transparent;
-  color: var(--color-text-secondary);
+  color: var(--color-shell-text);
   font-size: var(--font-size-sm);
   font-weight: 600;
   text-decoration: none;
 }
 
 .nav-link.router-link-exact-active {
-  border-color: var(--color-brand-600);
-  color: var(--color-brand-700);
+  border-color: var(--color-accent-cyan);
+  background: rgb(255 255 255 / 10%);
+}
+
+.nav-link:hover {
+  background: rgb(255 255 255 / 16%);
+}
+
+.brand:focus-visible,
+.nav-link:focus-visible {
+  outline: 2px solid var(--color-accent-cyan);
+  outline-offset: 2px;
 }
 
 .account-area {
@@ -349,7 +361,7 @@ nav {
 
 .user-name {
   overflow: hidden;
-  color: var(--color-text-secondary);
+  color: var(--color-shell-text);
   font-size: var(--font-size-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -369,10 +381,10 @@ nav {
   min-height: 44px;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-primary);
-  background: var(--color-surface);
+  border: 1px solid rgb(255 255 255 / 32%);
+  border-radius: var(--radius-control);
+  color: var(--color-shell-text);
+  background: rgb(255 255 255 / 8%);
   cursor: pointer;
   gap: var(--space-2);
 }
@@ -399,13 +411,15 @@ nav {
 }
 
 .menu-trigger:hover,
-.settings-button:hover {
-  background: var(--color-brand-50);
+.settings-button:hover,
+.account-menu[open] .menu-trigger {
+  border-color: var(--color-accent-cyan);
+  background: rgb(255 255 255 / 16%);
 }
 
 .menu-trigger:focus-visible,
 .settings-button:focus-visible {
-  outline: 2px solid var(--color-brand-600);
+  outline: 2px solid var(--color-accent-cyan);
   outline-offset: 2px;
 }
 
@@ -417,30 +431,46 @@ nav {
   width: 184px;
   padding: var(--space-2);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
+  color: var(--color-text-primary);
   background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
 }
 
-.mobile-question-list {
-  display: none;
+/* 菜单项统一为同一行样式；页面级操作由视图 Teleport 注入，需用 :deep 命中其作用域节点。 */
+.account-menu-panel :deep(.menu-item) {
+  display: flex;
+  width: 100%;
   min-height: 44px;
   align-items: center;
   padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
   color: var(--color-text-primary);
+  background: transparent;
+  font-size: var(--font-size-sm);
+  text-align: left;
   text-decoration: none;
+  cursor: pointer;
 }
 
-.mobile-question-list.router-link-exact-active {
+.account-menu-panel :deep(.menu-item:hover:not(:disabled)),
+.account-menu-panel :deep(.menu-item.router-link-exact-active) {
   color: var(--color-brand-700);
+  background: var(--color-brand-50);
 }
 
-.logout-button {
-  width: 100%;
-  min-height: 44px;
-  justify-content: flex-start;
-  margin-left: 0;
+.account-menu-panel :deep(.menu-item:focus-visible) {
+  outline: 2px solid var(--color-brand-600);
+  outline-offset: -2px;
 }
+
+.account-menu-panel :deep(.menu-item:disabled) {
+  opacity: .5;
+  cursor: default;
+}
+
+.account-menu-panel .mobile-question-list { display: none; }
 
 .auto-play-setting {
   display: flex;
@@ -472,6 +502,10 @@ nav {
 .voice-option-name { font-weight: 600; }
 .voice-option-remark { margin-top: 4px; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
 .voice-picker-status { margin: var(--space-4) 0; color: var(--color-text-secondary); text-align: center; }
+:global(.settings-dialog), :global(.voice-picker-dialog) { max-height: calc(100dvh - 32px); margin: 16px auto; }
+:global(.settings-dialog .el-dialog__body), :global(.voice-picker-dialog .el-dialog__body) { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+:global(.settings-dialog .el-dialog__footer), :global(.voice-picker-dialog .el-dialog__footer) { border-top: 1px solid var(--color-border); }
+:global(.voice-picker-dialog .el-dialog__body) { max-height: calc(100dvh - 180px); }
 
 @media (max-width: 640px) {
   .header-inner {
@@ -486,10 +520,7 @@ nav {
     display: none;
   }
 
-  .mobile-question-list {
-    display: inline-flex;
-    width: 100%;
-  }
+  .account-menu-panel .mobile-question-list { display: flex; }
 
   .account-area {
     flex-wrap: wrap;
@@ -499,6 +530,8 @@ nav {
   .voice-filters { grid-template-columns: 1fr 1fr; }
   .voice-filters input { grid-column: span 2; }
   .voice-options { grid-template-columns: 1fr; }
+  :global(.settings-dialog), :global(.voice-picker-dialog) { width: calc(100vw - 16px) !important; margin: 8px auto; }
+  :global(.voice-picker-dialog .el-dialog__body) { max-height: calc(100dvh - 140px); }
 
 }
 </style>
